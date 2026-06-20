@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kid Spending — Mission Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: {
+        background: '#0a0a0a', card: '#141414', border: '#262626',
+        muted: '#737373', accent: '#3b82f6'
+      }}}
+    }
+  </script>
+</head>
+<body class="bg-background text-white min-h-screen">
+  <!-- Top Nav -->
+  <header class="border-b border-border px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <span class="text-lg font-semibold">Mission Control</span>
+      <nav class="flex gap-1 ml-6">
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Tasks</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Alerts</a>
+        <a href="dashboard.html" class="px-3 py-1.5 rounded-md text-sm bg-card text-white font-medium">Finance</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Today</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">AI</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-6">
+    <!-- Breadcrumb -->
+    <div class="text-xs text-muted mb-4">
+      <a href="dashboard.html" class="hover:text-white">Finance</a> / <span class="text-white">Kids Spending</span>
+    </div>
+
+    <!-- Kid Selector Tabs -->
+    <div class="flex gap-2 mb-6">
+      <button class="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white flex items-center gap-2">
+        <div class="w-2.5 h-2.5 rounded-full bg-blue-300"></div>
+        Jake
+      </button>
+      <button class="px-4 py-2 rounded-lg text-sm text-muted border border-border hover:bg-card flex items-center gap-2">
+        <div class="w-2.5 h-2.5 rounded-full bg-purple-500"></div>
+        Emma
+      </button>
+      <button class="px-4 py-2 rounded-lg text-sm text-muted border border-border hover:bg-card flex items-center gap-2">
+        <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+        Sophie
+      </button>
+      <button class="px-4 py-2 rounded-lg text-sm text-muted border border-border hover:bg-card flex items-center gap-2">
+        All Kids (Combined)
+      </button>
+    </div>
+
+    <!-- Jake's Header -->
+    <div class="bg-card border border-border rounded-xl p-6 mb-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold">Jake's Spending</h1>
+          <p class="text-sm text-muted mt-1">June 2026</p>
+        </div>
+        <div class="text-right">
+          <p class="text-3xl font-bold font-mono">$347</p>
+          <p class="text-sm text-red-400">Over monthly limit ($300) by $47</p>
+        </div>
+      </div>
+
+      <!-- Period Summaries -->
+      <div class="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-border">
+        <div>
+          <p class="text-xs text-muted">Today</p>
+          <p class="text-lg font-mono font-medium">$14.32</p>
+          <p class="text-xs text-green-400">Under $30 daily limit</p>
+        </div>
+        <div>
+          <p class="text-xs text-muted">This Week</p>
+          <p class="text-lg font-mono font-medium text-red-300">$112</p>
+          <p class="text-xs text-red-400">Over $100 weekly limit</p>
+        </div>
+        <div>
+          <p class="text-xs text-muted">This Month</p>
+          <p class="text-lg font-mono font-medium text-red-300">$347</p>
+          <p class="text-xs text-red-400">Over $300 monthly limit</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-6">
+      <!-- Left: Category Breakdown -->
+      <div class="col-span-1">
+        <div class="bg-card border border-border rounded-xl p-5">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">By Category</h2>
+          <div class="space-y-3">
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span>Gaming</span>
+                <span class="font-mono">$142</span>
+              </div>
+              <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div class="h-full bg-blue-500 rounded-full" style="width: 41%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span>Food & Dining</span>
+                <span class="font-mono">$98</span>
+              </div>
+              <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div class="h-full bg-blue-400 rounded-full" style="width: 28%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span>Entertainment</span>
+                <span class="font-mono">$62</span>
+              </div>
+              <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div class="h-full bg-blue-300 rounded-full" style="width: 18%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span>Shopping</span>
+                <span class="font-mono">$45</span>
+              </div>
+              <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div class="h-full bg-blue-200 rounded-full" style="width: 13%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Threshold Settings -->
+        <div class="bg-card border border-border rounded-xl p-5 mt-4">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Limits</h2>
+          <div class="space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-xs">Daily</span>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-mono">$30</span>
+                <button class="text-xs text-muted hover:text-white">✏️</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-xs">Weekly</span>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-mono text-red-300">$100</span>
+                <button class="text-xs text-muted hover:text-white">✏️</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-xs">Monthly</span>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-mono text-red-300">$300</span>
+                <button class="text-xs text-muted hover:text-white">✏️</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Transaction List -->
+      <div class="col-span-2">
+        <div class="bg-card border border-border rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-muted">Jake's Transactions</h2>
+            <select class="bg-zinc-800 border border-border rounded-md text-xs px-2 py-1 text-muted">
+              <option>This Month</option>
+              <option>Last Month</option>
+              <option>Last 90 Days</option>
+            </select>
+          </div>
+
+          <div class="space-y-1">
+            <!-- Today Section -->
+            <p class="text-xs text-muted font-medium pt-2 pb-1">Today — Jun 20</p>
+
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-orange-900/30 flex items-center justify-center text-xs">🍗</div>
+                <div>
+                  <p class="text-sm font-medium">Chick-fil-A #02341</p>
+                  <p class="text-xs text-muted">Chase ...9876 • Food & Dining</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-mono">-$14.32</p>
+                <p class="text-xs text-blue-400">auto: merchant rule</p>
+              </div>
+            </div>
+
+            <!-- This Week Section -->
+            <p class="text-xs text-muted font-medium pt-4 pb-1">Jun 18</p>
+
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-xs">🎮</div>
+                <div>
+                  <p class="text-sm font-medium">Steam Purchase</p>
+                  <p class="text-xs text-muted">Amex ...1234 • Gaming</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-mono">-$59.99</p>
+                <p class="text-xs text-yellow-400">manual assignment</p>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-green-900/30 flex items-center justify-center text-xs">🍔</div>
+                <div>
+                  <p class="text-sm font-medium">McDonald's #38291</p>
+                  <p class="text-xs text-muted">Chase ...9876 • Food & Dining</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-mono">-$12.48</p>
+                <p class="text-xs text-blue-400">auto: merchant rule</p>
+              </div>
+            </div>
+
+            <p class="text-xs text-muted font-medium pt-4 pb-1">Jun 16</p>
+
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-xs">🎮</div>
+                <div>
+                  <p class="text-sm font-medium">Roblox Premium</p>
+                  <p class="text-xs text-muted">Jake's Debit ...4521 • Gaming</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-mono">-$12.99</p>
+                <p class="text-xs text-green-400">auto: card rule</p>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-blue-900/30 flex items-center justify-center text-xs">🛒</div>
+                <div>
+                  <p class="text-sm font-medium">Five Below</p>
+                  <p class="text-xs text-muted">Chase ...9876 • Shopping</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-mono">-$24.50</p>
+                <p class="text-xs text-blue-400">auto: merchant rule</p>
+              </div>
+            </div>
+
+            <p class="text-xs text-muted font-medium pt-4 pb-1">Jun 14</p>
+
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-xs">🎬</div>
+                <div>
+                  <p class="text-sm font-medium">AMC Theatres</p>
+                  <p class="text-xs text-muted">Jake's Debit ...4521 • Entertainment</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-mono">-$18.50</p>
+                <p class="text-xs text-green-400">auto: card rule</p>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-xs">🎮</div>
+                <div>
+                  <p class="text-sm font-medium">Epic Games Store</p>
+                  <p class="text-xs text-muted">Amex ...1234 • Gaming</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-mono">-$39.99</p>
+                <p class="text-xs text-blue-400">auto: merchant rule</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Discussion Items -->
+          <div class="mt-6 pt-4 border-t border-border">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-yellow-400 mb-3">🚩 Discussion Items</h3>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between p-3 rounded-lg bg-yellow-950/20 border border-yellow-900/30">
+                <div>
+                  <p class="text-sm font-medium">Steam Purchase — $59.99</p>
+                  <p class="text-xs text-muted">Pushed him over weekly gaming limit. Talk about game purchasing habits?</p>
+                </div>
+                <div class="flex gap-2">
+                  <button class="px-2.5 py-1 text-xs rounded-md bg-yellow-900/50 text-yellow-300">Create Task</button>
+                  <button class="px-2.5 py-1 text-xs rounded-md text-muted border border-border">Dismiss</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

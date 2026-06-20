@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transaction Triage — Mission Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: {
+        background: '#0a0a0a', card: '#141414', border: '#262626',
+        muted: '#737373', accent: '#3b82f6'
+      }}}
+    }
+  </script>
+</head>
+<body class="bg-background text-white min-h-screen">
+  <!-- Top Nav -->
+  <header class="border-b border-border px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <span class="text-lg font-semibold">Mission Control</span>
+      <nav class="flex gap-1 ml-6">
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Tasks</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Alerts</a>
+        <a href="dashboard.html" class="px-3 py-1.5 rounded-md text-sm bg-card text-white font-medium">Finance</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Today</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">AI</a>
+      </nav>
+    </div>
+    <div class="text-xs text-muted">12 items to review</div>
+  </header>
+
+  <main class="max-w-2xl mx-auto px-6 py-8">
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">Transaction Triage</h1>
+        <p class="text-sm text-muted mt-1">Review, categorize, and assign transactions</p>
+      </div>
+      <div class="flex gap-2 items-center">
+        <span class="text-xs bg-accent/20 text-accent px-2 py-1 rounded-full">12 remaining</span>
+        <button class="px-3 py-1.5 rounded-md text-sm bg-card border border-border">Skip All Low-Value</button>
+      </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="flex gap-2 mb-6 border-b border-border pb-3">
+      <button class="px-3 py-1.5 rounded-md text-sm bg-accent text-white">All (12)</button>
+      <button class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Uncategorized (5)</button>
+      <button class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Unassigned Kid (4)</button>
+      <button class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Flagged (3)</button>
+    </div>
+
+    <!-- Triage Cards Stack -->
+    <div class="space-y-3">
+
+      <!-- Card 1: Uncategorized -->
+      <div class="bg-card border border-border rounded-xl p-5 hover:border-accent/50 transition-colors">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-800">Uncategorized</span>
+              <span class="text-xs text-muted">Jun 18, 2026</span>
+            </div>
+            <h3 class="text-base font-medium mt-2">AMZN MKTP US*2K4XF7</h3>
+            <p class="text-xs text-muted mt-0.5">Chase Sapphire ...9876 • Amazon Marketplace</p>
+          </div>
+          <span class="text-xl font-mono font-bold text-red-300">-$47.83</span>
+        </div>
+
+        <!-- Category Assignment -->
+        <div class="mb-3">
+          <p class="text-xs text-muted mb-2">Assign category:</p>
+          <div class="flex flex-wrap gap-1.5">
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border hover:border-accent hover:bg-accent/10">Shopping</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border hover:border-accent hover:bg-accent/10">Kids - Entertainment</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border hover:border-accent hover:bg-accent/10">Household</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border hover:border-accent hover:bg-accent/10">Groceries</button>
+            <button class="px-2.5 py-1 rounded-md text-xs text-muted border border-border/50 hover:border-border">More...</button>
+          </div>
+        </div>
+
+        <!-- Kid Assignment -->
+        <div class="flex items-center justify-between pt-3 border-t border-border">
+          <div class="flex gap-1.5">
+            <button class="px-2.5 py-1 rounded-md text-xs bg-blue-900/30 border border-blue-800/50 text-blue-300 hover:bg-blue-900/50">Jake</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-purple-900/30 border border-purple-800/50 text-purple-300 hover:bg-purple-900/50">Emma</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-green-900/30 border border-green-800/50 text-green-300 hover:bg-green-900/50">Sophie</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border text-muted hover:bg-zinc-700">Mine</button>
+          </div>
+          <button class="px-2.5 py-1 rounded-md text-xs text-red-400 border border-red-900/50 hover:bg-red-950/30">🚩 Flag</button>
+        </div>
+      </div>
+
+      <!-- Card 2: Suggested Kid -->
+      <div class="bg-card border border-border rounded-xl p-5 hover:border-accent/50 transition-colors">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300 border border-blue-800">Suggested: Jake</span>
+              <span class="text-xs text-muted">Jun 17, 2026</span>
+            </div>
+            <h3 class="text-base font-medium mt-2">CHICK-FIL-A #02341</h3>
+            <p class="text-xs text-muted mt-0.5">Chase Sapphire ...9876 • Fast Food</p>
+          </div>
+          <span class="text-xl font-mono font-bold text-red-300">-$14.32</span>
+        </div>
+
+        <div class="flex items-center gap-2 mb-3 p-2 rounded-lg bg-blue-950/20 border border-blue-900/30">
+          <span class="text-xs">🧠</span>
+          <span class="text-xs text-blue-200">Pattern match: assigned to Jake 8 of last 10 times</span>
+        </div>
+
+        <div class="flex items-center justify-between pt-3 border-t border-border">
+          <div class="flex gap-1.5">
+            <button class="px-3 py-1.5 rounded-md text-xs bg-blue-600 text-white font-medium hover:bg-blue-500">✓ Confirm Jake</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-purple-900/30 border border-purple-800/50 text-purple-300">Emma</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-green-900/30 border border-green-800/50 text-green-300">Sophie</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border text-muted">Mine</button>
+          </div>
+          <button class="px-2.5 py-1 rounded-md text-xs text-red-400 border border-red-900/50 hover:bg-red-950/30">🚩 Flag</button>
+        </div>
+      </div>
+
+      <!-- Card 3: Flagged for discussion -->
+      <div class="bg-card border border-red-900/50 rounded-xl p-5">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-800">🚩 Flagged</span>
+              <span class="text-xs text-muted">Jun 16, 2026</span>
+            </div>
+            <h3 class="text-base font-medium mt-2">STEAM PURCHASE</h3>
+            <p class="text-xs text-muted mt-0.5">Amex Blue Cash ...1234 • Gaming</p>
+          </div>
+          <span class="text-xl font-mono font-bold text-red-300">-$59.99</span>
+        </div>
+
+        <div class="flex items-center gap-2 mb-3 p-2 rounded-lg bg-red-950/20 border border-red-900/30">
+          <span class="text-xs">⚠️</span>
+          <span class="text-xs text-red-200">Jake already at $52 this week on gaming. Combined: $112 (over $100 weekly limit)</span>
+        </div>
+
+        <div class="flex items-center justify-between pt-3 border-t border-border">
+          <div class="flex gap-1.5">
+            <button class="px-3 py-1.5 rounded-md text-xs bg-blue-600 text-white font-medium">Assign Jake</button>
+            <button class="px-3 py-1.5 rounded-md text-xs bg-yellow-900/50 text-yellow-300 border border-yellow-800/50">Create Discussion Task</button>
+          </div>
+          <button class="px-2.5 py-1 rounded-md text-xs text-muted border border-border hover:bg-zinc-800">Dismiss</button>
+        </div>
+      </div>
+
+      <!-- Card 4: Simple confirm -->
+      <div class="bg-card border border-border rounded-xl p-5 hover:border-accent/50 transition-colors">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300 border border-purple-800">Suggested: Emma</span>
+              <span class="text-xs text-muted">Jun 16, 2026</span>
+            </div>
+            <h3 class="text-base font-medium mt-2">SEPHORA #1892</h3>
+            <p class="text-xs text-muted mt-0.5">Amex ...7890 (Emma's card) • Beauty</p>
+          </div>
+          <span class="text-xl font-mono font-bold text-red-300">-$34.50</span>
+        </div>
+
+        <div class="flex items-center justify-between pt-3 border-t border-border">
+          <div class="flex gap-1.5">
+            <button class="px-3 py-1.5 rounded-md text-xs bg-purple-600 text-white font-medium">✓ Confirm Emma</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border text-muted">Reassign...</button>
+          </div>
+          <button class="px-2.5 py-1 rounded-md text-xs text-red-400 border border-red-900/50">🚩 Flag</button>
+        </div>
+      </div>
+
+      <!-- Card 5: Category reassignment needed -->
+      <div class="bg-card border border-border rounded-xl p-5 hover:border-accent/50 transition-colors">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-800">Category: "General"</span>
+              <span class="text-xs text-muted">Jun 15, 2026</span>
+            </div>
+            <h3 class="text-base font-medium mt-2">COSTCO WHSE #0392</h3>
+            <p class="text-xs text-muted mt-0.5">Visa ...3456 • $287.42 — likely needs split</p>
+          </div>
+          <span class="text-xl font-mono font-bold text-red-300">-$287.42</span>
+        </div>
+
+        <div class="mb-3">
+          <p class="text-xs text-muted mb-2">Assign category (or split):</p>
+          <div class="flex flex-wrap gap-1.5">
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border hover:border-accent">Groceries</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border hover:border-accent">Household</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border hover:border-accent">Shopping</button>
+            <button class="px-2.5 py-1 rounded-md text-xs bg-amber-900/30 border border-amber-800/50 text-amber-300 hover:bg-amber-900/50">✂️ Split Transaction</button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-3 border-t border-border">
+          <div class="flex gap-1.5">
+            <button class="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border text-muted">Mine (family)</button>
+          </div>
+          <button class="px-2.5 py-1 rounded-md text-xs text-muted border border-border">Skip for now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom: Rule Suggestion -->
+    <div class="mt-6 p-4 rounded-xl bg-accent/5 border border-accent/20">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium">💡 Rule suggestion</p>
+          <p class="text-xs text-muted mt-0.5">You've assigned "CHICK-FIL-A" to Jake 5 times this month. Create an auto-rule?</p>
+        </div>
+        <div class="flex gap-2">
+          <button class="px-3 py-1.5 rounded-md text-xs bg-accent text-white">Create Rule (definite)</button>
+          <button class="px-3 py-1.5 rounded-md text-xs bg-card border border-border">As "likely"</button>
+          <button class="px-3 py-1.5 rounded-md text-xs text-muted">Dismiss</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

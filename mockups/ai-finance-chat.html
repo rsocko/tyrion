@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Finance Chat — Mission Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: {
+        background: '#0a0a0a', card: '#141414', border: '#262626',
+        muted: '#737373', accent: '#3b82f6'
+      }}}
+    }
+  </script>
+</head>
+<body class="bg-background text-white min-h-screen flex flex-col">
+  <!-- Top Nav -->
+  <header class="border-b border-border px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <span class="text-lg font-semibold">Mission Control</span>
+      <nav class="flex gap-1 ml-6">
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Tasks</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Alerts</a>
+        <a href="dashboard.html" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Finance</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Today</a>
+        <a href="#" class="px-3 py-1.5 rounded-md text-sm bg-card text-white font-medium">AI</a>
+      </nav>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400 border border-green-800/50">Monarch MCP Connected</span>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-3xl mx-auto w-full px-6 py-6 flex flex-col">
+    <!-- Chat Context Indicator -->
+    <div class="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-card border border-border">
+      <span class="text-xs">💰</span>
+      <span class="text-xs text-muted">Finance mode — powered by Monarch MCP. Ask about spending, budgets, transactions, or accounts.</span>
+    </div>
+
+    <!-- Chat Messages -->
+    <div class="flex-1 space-y-6 overflow-y-auto mb-6">
+
+      <!-- User Message 1 -->
+      <div class="flex justify-end">
+        <div class="max-w-md bg-accent/20 border border-accent/30 rounded-xl px-4 py-3">
+          <p class="text-sm">What did Jake spend this week?</p>
+        </div>
+      </div>
+
+      <!-- AI Response 1 -->
+      <div class="flex justify-start">
+        <div class="max-w-lg bg-card border border-border rounded-xl px-4 py-3">
+          <p class="text-sm mb-3">Here's Jake's spending for this week (Jun 16–20):</p>
+
+          <div class="bg-zinc-900 rounded-lg p-3 mb-3 text-xs font-mono space-y-1">
+            <div class="flex justify-between"><span>Steam Purchase</span><span class="text-red-300">-$59.99</span></div>
+            <div class="flex justify-between"><span>Chick-fil-A #02341</span><span class="text-red-300">-$14.32</span></div>
+            <div class="flex justify-between"><span>McDonald's #38291</span><span class="text-red-300">-$12.48</span></div>
+            <div class="flex justify-between"><span>Roblox Premium</span><span class="text-red-300">-$12.99</span></div>
+            <div class="flex justify-between"><span>Five Below</span><span class="text-red-300">-$24.50</span></div>
+            <div class="flex justify-between border-t border-border pt-1 mt-1 font-bold"><span>Total</span><span class="text-red-300">-$124.28</span></div>
+          </div>
+
+          <div class="p-2 rounded-lg bg-red-950/20 border border-red-900/30 mb-2">
+            <p class="text-xs text-red-300">⚠️ This is $24.28 over his $100 weekly limit. Gaming accounts for $72.98 (59% of his spend).</p>
+          </div>
+
+          <p class="text-xs text-muted">Data from Monarch Money via MCP • as of 2 min ago</p>
+        </div>
+      </div>
+
+      <!-- User Message 2 -->
+      <div class="flex justify-end">
+        <div class="max-w-md bg-accent/20 border border-accent/30 rounded-xl px-4 py-3">
+          <p class="text-sm">How's my grocery budget looking this month?</p>
+        </div>
+      </div>
+
+      <!-- AI Response 2 -->
+      <div class="flex justify-start">
+        <div class="max-w-lg bg-card border border-border rounded-xl px-4 py-3">
+          <p class="text-sm mb-3">Your grocery budget for June:</p>
+
+          <div class="mb-3">
+            <div class="flex justify-between text-sm mb-1">
+              <span>Groceries</span>
+              <span class="text-yellow-400 font-mono">$680 / $700</span>
+            </div>
+            <div class="w-full h-3 bg-zinc-800 rounded-full overflow-hidden">
+              <div class="h-full bg-yellow-400 rounded-full" style="width: 97%"></div>
+            </div>
+            <p class="text-xs text-yellow-400 mt-1">97% used with 10 days remaining</p>
+          </div>
+
+          <p class="text-sm mb-2">Top merchants this month:</p>
+          <div class="bg-zinc-900 rounded-lg p-3 text-xs font-mono space-y-1">
+            <div class="flex justify-between"><span>Costco (3 trips)</span><span>$312</span></div>
+            <div class="flex justify-between"><span>ShopRite (6 trips)</span><span>$248</span></div>
+            <div class="flex justify-between"><span>Instacart (2 orders)</span><span>$87</span></div>
+            <div class="flex justify-between"><span>Trader Joe's (1 trip)</span><span>$33</span></div>
+          </div>
+
+          <p class="text-xs text-muted mt-3">💡 You're on pace to go $20-30 over. Consider skipping Instacart this week or doing a smaller ShopRite run.</p>
+        </div>
+      </div>
+
+      <!-- User Message 3 -->
+      <div class="flex justify-end">
+        <div class="max-w-md bg-accent/20 border border-accent/30 rounded-xl px-4 py-3">
+          <p class="text-sm">Move that Steam purchase to "Kids - Gaming" category</p>
+        </div>
+      </div>
+
+      <!-- AI Response 3 -->
+      <div class="flex justify-start">
+        <div class="max-w-lg bg-card border border-border rounded-xl px-4 py-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400 border border-green-800/50">✓ Done</span>
+          </div>
+          <p class="text-sm">Updated the Steam Purchase ($59.99, Jun 18) category from "Shopping" → "Kids - Gaming".</p>
+          <p class="text-xs text-muted mt-2">Written back to Monarch Money. This will also be reflected in your budget tracking.</p>
+        </div>
+      </div>
+
+      <!-- User Message 4 -->
+      <div class="flex justify-end">
+        <div class="max-w-md bg-accent/20 border border-accent/30 rounded-xl px-4 py-3">
+          <p class="text-sm">What subscriptions am I paying for? Anything look duplicated?</p>
+        </div>
+      </div>
+
+      <!-- AI Response 4 -->
+      <div class="flex justify-start">
+        <div class="max-w-lg bg-card border border-border rounded-xl px-4 py-3">
+          <p class="text-sm mb-3">Found 14 active subscriptions totaling <span class="font-mono font-bold">$187/month</span>:</p>
+
+          <div class="bg-zinc-900 rounded-lg p-3 text-xs font-mono space-y-1 mb-3">
+            <div class="flex justify-between"><span>Netflix (Standard)</span><span>$22.99</span></div>
+            <div class="flex justify-between"><span>Spotify Family</span><span>$16.99</span></div>
+            <div class="flex justify-between"><span>Disney+ Bundle</span><span>$13.99</span></div>
+            <div class="flex justify-between"><span>iCloud (2TB)</span><span>$9.99</span></div>
+            <div class="flex justify-between"><span>Cursor Pro</span><span>$20.00</span></div>
+            <div class="flex justify-between"><span>ChatGPT Plus</span><span>$20.00</span></div>
+            <div class="flex justify-between"><span>YouTube Premium</span><span>$22.99</span></div>
+            <div class="flex justify-between"><span>Monarch Money</span><span>$14.99</span></div>
+            <div class="flex justify-between"><span>1Password Family</span><span>$4.99</span></div>
+            <div class="flex justify-between"><span>Gym (Lifetime)</span><span>$49.00</span></div>
+            <div class="flex justify-between"><span>Hulu (no ads)</span><span>$17.99</span></div>
+            <div class="flex justify-between"><span>Adobe Creative Cloud</span><span>$54.99</span></div>
+            <div class="flex justify-between text-yellow-400"><span>⚠️ Hulu (with ads)</span><span>$7.99</span></div>
+            <div class="flex justify-between text-yellow-400"><span>⚠️ iCloud (200GB)</span><span>$2.99</span></div>
+          </div>
+
+          <div class="p-3 rounded-lg bg-yellow-950/20 border border-yellow-900/30">
+            <p class="text-xs text-yellow-300 font-medium mb-1">🔍 Potential duplicates found:</p>
+            <ul class="text-xs text-yellow-200 space-y-1 ml-3">
+              <li>• <strong>Hulu</strong>: You have both "no ads" ($17.99) and "with ads" ($7.99). The $7.99 may be from an old plan that wasn't cancelled.</li>
+              <li>• <strong>iCloud</strong>: You have both 2TB ($9.99) and 200GB ($2.99). The 200GB is likely superseded by the 2TB plan.</li>
+            </ul>
+            <p class="text-xs text-muted mt-2">Potential savings: ~$11/month ($132/year)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="border-t border-border pt-4">
+      <div class="flex gap-3">
+        <div class="flex-1 relative">
+          <input type="text" placeholder="Ask about your finances..." class="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent/50 placeholder:text-muted">
+          <div class="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
+            <button class="text-xs text-muted hover:text-white px-2 py-0.5 rounded bg-zinc-800">Transactions</button>
+            <button class="text-xs text-muted hover:text-white px-2 py-0.5 rounded bg-zinc-800">Budgets</button>
+          </div>
+        </div>
+        <button class="px-4 py-3 bg-accent text-white rounded-xl text-sm font-medium hover:bg-blue-600">Send</button>
+      </div>
+      <p class="text-xs text-muted mt-2 text-center">Powered by Monarch Money MCP • Read & write access enabled</p>
+    </div>
+  </main>
+</body>
+</html>
