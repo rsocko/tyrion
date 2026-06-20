@@ -9,7 +9,7 @@ A lightweight FastAPI microservice that wraps the `monarchmoneycommunity` Python
 - Can be restarted independently without affecting Mission Control
 - Enables future scaling (e.g., running on a different machine)
 
-## Setup
+## Quick Start (Demo Mode)
 
 ```bash
 # Create virtual environment
@@ -19,6 +19,15 @@ source venv/bin/activate  # or venv\Scripts\activate on Windows
 # Install dependencies
 pip install -r requirements.txt
 
+# Run with mock data (no credentials needed!)
+python main.py --demo
+
+# API docs at http://localhost:8100/docs
+```
+
+## Production Setup
+
+```bash
 # Configure
 cp config.example.env .env
 # Edit .env with your Monarch credentials
@@ -32,11 +41,20 @@ python main.py
 uvicorn main:app --host 0.0.0.0 --port 8100
 ```
 
+## Running Tests
+
+```bash
+python -m pytest test_bridge.py -v
+```
+
+Tests run in demo mode and require no credentials.
+
 ## Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Health check + session status |
+| POST | `/sync` | Trigger full transaction pull (Mission Control calls this) |
 | GET | `/transactions` | Fetch transactions with filters |
 | GET | `/transactions/{id}` | Single transaction detail |
 | PATCH | `/transactions/{id}/category` | Update category (writes to Monarch) |
@@ -45,6 +63,11 @@ uvicorn main:app --host 0.0.0.0 --port 8100
 | GET | `/recurring` | Recurring/subscription transactions |
 | GET | `/cashflow` | Income vs. expenses summary |
 | GET | `/budgets` | Budget status per category |
+| GET | `/docs` | Interactive API documentation (auto-generated) |
+
+## Demo Mode
+
+Use `--demo` flag or set `DEMO_MODE=true` in your environment. Returns realistic mock financial data so you can develop Mission Control connectors without live credentials.
 
 ## Authentication
 
