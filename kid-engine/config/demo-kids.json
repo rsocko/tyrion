@@ -1,0 +1,60 @@
+{
+  "kids": [
+    {
+      "id": "jake",
+      "name": "Jake",
+      "color": "blue",
+      "cardRules": [
+        { "last4": "4521", "confidence": "definite", "label": "Chase Debit" }
+      ],
+      "merchantRules": [
+        { "pattern": "ROBLOX", "confidence": "definite" },
+        { "pattern": "STEAM", "confidence": "definite" },
+        { "pattern": "EPIC GAMES", "confidence": "definite" },
+        { "pattern": "GAMESTOP", "confidence": "likely" },
+        { "pattern": "FIVE BELOW", "confidence": "likely" },
+        { "pattern": "CHICK-FIL-A", "confidence": "likely" }
+      ],
+      "thresholds": {
+        "daily": 30,
+        "weekly": 100,
+        "monthly": 300
+      }
+    },
+    {
+      "id": "emma",
+      "name": "Emma",
+      "color": "purple",
+      "cardRules": [
+        { "last4": "7890", "confidence": "definite", "label": "Amex Authorized User" }
+      ],
+      "merchantRules": [
+        { "pattern": "SEPHORA", "confidence": "likely" },
+        { "pattern": "ULTA", "confidence": "likely" },
+        { "pattern": "SHEIN", "confidence": "likely" },
+        { "pattern": "STARBUCKS", "confidence": "likely" }
+      ],
+      "thresholds": {
+        "daily": 25,
+        "weekly": 80,
+        "monthly": 250
+      }
+    },
+    {
+      "id": "sophie",
+      "name": "Sophie",
+      "color": "green",
+      "cardRules": [],
+      "merchantRules": [
+        { "pattern": "SCHOOL LUNCH", "confidence": "definite" },
+        { "pattern": "SCHOLASTIC", "confidence": "definite" },
+        { "pattern": "CLAIRE'S", "confidence": "likely" }
+      ],
+      "thresholds": {
+        "daily": 15,
+        "weekly": 50,
+        "monthly": 150
+      }
+    }
+  ]
+}

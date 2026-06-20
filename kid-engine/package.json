@@ -1,0 +1,17 @@
+{
+  "name": "@ideation/kid-attribution-engine",
+  "version": "0.1.0",
+  "description": "Kid attribution engine for personal finance management — assigns transactions to children based on card, merchant, and pattern rules",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
