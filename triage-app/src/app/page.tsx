@@ -1,227 +1,153 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { TriageTransaction, FilterTab, RuleSuggestion } from "@/lib/types";
-import { mockTransactions, kids, ruleSuggestions } from "@/lib/mock-data";
-import { TransactionCard } from "@/components/transaction-card";
-import { Toast } from "@/components/toast";
+import Link from "next/link";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { KidBadge } from "@/components/ui/KidBadge";
+import {
+  summaryCards,
+  kidsWeekly,
+  budgetItems,
+  financeAlerts,
+  upcomingBills,
+} from "@/lib/mock-dashboard-data";
 
-export default function TriageInbox() {
-  const [transactions, setTransactions] = useState<TriageTransaction[]>(mockTransactions);
-  const [activeTab, setActiveTab] = useState<FilterTab>("all");
-  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState<string | null>(null);
-  const [dismissedRules, setDismissedRules] = useState<Set<string>>(new Set());
+const alertColorMap = {
+  red: { bg: "bg-red-950/30", border: "border-red-900/50", dot: "text-red-400" },
+  yellow: { bg: "bg-yellow-950/30", border: "border-yellow-900/50", dot: "text-yellow-400" },
+  blue: { bg: "bg-zinc-800/50", border: "border-border", dot: "text-blue-400" },
+};
 
-  const filteredTransactions = transactions.filter((txn) => {
-    if (removingIds.has(txn.id)) return true;
-    switch (activeTab) {
-      case "uncategorized":
-        return txn.triageStatus === "uncategorized";
-      case "unassigned":
-        return !txn.suggestedKidId && txn.triageStatus !== "flagged";
-      case "flagged":
-        return txn.triageStatus === "flagged";
-      default:
-        return true;
-    }
-  });
+const kidBarColors: Record<string, string> = {
+  blue: "bg-blue-500",
+  purple: "bg-purple-500",
+  green: "bg-green-500",
+};
 
-  const counts = {
-    all: transactions.length,
-    uncategorized: transactions.filter((t) => t.triageStatus === "uncategorized").length,
-    unassigned: transactions.filter((t) => !t.suggestedKidId && t.triageStatus !== "flagged").length,
-    flagged: transactions.filter((t) => t.triageStatus === "flagged").length,
-  };
-
-  const removeTransaction = useCallback((id: string, message: string) => {
-    setRemovingIds((prev) => new Set(prev).add(id));
-    setToast(message);
-    setTimeout(() => {
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
-      setRemovingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }, 300);
-    setTimeout(() => setToast(null), 2500);
-  }, []);
-
-  const handleAssignKid = useCallback(
-    (txnId: string, kidName: string) => {
-      removeTransaction(txnId, `Assigned to ${kidName} ✓`);
-    },
-    [removeTransaction]
-  );
-
-  const handleConfirmCategory = useCallback(
-    (txnId: string, category: string) => {
-      removeTransaction(txnId, `Categorized as "${category}" ✓`);
-    },
-    [removeTransaction]
-  );
-
-  const handleFlag = useCallback(
-    (txnId: string) => {
-      setTransactions((prev) =>
-        prev.map((t) =>
-          t.id === txnId ? { ...t, triageStatus: "flagged" as const, flagReason: "Manually flagged for review" } : t
-        )
-      );
-      setToast("Flagged for review 🚩");
-      setTimeout(() => setToast(null), 2500);
-    },
-    []
-  );
-
-  const handleSkip = useCallback((txnId: string) => {
-    setTransactions((prev) => {
-      const idx = prev.findIndex((t) => t.id === txnId);
-      if (idx === -1) return prev;
-      const item = prev[idx];
-      return [...prev.slice(0, idx), ...prev.slice(idx + 1), item];
-    });
-    setToast("Skipped — moved to end");
-    setTimeout(() => setToast(null), 2500);
-  }, []);
-
-  const handleDismissRule = useCallback((pattern: string) => {
-    setDismissedRules((prev) => new Set(prev).add(pattern));
-  }, []);
-
-  const visibleRules = ruleSuggestions.filter((r) => !dismissedRules.has(r.merchantPattern));
-
-  const tabs: { key: FilterTab; label: string; count: number }[] = [
-    { key: "all", label: "All", count: counts.all },
-    { key: "uncategorized", label: "Uncategorized", count: counts.uncategorized },
-    { key: "unassigned", label: "Unassigned Kid", count: counts.unassigned },
-    { key: "flagged", label: "Flagged", count: counts.flagged },
-  ];
-
+export default function DashboardPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <header className="border-b border-border px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <span className="text-lg font-semibold">Mission Control</span>
-          <nav className="flex gap-1 ml-6">
-            <span className="px-3 py-1.5 rounded-md text-sm text-muted">Tasks</span>
-            <span className="px-3 py-1.5 rounded-md text-sm text-muted">Alerts</span>
-            <span className="px-3 py-1.5 rounded-md text-sm bg-card text-white font-medium">Finance</span>
-            <span className="px-3 py-1.5 rounded-md text-sm text-muted">Today</span>
-            <span className="px-3 py-1.5 rounded-md text-sm text-muted">AI</span>
-          </nav>
-        </div>
-        <div className="text-xs text-muted">{counts.all} items to review</div>
-      </header>
-
-      <main className="max-w-2xl mx-auto px-6 py-8">
-        {/* Page Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">Transaction Triage</h1>
-            <p className="text-sm text-muted mt-1">Review, categorize, and assign transactions</p>
-          </div>
-          <div className="flex gap-2 items-center">
-            <span className="text-xs bg-accent/20 text-accent px-2 py-1 rounded-full">
-              {counts.all} remaining
-            </span>
-          </div>
-        </div>
-
-        {/* Filter Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-border pb-3">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                activeTab === tab.key
-                  ? "bg-accent text-white"
-                  : "text-muted hover:bg-card"
-              }`}
-            >
-              {tab.label} ({tab.count})
-            </button>
-          ))}
-        </div>
-
-        {/* Transaction Cards */}
-        <div className="space-y-3">
-          {filteredTransactions.length === 0 ? (
-            <div className="text-center py-12 text-muted">
-              <p className="text-lg">🎉 All caught up!</p>
-              <p className="text-sm mt-1">No transactions need attention in this view.</p>
-            </div>
-          ) : (
-            filteredTransactions.map((txn) => (
-              <TransactionCard
-                key={txn.id}
-                transaction={txn}
-                kids={kids}
-                isRemoving={removingIds.has(txn.id)}
-                onAssignKid={handleAssignKid}
-                onConfirmCategory={handleConfirmCategory}
-                onFlag={handleFlag}
-                onSkip={handleSkip}
-              />
-            ))
-          )}
-        </div>
-
-        {/* Rule Suggestions */}
-        {visibleRules.map((rule) => (
-          <RuleSuggestionBanner
-            key={rule.merchantPattern}
-            rule={rule}
-            onDismiss={() => handleDismissRule(rule.merchantPattern)}
-          />
-        ))}
-      </main>
-
-      {/* Toast */}
-      {toast && <Toast message={toast} />}
-    </div>
-  );
-}
-
-function RuleSuggestionBanner({
-  rule,
-  onDismiss,
-}: {
-  rule: RuleSuggestion;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="mt-6 p-4 rounded-xl bg-accent/5 border border-accent/20 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="max-w-7xl mx-auto px-6 py-6">
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <p className="text-sm font-medium">💡 Rule suggestion</p>
-          <p className="text-xs text-muted mt-0.5">
-            You&apos;ve assigned &ldquo;{rule.merchantPattern}&rdquo; to {rule.kidName}{" "}
-            {rule.assignmentCount} times this month. Create an auto-rule?
-          </p>
+          <h1 className="text-2xl font-bold">Finance Dashboard</h1>
+          <p className="text-sm text-muted mt-1">June 2026 • Week 3</p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={onDismiss}
-            className="px-3 py-1.5 rounded-md text-xs bg-accent text-white hover:bg-accent/90"
-          >
-            Create Rule
-          </button>
-          <button
-            onClick={onDismiss}
-            className="px-3 py-1.5 rounded-md text-xs bg-card border border-border hover:bg-card/80"
-          >
-            As &ldquo;likely&rdquo;
-          </button>
-          <button
-            onClick={onDismiss}
-            className="px-3 py-1.5 rounded-md text-xs text-muted hover:text-white"
-          >
-            Dismiss
-          </button>
+          <button className="px-3 py-1.5 rounded-md text-sm bg-card border border-border">This Month</button>
+          <button className="px-3 py-1.5 rounded-md text-sm text-muted border border-border/50">Last Month</button>
+          <button className="px-3 py-1.5 rounded-md text-sm text-muted border border-border/50">Custom</button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        {summaryCards.map((card) => (
+          <div key={card.label} className="bg-card border border-border rounded-xl p-4">
+            <p className="text-xs text-muted uppercase tracking-wider">{card.label}</p>
+            <p className="text-2xl font-bold mt-1">{card.value}</p>
+            <p className={`text-xs ${card.trendColor} mt-1`}>
+              {card.label === "Needs Review" ? (
+                <Link href="/triage" className="hover:underline">{card.trend}</Link>
+              ) : (
+                card.trend
+              )}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-3 gap-6">
+        {/* Left: Per-Kid Spending */}
+        <div className="col-span-1 bg-card border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Kids This Week</h2>
+
+          {kidsWeekly.map((kid) => (
+            <div key={kid.id} className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <KidBadge name={kid.name} color={kid.color} />
+                <span className="text-sm font-mono">
+                  ${kid.spent}{" "}
+                  <span className={kid.spent > kid.limit ? "text-red-400" : "text-muted"}>/ ${kid.limit}</span>
+                </span>
+              </div>
+              <ProgressBar value={kid.spent} max={kid.limit} color={kidBarColors[kid.color]} showOverflow />
+              {kid.warning && <p className="text-xs text-red-400 mt-1">{kid.warning}</p>}
+            </div>
+          ))}
+
+          <Link href="/kids" className="text-xs text-accent hover:underline mt-2 block">
+            View kid details →
+          </Link>
+        </div>
+
+        {/* Center: Budget vs Actual */}
+        <div className="col-span-1 bg-card border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Budget vs Actual</h2>
+
+          <div className="space-y-3">
+            {budgetItems.map((item) => {
+              const isOver = item.spent > item.budget;
+              const isNear = item.spent / item.budget > 0.9;
+              const color = isOver ? "text-red-400" : isNear ? "text-yellow-400" : "text-muted";
+              const barColor = isOver ? "bg-red-400" : isNear ? "bg-yellow-400" : "bg-zinc-500";
+              return (
+                <div key={item.category}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>{item.category}</span>
+                    <span className={color}>${item.spent} / ${item.budget}</span>
+                  </div>
+                  <ProgressBar value={item.spent} max={item.budget} color={barColor} height="h-1.5" />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right: Alerts + Upcoming Bills */}
+        <div className="col-span-1 space-y-4">
+          {/* Alerts */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Finance Alerts</h2>
+            <div className="space-y-2">
+              {financeAlerts.map((alert) => {
+                const colors = alertColorMap[alert.severity];
+                return (
+                  <div key={alert.id} className={`flex items-start gap-2 p-2 rounded-lg ${colors.bg} border ${colors.border}`}>
+                    <span className={`${colors.dot} text-xs mt-0.5`}>●</span>
+                    <div>
+                      <p className="text-xs font-medium">{alert.message}</p>
+                      <p className="text-xs text-muted">{alert.detail}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Upcoming Bills */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Upcoming Bills</h2>
+            <div className="space-y-2">
+              {upcomingBills.map((bill, i) => (
+                <div
+                  key={bill.id}
+                  className={`flex justify-between items-center py-1.5 ${
+                    i < upcomingBills.length - 1 ? "border-b border-border/50" : ""
+                  }`}
+                >
+                  <div>
+                    <p className="text-xs font-medium">{bill.name}</p>
+                    <p className="text-xs text-muted">{bill.dueDate}</p>
+                  </div>
+                  <span className="text-sm font-mono">${bill.amount.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+            <Link href="/bills" className="text-xs text-accent hover:underline mt-3 block">
+              View full calendar →
+            </Link>
+          </div>
         </div>
       </div>
     </div>

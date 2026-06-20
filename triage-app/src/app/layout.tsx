@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppShell } from "@/components/layout/AppShell";
 
 export const metadata: Metadata = {
-  title: "Transaction Triage — Mission Control",
-  description: "Review, categorize, and assign transactions",
+  title: "Finance App",
+  description: "Personal finance management dashboard",
 };
 
 export default function RootLayout({
@@ -14,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="antialiased">
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
