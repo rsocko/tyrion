@@ -1,0 +1,277 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { login, getAuthStatus, logout, syncData } from "@/lib/bridge-client";
+
+type ConnectionStatus = "connected" | "disconnected" | "checking" | "error";
+
+export default function SettingsPage() {
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("checking");
+  const [email, setEmail] = useState("");
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [mode, setMode] = useState<string>("unknown");
+
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [showMfa, setShowMfa] = useState(false);
+
+  // Sync controls
+  const [syncInterval, setSyncInterval] = useState("4h");
+  const [syncing, setSyncing] = useState(false);
+
+  // Toast
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const checkStatus = useCallback(async () => {
+    setConnectionStatus("checking");
+    const res = await getAuthStatus();
+    if (res.data) {
+      setMode(res.data.mode);
+      if (res.data.authenticated) {
+        setConnectionStatus("connected");
+        setEmail(res.data.email || "");
+      } else {
+        setConnectionStatus("disconnected");
+      }
+    } else {
+      setConnectionStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    setLoginLoading(true);
+
+    const res = await login(loginEmail, loginPassword, mfaCode || undefined);
+
+    if (res.data) {
+      showToast("✓ Connected to Monarch Money");
+      setConnectionStatus("connected");
+      setEmail(loginEmail);
+      setLoginEmail("");
+      setLoginPassword("");
+      setMfaCode("");
+      setShowMfa(false);
+    } else if (res.status === 403) {
+      setShowMfa(true);
+      setLoginError("MFA code required. Enter your authenticator code below.");
+    } else if (res.status === 401) {
+      setLoginError("Invalid email or password.");
+    } else {
+      setLoginError(res.error || "Connection failed. Is the bridge running?");
+    }
+
+    setLoginLoading(false);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setConnectionStatus("disconnected");
+    setEmail("");
+    showToast("Disconnected from Monarch Money");
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    const days = syncInterval === "1h" ? 7 : syncInterval === "4h" ? 30 : syncInterval === "12h" ? 60 : 90;
+    const res = await syncData(days);
+    if (res.data) {
+      setLastSync(new Date().toLocaleString());
+      showToast(`Synced ${res.data.transactions_fetched} transactions`);
+    } else {
+      showToast("Sync failed — check connection");
+    }
+    setSyncing(false);
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto px-6 py-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="text-sm text-muted mt-1">Manage your Monarch Money connection and preferences</p>
+      </div>
+
+      {/* Connection Status Card */}
+      <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${
+              connectionStatus === "connected" ? "bg-emerald-500" :
+              connectionStatus === "checking" ? "bg-yellow-500 animate-pulse" :
+              "bg-red-500"
+            }`} />
+            <div>
+              <h2 className="text-sm font-semibold">Monarch Money Connection</h2>
+              <p className="text-xs text-muted mt-0.5">
+                {connectionStatus === "connected" && `Connected as ${email}`}
+                {connectionStatus === "disconnected" && "Not connected"}
+                {connectionStatus === "checking" && "Checking connection..."}
+                {connectionStatus === "error" && "Bridge unavailable — is it running on port 8100?"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {mode !== "unknown" && (
+              <span className="text-xs px-2 py-0.5 rounded bg-[#1a1a1a] border border-[#333] text-muted">
+                {mode} mode
+              </span>
+            )}
+            {connectionStatus === "connected" && (
+              <button
+                onClick={handleLogout}
+                className="text-xs px-3 py-1.5 rounded-md border border-red-900/50 text-red-400 hover:bg-red-950/30 transition-colors"
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
+        </div>
+        {lastSync && (
+          <p className="text-xs text-muted mt-3 border-t border-[#262626] pt-3">
+            Last sync: {lastSync}
+          </p>
+        )}
+      </div>
+
+      {/* Login Form — only shown when disconnected */}
+      {(connectionStatus === "disconnected" || connectionStatus === "error") && (
+        <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 mb-6">
+          <h2 className="text-sm font-semibold mb-4">Connect to Monarch Money</h2>
+          <form onSubmit={handleLogin} className="space-y-3">
+            <div>
+              <label className="text-xs text-muted block mb-1">Email</label>
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                className="w-full px-3 py-2 rounded-md bg-[#0a0a0a] border border-[#333] text-sm focus:outline-none focus:border-emerald-500/50"
+                placeholder="your@email.com"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted block mb-1">Password</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                className="w-full px-3 py-2 rounded-md bg-[#0a0a0a] border border-[#333] text-sm focus:outline-none focus:border-emerald-500/50"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            {showMfa && (
+              <div>
+                <label className="text-xs text-muted block mb-1">MFA Code</label>
+                <input
+                  type="text"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-[#0a0a0a] border border-[#333] text-sm focus:outline-none focus:border-emerald-500/50"
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                />
+              </div>
+            )}
+            {loginError && (
+              <p className="text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded-md px-3 py-2">
+                {loginError}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={loginLoading}
+              className="w-full py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {loginLoading ? "Connecting..." : "Connect"}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Sync Controls */}
+      <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 mb-6">
+        <h2 className="text-sm font-semibold mb-4">Sync Controls</h2>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleSync}
+            disabled={syncing || connectionStatus !== "connected"}
+            className="px-4 py-2 rounded-md bg-[#1a1a1a] border border-[#333] text-sm hover:bg-[#222] transition-colors disabled:opacity-50"
+          >
+            {syncing ? "Syncing..." : "Sync Now"}
+          </button>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted">Interval:</label>
+            <select
+              value={syncInterval}
+              onChange={(e) => setSyncInterval(e.target.value)}
+              className="px-2 py-1 rounded-md bg-[#0a0a0a] border border-[#333] text-sm focus:outline-none"
+            >
+              <option value="1h">Every 1 hour</option>
+              <option value="4h">Every 4 hours</option>
+              <option value="12h">Every 12 hours</option>
+              <option value="daily">Daily</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Kids Configuration (placeholder) */}
+      <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 mb-6">
+        <h2 className="text-sm font-semibold mb-3">Kid Configuration</h2>
+        <p className="text-xs text-muted mb-3">Manage spending limits and categories per child.</p>
+        <div className="space-y-2">
+          {["Jake", "Emma", "Sophie"].map((kid) => (
+            <div key={kid} className="flex items-center justify-between py-2 border-b border-[#262626] last:border-0">
+              <span className="text-sm">{kid}</span>
+              <span className="text-xs text-muted">Configured</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Alert Preferences (placeholder) */}
+      <div className="bg-[#141414] border border-[#262626] rounded-xl p-5">
+        <h2 className="text-sm font-semibold mb-3">Alert Preferences</h2>
+        <p className="text-xs text-muted">Configure when and how you receive spending alerts.</p>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Budget overages</span>
+            <span className="text-xs text-emerald-500">Enabled</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Kid spending alerts</span>
+            <span className="text-xs text-emerald-500">Enabled</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Large transactions (&gt;$200)</span>
+            <span className="text-xs text-emerald-500">Enabled</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
+          <div className="bg-zinc-800 border border-[#333] text-white text-sm px-4 py-2.5 rounded-lg shadow-xl">
+            {toast}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

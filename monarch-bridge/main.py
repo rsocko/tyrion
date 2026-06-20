@@ -16,6 +16,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -199,27 +200,13 @@ async def get_client():
     if mm is None:
         from monarchmoney import MonarchMoney
         mm = MonarchMoney()
-        session_file = Path(os.getenv("SESSION_FILE", "~/.monarch_session")).expanduser()
+        session_file = SESSION_FILE
 
         if session_file.exists():
             mm.load_session(str(session_file))
             logger.info("Loaded existing Monarch session from %s", session_file)
         else:
-            email = os.getenv("MONARCH_EMAIL")
-            password = os.getenv("MONARCH_PASSWORD")
-            mfa_secret = os.getenv("MONARCH_MFA_SECRET")
-
-            if not email or not password:
-                raise HTTPException(500, "MONARCH_EMAIL and MONARCH_PASSWORD must be set")
-
-            logger.info("Logging into Monarch Money as %s", email)
-            if mfa_secret:
-                await mm.login(email, password, mfa_secret_key=mfa_secret)
-            else:
-                await mm.login(email, password)
-
-            mm.save_session(str(session_file))
-            logger.info("Monarch session saved to %s", session_file)
+            raise HTTPException(401, detail={"error": "not_authenticated", "message": "Please authenticate via /auth/login"})
 
     return mm
 
@@ -240,10 +227,19 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="Monarch Bridge",
-    version="0.2.0",
+    version="0.3.0",
     description="Bridge service between Mission Control and Monarch Money. "
                 "Run with --demo flag for development without credentials.",
     lifespan=lifespan,
+)
+
+# CORS middleware for local development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -268,6 +264,100 @@ class SyncResponse(BaseModel):
     accounts_synced: int
     sync_timestamp: str
     date_range: dict
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+    mfa_code: Optional[str] = None
+
+
+class AuthStatusResponse(BaseModel):
+    authenticated: bool
+    email: Optional[str] = None
+    session_file: Optional[str] = None
+    mode: str
+
+
+# ---------------------------------------------------------------------------
+# Auth Endpoints
+# ---------------------------------------------------------------------------
+SESSION_FILE = Path(os.getenv("SESSION_FILE", "~/.monarch_session")).expanduser()
+
+
+@app.post("/auth/login")
+async def auth_login(request: LoginRequest):
+    """Authenticate with Monarch Money using email/password + optional MFA."""
+    if DEMO_MODE:
+        return {"status": "success", "message": "Demo mode - no real auth needed", "email": request.email}
+
+    try:
+        from monarchmoney import MonarchMoney
+
+        global mm
+        client = MonarchMoney()
+
+        if request.mfa_code:
+            await client.login(request.email, request.password, mfa_secret_key=request.mfa_code)
+        else:
+            await client.login(request.email, request.password)
+
+        client.save_session(str(SESSION_FILE))
+        mm = client
+        logger.info("Login successful for %s", request.email)
+        return {"status": "success", "message": "Authenticated successfully", "email": request.email}
+
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "mfa" in error_msg or "multi-factor" in error_msg or "two-factor" in error_msg:
+            raise HTTPException(403, detail={"error": "mfa_required", "message": "MFA code is required"})
+        elif "password" in error_msg or "credentials" in error_msg or "unauthorized" in error_msg:
+            raise HTTPException(401, detail={"error": "invalid_credentials", "message": "Invalid email or password"})
+        else:
+            logger.error("Login failed: %s", e)
+            raise HTTPException(500, detail={"error": "login_failed", "message": str(e)})
+
+
+@app.get("/auth/status")
+async def auth_status():
+    """Check whether the current session is active."""
+    if DEMO_MODE:
+        return AuthStatusResponse(authenticated=True, email="demo@example.com", mode="demo")
+
+    if SESSION_FILE.exists():
+        try:
+            from monarchmoney import MonarchMoney
+            global mm
+            if mm is None:
+                client = MonarchMoney()
+                client.load_session(str(SESSION_FILE))
+                mm = client
+            # Try a lightweight call to verify session is valid
+            await mm.get_accounts()
+            return AuthStatusResponse(
+                authenticated=True,
+                email=os.getenv("MONARCH_EMAIL", "authenticated"),
+                session_file=str(SESSION_FILE),
+                mode="live",
+            )
+        except Exception as e:
+            logger.warning("Session invalid: %s", e)
+            return AuthStatusResponse(authenticated=False, mode="live")
+    else:
+        return AuthStatusResponse(authenticated=False, mode="live")
+
+
+@app.post("/auth/logout")
+async def auth_logout():
+    """Clear cached session and log out."""
+    global mm
+    mm = None
+
+    if SESSION_FILE.exists():
+        SESSION_FILE.unlink()
+        logger.info("Session file removed: %s", SESSION_FILE)
+
+    return {"status": "logged_out", "message": "Session cleared"}
 
 
 # ---------------------------------------------------------------------------
@@ -497,9 +587,8 @@ if __name__ == "__main__":
         async def setup():
             client = MonarchMoney()
             await client.interactive_login()
-            session_file = Path(os.getenv("SESSION_FILE", "~/.monarch_session")).expanduser()
-            client.save_session(str(session_file))
-            print(f"Session saved to {session_file}")
+            client.save_session(str(SESSION_FILE))
+            print(f"Session saved to {SESSION_FILE}")
 
         asyncio.run(setup())
     else:

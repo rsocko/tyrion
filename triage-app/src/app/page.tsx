@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { KidBadge } from "@/components/ui/KidBadge";
@@ -10,6 +11,7 @@ import {
   financeAlerts,
   upcomingBills,
 } from "@/lib/mock-dashboard-data";
+import { getAccounts, getBudgets, getCashflow } from "@/lib/bridge-client";
 
 const alertColorMap = {
   red: { bg: "bg-red-950/30", border: "border-red-900/50", dot: "text-red-400" },
@@ -24,6 +26,36 @@ const kidBarColors: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+  const [dataSource, setDataSource] = useState<"mock" | "live">("mock");
+  const [liveSummary, setLiveSummary] = useState<{ income: number; expenses: number; accounts: number } | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+
+  useEffect(() => {
+    if (dataSource === "live") {
+      setLiveLoading(true);
+      Promise.all([getCashflow(), getAccounts(), getBudgets()])
+        .then(([cashRes, accRes]) => {
+          if (cashRes.data && accRes.data) {
+            setLiveSummary({
+              income: cashRes.data.totalIncome,
+              expenses: Math.abs(cashRes.data.totalExpenses),
+              accounts: accRes.data.accounts.length,
+            });
+          }
+        })
+        .finally(() => setLiveLoading(false));
+    }
+  }, [dataSource]);
+
+  const displaySummary = dataSource === "live" && liveSummary
+    ? [
+        { ...summaryCards[0], value: `$${liveSummary.income.toLocaleString()}` },
+        { ...summaryCards[1], value: `$${liveSummary.expenses.toLocaleString()}` },
+        { ...summaryCards[2], value: `${liveSummary.accounts} accounts` },
+        summaryCards[3],
+      ]
+    : summaryCards;
+
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
       {/* Page Header */}
@@ -32,16 +64,41 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold">Finance Dashboard</h1>
           <p className="text-sm text-muted mt-1">June 2026 • Week 3</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* Data Source Toggle */}
+          <div className="flex items-center gap-1 mr-4 bg-[#141414] border border-[#262626] rounded-lg p-0.5">
+            <button
+              onClick={() => setDataSource("mock")}
+              className={`px-3 py-1 rounded-md text-xs transition-colors ${
+                dataSource === "mock" ? "bg-[#262626] text-white" : "text-muted hover:text-white"
+              }`}
+            >
+              Mock Data
+            </button>
+            <button
+              onClick={() => setDataSource("live")}
+              className={`px-3 py-1 rounded-md text-xs transition-colors ${
+                dataSource === "live" ? "bg-emerald-900/50 text-emerald-400 border border-emerald-800/50" : "text-muted hover:text-white"
+              }`}
+            >
+              Live Data
+            </button>
+          </div>
           <button className="px-3 py-1.5 rounded-md text-sm bg-card border border-border">This Month</button>
           <button className="px-3 py-1.5 rounded-md text-sm text-muted border border-border/50">Last Month</button>
           <button className="px-3 py-1.5 rounded-md text-sm text-muted border border-border/50">Custom</button>
         </div>
       </div>
 
+      {liveLoading && dataSource === "live" && (
+        <div className="mb-4 px-3 py-2 rounded-md bg-emerald-950/20 border border-emerald-900/30 text-xs text-emerald-400">
+          Fetching live data from Monarch Money...
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        {summaryCards.map((card) => (
+        {displaySummary.map((card) => (
           <div key={card.label} className="bg-card border border-border rounded-xl p-4">
             <p className="text-xs text-muted uppercase tracking-wider">{card.label}</p>
             <p className="text-2xl font-bold mt-1">{card.value}</p>

@@ -11,6 +11,10 @@ const navItems = [
   { href: "/chat", label: "Chat", icon: "💬" },
 ];
 
+const bottomNavItems = [
+  { href: "/settings", label: "Settings", icon: "⚙️" },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
 
@@ -21,12 +25,33 @@ export function Sidebar() {
         <p className="text-xs text-muted mt-0.5">Personal Finance Manager</p>
       </div>
 
-      <nav className="flex-1 px-3 py-4">
+      <nav className="flex-1 px-3 py-4 flex flex-col">
         <ul className="space-y-1">
           {navItems.map((item) => {
             const isActive =
               pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href));
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    isActive
+                      ? "bg-accent/10 text-white font-medium border border-accent/20"
+                      : "text-muted hover:text-white hover:bg-card"
+                  }`}
+                >
+                  <span className="text-base">{item.icon}</span>
+                  {item.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+
+        <ul className="mt-auto space-y-1">
+          {bottomNavItems.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href);
             return (
               <li key={item.href}>
                 <Link
