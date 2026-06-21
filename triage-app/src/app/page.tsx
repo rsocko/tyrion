@@ -10,8 +10,11 @@ import {
   budgetItems,
   financeAlerts,
   upcomingBills,
+  BudgetItem,
+  UpcomingBill,
 } from "@/lib/mock-dashboard-data";
-import { getAccounts, getBudgets, getCashflow } from "@/lib/bridge-client";
+import { getAccounts, getBudgets, getCashflow, getRecurring } from "@/lib/bridge-client";
+import { setDataSourcePreference } from "@/lib/use-data-source";
 
 const alertColorMap = {
   red: { bg: "bg-red-950/30", border: "border-red-900/50", dot: "text-red-400" },
@@ -25,33 +28,83 @@ const kidBarColors: Record<string, string> = {
   green: "bg-green-500",
 };
 
+interface LiveDashboardData {
+  income: number;
+  expenses: number;
+  accounts: number;
+  budgets: BudgetItem[];
+  bills: UpcomingBill[];
+}
+
 export default function DashboardPage() {
   const [dataSource, setDataSource] = useState<"mock" | "live">("mock");
-  const [liveSummary, setLiveSummary] = useState<{ income: number; expenses: number; accounts: number } | null>(null);
+  const [liveData, setLiveData] = useState<LiveDashboardData | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
+
+  // Load persisted data source preference
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("finance-data-source");
+      if (saved === "live" || saved === "mock") setDataSource(saved);
+    } catch {}
+  }, []);
+
+  const handleSetDataSource = (source: "mock" | "live") => {
+    setDataSource(source);
+    setDataSourcePreference(source);
+  };
 
   useEffect(() => {
     if (dataSource === "live") {
       setLiveLoading(true);
-      Promise.all([getCashflow(), getAccounts(), getBudgets()])
-        .then(([cashRes, accRes]) => {
+      Promise.all([getCashflow(), getAccounts(), getBudgets(), getRecurring()])
+        .then(([cashRes, accRes, budgetRes, recurringRes]) => {
+          const data: LiveDashboardData = {
+            income: 0,
+            expenses: 0,
+            accounts: 0,
+            budgets: [],
+            bills: [],
+          };
+
           if (cashRes.data && accRes.data) {
-            setLiveSummary({
-              income: cashRes.data.totalIncome,
-              expenses: Math.abs(cashRes.data.totalExpenses),
-              accounts: accRes.data.accounts.length,
-            });
+            data.income = cashRes.data.totalIncome;
+            data.expenses = Math.abs(cashRes.data.totalExpenses);
+            data.accounts = accRes.data.accounts.length;
           }
+
+          // Map budget data
+          if (budgetRes.data && Array.isArray(budgetRes.data.budgets) && budgetRes.data.budgets.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            data.budgets = budgetRes.data.budgets.slice(0, 6).map((b: any) => ({
+              category: b.category?.name || b.name || "Unknown",
+              spent: Math.abs(b.currentAmount || b.spent || 0),
+              budget: b.budgetAmount || b.limit || b.budget || 0,
+            }));
+          }
+
+          // Map recurring bills
+          if (recurringRes.data && Array.isArray(recurringRes.data.recurring) && recurringRes.data.recurring.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            data.bills = recurringRes.data.recurring.slice(0, 5).map((r: any, i: number) => ({
+              id: r.id || `recurring-${i}`,
+              name: r.name || r.merchant?.name || "Unknown",
+              dueDate: r.nextDate || r.nextDueDate || "Upcoming",
+              amount: Math.abs(r.amount || 0),
+            }));
+          }
+
+          setLiveData(data);
         })
         .finally(() => setLiveLoading(false));
     }
   }, [dataSource]);
 
-  const displaySummary = dataSource === "live" && liveSummary
+  const displaySummary = dataSource === "live" && liveData
     ? [
-        { ...summaryCards[0], value: `$${liveSummary.income.toLocaleString()}` },
-        { ...summaryCards[1], value: `$${liveSummary.expenses.toLocaleString()}` },
-        { ...summaryCards[2], value: `${liveSummary.accounts} accounts` },
+        { ...summaryCards[0], value: `$${liveData.income.toLocaleString()}` },
+        { ...summaryCards[1], value: `$${liveData.expenses.toLocaleString()}` },
+        { ...summaryCards[2], value: `${liveData.accounts} accounts` },
         summaryCards[3],
       ]
     : summaryCards;
@@ -68,7 +121,7 @@ export default function DashboardPage() {
           {/* Data Source Toggle */}
           <div className="flex items-center gap-1 mr-4 bg-[#141414] border border-[#262626] rounded-lg p-0.5">
             <button
-              onClick={() => setDataSource("mock")}
+              onClick={() => handleSetDataSource("mock")}
               className={`px-3 py-1 rounded-md text-xs transition-colors ${
                 dataSource === "mock" ? "bg-[#262626] text-white" : "text-muted hover:text-white"
               }`}
@@ -76,7 +129,7 @@ export default function DashboardPage() {
               Mock Data
             </button>
             <button
-              onClick={() => setDataSource("live")}
+              onClick={() => handleSetDataSource("live")}
               className={`px-3 py-1 rounded-md text-xs transition-colors ${
                 dataSource === "live" ? "bg-emerald-900/50 text-emerald-400 border border-emerald-800/50" : "text-muted hover:text-white"
               }`}
@@ -119,19 +172,31 @@ export default function DashboardPage() {
         <div className="col-span-1 bg-card border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Kids This Week</h2>
 
-          {kidsWeekly.map((kid) => (
-            <div key={kid.id} className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <KidBadge name={kid.name} color={kid.color} />
-                <span className="text-sm font-mono">
-                  ${kid.spent}{" "}
-                  <span className={kid.spent > kid.limit ? "text-red-400" : "text-muted"}>/ ${kid.limit}</span>
-                </span>
-              </div>
-              <ProgressBar value={kid.spent} max={kid.limit} color={kidBarColors[kid.color]} showOverflow />
-              {kid.warning && <p className="text-xs text-red-400 mt-1">{kid.warning}</p>}
+          {dataSource === "live" ? (
+            <div className="border border-dashed border-[#333] rounded-lg p-4">
+              <p className="text-sm text-[#666]">Coming Soon</p>
+              <p className="text-xs text-[#555] mt-1">Configure kid rules in Settings to track per-kid spending automatically.</p>
+              <Link href="/settings" className="text-xs text-accent hover:underline mt-3 block">
+                Configure Kids →
+              </Link>
             </div>
-          ))}
+          ) : (
+            <>
+              {kidsWeekly.map((kid) => (
+                <div key={kid.id} className="mb-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <KidBadge name={kid.name} color={kid.color} />
+                    <span className="text-sm font-mono">
+                      ${kid.spent}{" "}
+                      <span className={kid.spent > kid.limit ? "text-red-400" : "text-muted"}>/ ${kid.limit}</span>
+                    </span>
+                  </div>
+                  <ProgressBar value={kid.spent} max={kid.limit} color={kidBarColors[kid.color]} showOverflow />
+                  {kid.warning && <p className="text-xs text-red-400 mt-1">{kid.warning}</p>}
+                </div>
+              ))}
+            </>
+          )}
 
           <Link href="/kids" className="text-xs text-accent hover:underline mt-2 block">
             View kid details →
@@ -142,23 +207,50 @@ export default function DashboardPage() {
         <div className="col-span-1 bg-card border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Budget vs Actual</h2>
 
-          <div className="space-y-3">
-            {budgetItems.map((item) => {
-              const isOver = item.spent > item.budget;
-              const isNear = item.spent / item.budget > 0.9;
-              const color = isOver ? "text-red-400" : isNear ? "text-yellow-400" : "text-muted";
-              const barColor = isOver ? "bg-red-400" : isNear ? "bg-yellow-400" : "bg-zinc-500";
-              return (
-                <div key={item.category}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span>{item.category}</span>
-                    <span className={color}>${item.spent} / ${item.budget}</span>
+          {dataSource === "live" ? (
+            liveData && liveData.budgets.length > 0 ? (
+              <div className="space-y-3">
+                {liveData.budgets.map((item) => {
+                  const isOver = item.spent > item.budget;
+                  const isNear = item.budget > 0 && item.spent / item.budget > 0.9;
+                  const color = isOver ? "text-red-400" : isNear ? "text-yellow-400" : "text-muted";
+                  const barColor = isOver ? "bg-red-400" : isNear ? "bg-yellow-400" : "bg-zinc-500";
+                  return (
+                    <div key={item.category}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span>{item.category}</span>
+                        <span className={color}>${item.spent} / ${item.budget}</span>
+                      </div>
+                      <ProgressBar value={item.spent} max={item.budget || 1} color={barColor} height="h-1.5" />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="border border-dashed border-[#333] rounded-lg p-4">
+                <p className="text-sm text-[#666]">No Budgets Configured</p>
+                <p className="text-xs text-[#555] mt-1">Set up budgets in Monarch to see progress here.</p>
+              </div>
+            )
+          ) : (
+            <div className="space-y-3">
+              {budgetItems.map((item) => {
+                const isOver = item.spent > item.budget;
+                const isNear = item.spent / item.budget > 0.9;
+                const color = isOver ? "text-red-400" : isNear ? "text-yellow-400" : "text-muted";
+                const barColor = isOver ? "bg-red-400" : isNear ? "bg-yellow-400" : "bg-zinc-500";
+                return (
+                  <div key={item.category}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>{item.category}</span>
+                      <span className={color}>${item.spent} / ${item.budget}</span>
+                    </div>
+                    <ProgressBar value={item.spent} max={item.budget} color={barColor} height="h-1.5" />
                   </div>
-                  <ProgressBar value={item.spent} max={item.budget} color={barColor} height="h-1.5" />
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Right: Alerts + Upcoming Bills */}
@@ -166,41 +258,74 @@ export default function DashboardPage() {
           {/* Alerts */}
           <div className="bg-card border border-border rounded-xl p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Finance Alerts</h2>
-            <div className="space-y-2">
-              {financeAlerts.map((alert) => {
-                const colors = alertColorMap[alert.severity];
-                return (
-                  <div key={alert.id} className={`flex items-start gap-2 p-2 rounded-lg ${colors.bg} border ${colors.border}`}>
-                    <span className={`${colors.dot} text-xs mt-0.5`}>●</span>
-                    <div>
-                      <p className="text-xs font-medium">{alert.message}</p>
-                      <p className="text-xs text-muted">{alert.detail}</p>
+            {dataSource === "live" ? (
+              <div className="border border-dashed border-[#333] rounded-lg p-4">
+                <p className="text-sm text-[#666]">Coming Soon</p>
+                <p className="text-xs text-[#555] mt-1">Alerts will appear once spending patterns are analyzed.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {financeAlerts.map((alert) => {
+                  const colors = alertColorMap[alert.severity];
+                  return (
+                    <div key={alert.id} className={`flex items-start gap-2 p-2 rounded-lg ${colors.bg} border ${colors.border}`}>
+                      <span className={`${colors.dot} text-xs mt-0.5`}>●</span>
+                      <div>
+                        <p className="text-xs font-medium">{alert.message}</p>
+                        <p className="text-xs text-muted">{alert.detail}</p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Upcoming Bills */}
           <div className="bg-card border border-border rounded-xl p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Upcoming Bills</h2>
-            <div className="space-y-2">
-              {upcomingBills.map((bill, i) => (
-                <div
-                  key={bill.id}
-                  className={`flex justify-between items-center py-1.5 ${
-                    i < upcomingBills.length - 1 ? "border-b border-border/50" : ""
-                  }`}
-                >
-                  <div>
-                    <p className="text-xs font-medium">{bill.name}</p>
-                    <p className="text-xs text-muted">{bill.dueDate}</p>
-                  </div>
-                  <span className="text-sm font-mono">${bill.amount.toLocaleString()}</span>
+            {dataSource === "live" ? (
+              liveData && liveData.bills.length > 0 ? (
+                <div className="space-y-2">
+                  {liveData.bills.map((bill, i) => (
+                    <div
+                      key={bill.id}
+                      className={`flex justify-between items-center py-1.5 ${
+                        i < liveData.bills.length - 1 ? "border-b border-border/50" : ""
+                      }`}
+                    >
+                      <div>
+                        <p className="text-xs font-medium">{bill.name}</p>
+                        <p className="text-xs text-muted">{bill.dueDate}</p>
+                      </div>
+                      <span className="text-sm font-mono">${bill.amount.toLocaleString()}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              ) : (
+                <div className="border border-dashed border-[#333] rounded-lg p-4">
+                  <p className="text-sm text-[#666]">No Recurring Bills</p>
+                  <p className="text-xs text-[#555] mt-1">No recurring bills found in Monarch.</p>
+                </div>
+              )
+            ) : (
+              <div className="space-y-2">
+                {upcomingBills.map((bill, i) => (
+                  <div
+                    key={bill.id}
+                    className={`flex justify-between items-center py-1.5 ${
+                      i < upcomingBills.length - 1 ? "border-b border-border/50" : ""
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-medium">{bill.name}</p>
+                      <p className="text-xs text-muted">{bill.dueDate}</p>
+                    </div>
+                    <span className="text-sm font-mono">${bill.amount.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <Link href="/bills" className="text-xs text-accent hover:underline mt-3 block">
               View full calendar →
             </Link>

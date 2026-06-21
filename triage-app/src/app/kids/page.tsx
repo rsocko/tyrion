@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { kidsData, kidsList } from "@/lib/mock-kids-data";
+import { useDataSource } from "@/lib/use-data-source";
 
 const kidColorClasses: Record<string, { activeBg: string; barColors: string[] }> = {
   blue: { activeBg: "bg-blue-600", barColors: ["bg-blue-500", "bg-blue-400", "bg-blue-300", "bg-blue-200"] },
@@ -11,10 +13,50 @@ const kidColorClasses: Record<string, { activeBg: string; barColors: string[] }>
 };
 
 export default function KidsPage() {
+  const dataSource = useDataSource();
   const [selectedKid, setSelectedKid] = useState("jake");
   const data = kidsData[selectedKid];
   const profile = data.profile;
   const colors = kidColorClasses[profile.color];
+
+  if (dataSource === "live") {
+    return (
+      <div className="max-w-6xl mx-auto px-6 py-6">
+        <div className="text-xs text-muted mb-4">
+          <span className="hover:text-white cursor-pointer">Finance</span> / <span className="text-white">Kids Spending</span>
+        </div>
+
+        <div className="flex items-center gap-2 mb-6">
+          <span className="text-xs bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-full">
+            Live Mode
+          </span>
+        </div>
+
+        <div className="max-w-lg mx-auto mt-12">
+          <div className="border border-dashed border-[#333] rounded-xl p-8 text-center">
+            <div className="text-4xl mb-4">👨‍👩‍👧‍👦</div>
+            <h2 className="text-lg font-semibold text-[#999] mb-2">Kid Attribution Not Yet Configured</h2>
+            <p className="text-sm text-[#666] mb-6 leading-relaxed">
+              To track per-kid spending, configure card rules and merchant patterns in Settings. 
+              The kid attribution engine will automatically identify which transactions belong to each child.
+            </p>
+            <Link
+              href="/settings"
+              className="inline-block px-4 py-2 rounded-lg bg-accent text-white text-sm hover:bg-accent/90 transition-colors"
+            >
+              Configure Kids
+            </Link>
+          </div>
+
+          <div className="mt-6 border border-dashed border-[#333] rounded-lg p-4">
+            <p className="text-xs text-[#555]">
+              💡 <span className="text-[#666]">Demo mode:</span> Switch to Mock Data on the dashboard to see an example of how kid tracking works.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-6">

@@ -1,19 +1,63 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { TriageTransaction, FilterTab, RuleSuggestion } from "@/lib/types";
 import { mockTransactions, kids, ruleSuggestions } from "@/lib/mock-data";
 import { TransactionCard } from "@/components/transaction-card";
 import { Toast } from "@/components/toast";
+import { useDataSource } from "@/lib/use-data-source";
+import { getTransactions } from "@/lib/bridge-client";
+
+function mapMonarchTransactions(raw: unknown[]): TriageTransaction[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return raw.map((t: any) => {
+    const categoryName = t.category?.name || null;
+    const isUncategorized = !categoryName || categoryName === "Uncategorized";
+    return {
+      id: t.id || String(Math.random()),
+      merchantName: t.merchant?.name || t.name || "Unknown",
+      amount: Math.abs(t.amount || 0),
+      date: t.date || new Date().toISOString().split("T")[0],
+      cardLabel: t.account?.displayName || "Account",
+      cardLast4: t.account?.displayName?.slice(-4) || "****",
+      originalCategory: categoryName || undefined,
+      triageStatus: isUncategorized ? "uncategorized" : "suggested-kid",
+      suggestedCategories: isUncategorized ? ["Groceries", "Shopping", "Dining Out"] : undefined,
+    };
+  });
+}
 
 export default function TriagePage() {
+  const dataSource = useDataSource();
   const [transactions, setTransactions] = useState<TriageTransaction[]>(mockTransactions);
+  const [liveTransactions, setLiveTransactions] = useState<TriageTransaction[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
   const [dismissedRules, setDismissedRules] = useState<Set<string>>(new Set());
 
-  const filteredTransactions = transactions.filter((txn) => {
+  // Fetch live transactions
+  useEffect(() => {
+    if (dataSource === "live") {
+      setLiveLoading(true);
+      const endDate = new Date().toISOString().split("T")[0];
+      const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      getTransactions({ start_date: startDate, end_date: endDate, limit: 100 })
+        .then((res) => {
+          if (res.data && Array.isArray(res.data.transactions)) {
+            setLiveTransactions(mapMonarchTransactions(res.data.transactions));
+          } else if (res.data && Array.isArray(res.data)) {
+            setLiveTransactions(mapMonarchTransactions(res.data as unknown[]));
+          }
+        })
+        .finally(() => setLiveLoading(false));
+    }
+  }, [dataSource]);
+
+  const activeTransactions = dataSource === "live" ? liveTransactions : transactions;
+
+  const filteredTransactions = activeTransactions.filter((txn) => {
     if (removingIds.has(txn.id)) return true;
     switch (activeTab) {
       case "uncategorized":
@@ -28,10 +72,10 @@ export default function TriagePage() {
   });
 
   const counts = {
-    all: transactions.length,
-    uncategorized: transactions.filter((t) => t.triageStatus === "uncategorized").length,
-    unassigned: transactions.filter((t) => !t.suggestedKidId && t.triageStatus !== "flagged").length,
-    flagged: transactions.filter((t) => t.triageStatus === "flagged").length,
+    all: activeTransactions.length,
+    uncategorized: activeTransactions.filter((t) => t.triageStatus === "uncategorized").length,
+    unassigned: activeTransactions.filter((t) => !t.suggestedKidId && t.triageStatus !== "flagged").length,
+    flagged: activeTransactions.filter((t) => t.triageStatus === "flagged").length,
   };
 
   const removeTransaction = useCallback((id: string, message: string) => {
@@ -39,6 +83,7 @@ export default function TriagePage() {
     setToast(message);
     setTimeout(() => {
       setTransactions((prev) => prev.filter((t) => t.id !== id));
+      setLiveTransactions((prev) => prev.filter((t) => t.id !== id));
       setRemovingIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
@@ -64,11 +109,12 @@ export default function TriagePage() {
 
   const handleFlag = useCallback(
     (txnId: string) => {
-      setTransactions((prev) =>
+      const updater = (prev: TriageTransaction[]) =>
         prev.map((t) =>
           t.id === txnId ? { ...t, triageStatus: "flagged" as const, flagReason: "Manually flagged for review" } : t
-        )
-      );
+        );
+      setTransactions(updater);
+      setLiveTransactions(updater);
       setToast("Flagged for review 🚩");
       setTimeout(() => setToast(null), 2500);
     },
@@ -76,12 +122,14 @@ export default function TriagePage() {
   );
 
   const handleSkip = useCallback((txnId: string) => {
-    setTransactions((prev) => {
+    const updater = (prev: TriageTransaction[]) => {
       const idx = prev.findIndex((t) => t.id === txnId);
       if (idx === -1) return prev;
       const item = prev[idx];
       return [...prev.slice(0, idx), ...prev.slice(idx + 1), item];
-    });
+    };
+    setTransactions(updater);
+    setLiveTransactions(updater);
     setToast("Skipped — moved to end");
     setTimeout(() => setToast(null), 2500);
   }, []);
@@ -90,7 +138,7 @@ export default function TriagePage() {
     setDismissedRules((prev) => new Set(prev).add(pattern));
   }, []);
 
-  const visibleRules = ruleSuggestions.filter((r) => !dismissedRules.has(r.merchantPattern));
+  const visibleRules = dataSource === "mock" ? ruleSuggestions.filter((r) => !dismissedRules.has(r.merchantPattern)) : [];
 
   const tabs: { key: FilterTab; label: string; count: number }[] = [
     { key: "all", label: "All", count: counts.all },
@@ -108,11 +156,22 @@ export default function TriagePage() {
           <p className="text-sm text-muted mt-1">Review, categorize, and assign transactions</p>
         </div>
         <div className="flex gap-2 items-center">
+          {dataSource === "live" && (
+            <span className="text-xs bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-full mr-2">
+              Live • {counts.all} transactions
+            </span>
+          )}
           <span className="text-xs bg-accent/20 text-accent px-2 py-1 rounded-full">
             {counts.all} remaining
           </span>
         </div>
       </div>
+
+      {liveLoading && dataSource === "live" && (
+        <div className="mb-4 px-3 py-2 rounded-md bg-emerald-950/20 border border-emerald-900/30 text-xs text-emerald-400">
+          Fetching live transactions from Monarch Money...
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex gap-2 mb-6 border-b border-border pb-3">
