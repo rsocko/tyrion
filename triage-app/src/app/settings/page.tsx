@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { login, getAuthStatus, logout, syncData } from "@/lib/bridge-client";
+import { getAuthStatus, logout, syncData } from "@/lib/bridge-client";
 
 type ConnectionStatus = "connected" | "disconnected" | "checking" | "error";
 
@@ -12,12 +12,8 @@ export default function SettingsPage() {
   const [mode, setMode] = useState<string>("unknown");
 
   // Login form state
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [mfaCode, setMfaCode] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
-  const [showMfa, setShowMfa] = useState(false);
 
   // Sync controls
   const [syncInterval, setSyncInterval] = useState("4h");
@@ -51,30 +47,29 @@ export default function SettingsPage() {
     checkStatus();
   }, [checkStatus]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const [cookieString, setCookieString] = useState("");
+
+  const handleCookieLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
     setLoginLoading(true);
-
-    const res = await login(loginEmail, loginPassword, mfaCode || undefined);
-
-    if (res.data) {
-      showToast("✓ Connected to Monarch Money");
-      setConnectionStatus("connected");
-      setEmail(loginEmail);
-      setLoginEmail("");
-      setLoginPassword("");
-      setMfaCode("");
-      setShowMfa(false);
-    } else if (res.status === 403) {
-      setShowMfa(true);
-      setLoginError("MFA code required. Enter your authenticator code below.");
-    } else if (res.status === 401) {
-      setLoginError("Invalid email or password.");
-    } else {
-      setLoginError(res.error || "Connection failed. Is the bridge running?");
+    try {
+      const res = await fetch("/api/bridge/auth/login-with-cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cookies: cookieString }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast("✓ Connected to Monarch Money");
+        setCookieString("");
+        checkStatus();
+      } else {
+        setLoginError(data?.detail?.message || data?.message || "Cookie login failed.");
+      }
+    } catch {
+      setLoginError("Failed to connect to bridge. Is it running on port 8100?");
     }
-
     setLoginLoading(false);
   };
 
@@ -151,42 +146,22 @@ export default function SettingsPage() {
       {(connectionStatus === "disconnected" || connectionStatus === "error") && (
         <div className="bg-[#141414] border border-[#262626] rounded-xl p-5 mb-6">
           <h2 className="text-sm font-semibold mb-4">Connect to Monarch Money</h2>
-          <form onSubmit={handleLogin} className="space-y-3">
+          <p className="text-xs text-[#888] mb-3">
+            Log into <a href="https://app.monarchmoney.com" target="_blank" className="text-emerald-400 underline">app.monarchmoney.com</a> in your browser, then:<br/>
+            1. Open DevTools (F12) → <strong>Application</strong> tab → <strong>Cookies</strong><br/>
+            2. Find <code className="text-emerald-400">session_id</code> and <code className="text-emerald-400">csrftoken</code><br/>
+            3. Paste as: <code className="text-emerald-400">session_id=VALUE; csrftoken=VALUE</code>
+          </p>
+          <form onSubmit={handleCookieLogin} className="space-y-3">
             <div>
-              <label className="text-xs text-muted block mb-1">Email</label>
-              <input
-                type="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                className="w-full px-3 py-2 rounded-md bg-[#0a0a0a] border border-[#333] text-sm focus:outline-none focus:border-emerald-500/50"
-                placeholder="your@email.com"
-                required
+              <label className="text-xs text-muted block mb-1">Browser Cookie</label>
+              <textarea
+                value={cookieString}
+                onChange={(e) => setCookieString(e.target.value)}
+                className="w-full px-3 py-2 rounded-md bg-[#0a0a0a] border border-[#333] text-xs focus:outline-none focus:border-emerald-500/50 h-20 font-mono"
+                placeholder="session_id=abc123; csrftoken=xyz789"
               />
             </div>
-            <div>
-              <label className="text-xs text-muted block mb-1">Password</label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded-md bg-[#0a0a0a] border border-[#333] text-sm focus:outline-none focus:border-emerald-500/50"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-            {showMfa && (
-              <div>
-                <label className="text-xs text-muted block mb-1">MFA Code</label>
-                <input
-                  type="text"
-                  value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md bg-[#0a0a0a] border border-[#333] text-sm focus:outline-none focus:border-emerald-500/50"
-                  placeholder="123456"
-                  autoComplete="one-time-code"
-                />
-              </div>
-            )}
             {loginError && (
               <p className="text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded-md px-3 py-2">
                 {loginError}
@@ -194,10 +169,10 @@ export default function SettingsPage() {
             )}
             <button
               type="submit"
-              disabled={loginLoading}
+              disabled={loginLoading || !cookieString.trim()}
               className="w-full py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
             >
-              {loginLoading ? "Connecting..." : "Connect"}
+              {loginLoading ? "Connecting..." : "Connect with Cookies"}
             </button>
           </form>
         </div>

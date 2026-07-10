@@ -272,6 +272,13 @@ class LoginRequest(BaseModel):
     mfa_code: Optional[str] = None
 
 
+<<<<<<< HEAD
+class CookieLoginRequest(BaseModel):
+    cookies: str  # Raw cookie header string from browser
+
+
+=======
+>>>>>>> origin/rsocko-wire-live-data-to-all-pages
 class AuthStatusResponse(BaseModel):
     authenticated: bool
     email: Optional[str] = None
@@ -287,7 +294,16 @@ SESSION_FILE = Path(os.getenv("SESSION_FILE", "~/.monarch_session")).expanduser(
 
 @app.post("/auth/login")
 async def auth_login(request: LoginRequest):
+<<<<<<< HEAD
+    """Authenticate with Monarch Money using email/password + optional email OTP code.
+    
+    Flow:
+    1. First call with email+password → Monarch sends verification code to email → returns mfa_required
+    2. Second call with email+password+mfa_code → completes authentication
+    """
+=======
     """Authenticate with Monarch Money using email/password + optional MFA."""
+>>>>>>> origin/rsocko-wire-live-data-to-all-pages
     if DEMO_MODE:
         return {"status": "success", "message": "Demo mode - no real auth needed", "email": request.email}
 
@@ -298,6 +314,46 @@ async def auth_login(request: LoginRequest):
         client = MonarchMoney()
 
         if request.mfa_code:
+<<<<<<< HEAD
+            # Step 2: Complete auth with the email verification code
+            await client.multi_factor_authenticate(request.email, request.password, request.mfa_code)
+            client.save_session(str(SESSION_FILE))
+            mm = client
+            logger.info("MFA login successful for %s", request.email)
+            return {"status": "success", "message": "Authenticated successfully", "email": request.email}
+        else:
+            # Step 1: Initial login attempt — triggers email code
+            try:
+                await client.login(request.email, request.password, use_saved_session=False, save_session=False)
+                # If login succeeds without MFA (unlikely but possible)
+                client.save_session(str(SESSION_FILE))
+                mm = client
+                logger.info("Login successful (no MFA) for %s", request.email)
+                return {"status": "success", "message": "Authenticated successfully", "email": request.email}
+            except Exception as login_err:
+                error_msg = str(login_err).lower()
+                if "mfa" in error_msg or "multi-factor" in error_msg or "two-factor" in error_msg or "verification" in error_msg or "code" in error_msg:
+                    # Monarch sent the email code — tell frontend to prompt for it
+                    logger.info("MFA email code sent for %s", request.email)
+                    raise HTTPException(403, detail={
+                        "error": "mfa_required",
+                        "message": "Monarch sent a verification code to your email. Enter it below."
+                    })
+                else:
+                    raise login_err
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "password" in error_msg or "credentials" in error_msg or "unauthorized" in error_msg:
+            raise HTTPException(401, detail={"error": "invalid_credentials", "message": "Invalid email or password"})
+        elif "captcha" in error_msg:
+            raise HTTPException(403, detail={
+                "error": "captcha_required",
+                "message": "Monarch requires CAPTCHA. Use cookie-based login instead: log in via browser, then paste your cookies."
+            })
+=======
             await client.login(request.email, request.password, mfa_secret_key=request.mfa_code)
         else:
             await client.login(request.email, request.password)
@@ -313,11 +369,44 @@ async def auth_login(request: LoginRequest):
             raise HTTPException(403, detail={"error": "mfa_required", "message": "MFA code is required"})
         elif "password" in error_msg or "credentials" in error_msg or "unauthorized" in error_msg:
             raise HTTPException(401, detail={"error": "invalid_credentials", "message": "Invalid email or password"})
+>>>>>>> origin/rsocko-wire-live-data-to-all-pages
         else:
             logger.error("Login failed: %s", e)
             raise HTTPException(500, detail={"error": "login_failed", "message": str(e)})
 
 
+<<<<<<< HEAD
+@app.post("/auth/login-with-cookies")
+async def auth_login_cookies(request: CookieLoginRequest):
+    """Authenticate using browser cookies (bypasses CAPTCHA).
+    
+    Steps for user:
+    1. Log into app.monarchmoney.com in browser
+    2. Open DevTools → Application → Cookies
+    3. Copy the cookie string (or use DevTools Network tab → copy as cURL → extract Cookie header)
+    4. Paste here
+    """
+    if DEMO_MODE:
+        return {"status": "success", "message": "Demo mode - no real auth needed"}
+
+    try:
+        from monarchmoney import MonarchMoney
+
+        global mm
+        client = MonarchMoney()
+        await client.login_with_cookies(request.cookies, save_session=True)
+        client.save_session(str(SESSION_FILE))
+        mm = client
+        logger.info("Cookie-based login successful")
+        return {"status": "success", "message": "Authenticated via browser cookies"}
+
+    except Exception as e:
+        logger.error("Cookie login failed: %s", e)
+        raise HTTPException(401, detail={"error": "cookie_login_failed", "message": f"Cookie auth failed: {e}"})
+
+
+=======
+>>>>>>> origin/rsocko-wire-live-data-to-all-pages
 @app.get("/auth/status")
 async def auth_status():
     """Check whether the current session is active."""
