@@ -57,35 +57,35 @@ export default function BillsPage() {
       <div className="max-w-5xl mx-auto px-6 py-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold">Upcoming Bills & Payments</h1>
+            <h1 className="text-3xl font-serif font-bold">Upcoming Bills &amp; Payments</h1>
             <p className="text-sm text-muted mt-1">
               {liveBills.length > 0
                 ? `${liveBills.length} recurring bills from Monarch`
                 : "Live data from Monarch Money"}
             </p>
           </div>
-          <span className="text-xs bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-full">
+          <span className="text-xs bg-success/30 text-success border border-success/50 px-2 py-1 rounded-full">
             Live Mode
           </span>
         </div>
 
         {liveLoading && (
-          <div className="mb-4 px-3 py-2 rounded-md bg-emerald-950/20 border border-emerald-900/30 text-xs text-emerald-400">
+          <div className="mb-4 px-3 py-2 rounded-md bg-success/20 border border-success/30 text-xs text-success">
             Fetching recurring bills from Monarch Money...
           </div>
         )}
 
         {!liveLoading && liveBills.length === 0 ? (
-          <div className="border border-dashed border-[#333] rounded-xl p-8 text-center mt-8">
+          <div className="border border-dashed border-card-2 rounded-xl p-8 text-center mt-8">
             <div className="text-4xl mb-4">📋</div>
-            <h2 className="text-lg font-semibold text-[#999] mb-2">No Recurring Bills Found</h2>
-            <p className="text-sm text-[#666]">
+            <h2 className="text-lg font-semibold text-muted mb-2">No Recurring Bills Found</h2>
+            <p className="text-sm text-muted">
               No recurring bills were found in Monarch. Bills will appear here once Monarch detects recurring transactions.
             </p>
           </div>
         ) : (
           <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="px-5 py-3 bg-zinc-900/50 border-b border-border">
+            <div className="px-5 py-3 bg-card-2/50 border-b border-border">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 Recurring Bills ({liveBills.length})
               </p>
@@ -94,7 +94,7 @@ export default function BillsPage() {
               {liveBills.map((bill) => (
                 <div key={bill.id} className="flex items-center justify-between px-5 py-4">
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-lg bg-card-2 flex items-center justify-center">
                       <span className="text-lg">💰</span>
                     </div>
                     <div>
@@ -113,8 +113,8 @@ export default function BillsPage() {
                   <span
                     className={`px-2 py-0.5 rounded text-xs ${
                       bill.isAutoPay
-                        ? "bg-green-900/30 text-green-400 border border-green-800/50"
-                        : "bg-yellow-900/30 text-yellow-400 border border-yellow-800/50"
+                        ? "bg-success/30 text-success border border-success/50"
+                        : "bg-warning/30 text-warning border border-warning/50"
                     }`}
                   >
                     {bill.isAutoPay ? "Auto-pay" : "Manual"}
@@ -131,12 +131,12 @@ export default function BillsPage() {
     <div className="max-w-5xl mx-auto px-6 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Upcoming Bills & Payments</h1>
+          <h1 className="text-3xl font-serif font-bold">Upcoming Bills &amp; Payments</h1>
           <p className="text-sm text-muted mt-1">Next 30 days • Total due: $4,218</p>
         </div>
         <div className="flex gap-2">
           <button className="px-3 py-1.5 rounded-md text-sm bg-card border border-border">Calendar View</button>
-          <button className="px-3 py-1.5 rounded-md text-sm bg-accent text-white">List View</button>
+          <button className="px-3 py-1.5 rounded-md text-sm bg-accent text-background">List View</button>
         </div>
       </div>
 
@@ -156,7 +156,7 @@ export default function BillsPage() {
         {billWeeks.map((week, weekIdx) => (
           <div key={week.label}>
             {/* Week Header */}
-            <div className={`px-5 py-3 bg-zinc-900/50 border-b border-border ${weekIdx > 0 ? "border-t" : ""}`}>
+            <div className={`px-5 py-3 bg-card-2/50 border-b border-border ${weekIdx > 0 ? "border-t" : ""}`}>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 {week.label} ({week.dateRange})
               </p>
@@ -179,15 +179,15 @@ export default function BillsPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-base font-mono font-bold">${bill.amount.toLocaleString()}</p>
-                    <p className={`text-xs ${bill.urgent ? "text-yellow-400" : "text-muted"}`}>
+                    <p className={`text-xs ${bill.urgent ? "text-warning" : "text-muted"}`}>
                       {bill.dueDateDisplay}
                     </p>
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded text-xs ${
                       bill.autoPay
-                        ? "bg-green-900/30 text-green-400 border border-green-800/50"
-                        : "bg-yellow-900/30 text-yellow-400 border border-yellow-800/50"
+                        ? "bg-success/30 text-success border border-success/50"
+                        : "bg-warning/30 text-warning border border-warning/50"
                     }`}
                   >
                     {bill.autoPay ? "Auto-pay" : "Manual"}
@@ -205,7 +205,7 @@ export default function BillsPage() {
         <div className="grid grid-cols-2 gap-6">
           <div>
             <p className="text-xs text-muted mb-1">Checking Balance Now</p>
-            <p className="text-xl font-mono font-bold text-green-400">${cashFlow.currentBalance.toLocaleString()}</p>
+            <p className="text-xl font-mono font-bold text-success">${cashFlow.currentBalance.toLocaleString()}</p>
           </div>
           <div>
             <p className="text-xs text-muted mb-1">After All Bills (30 days)</p>
@@ -215,7 +215,7 @@ export default function BillsPage() {
             </p>
           </div>
         </div>
-        <div className="mt-4 p-3 rounded-lg bg-green-950/20 border border-green-900/30">
+        <div className="mt-4 p-3 rounded-lg bg-success/20 border border-success/30">
           <p className={`text-xs ${cashFlow.statusColor}`}>{cashFlow.status}</p>
         </div>
       </div>

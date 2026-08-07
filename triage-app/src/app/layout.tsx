@@ -3,8 +3,8 @@ import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 
 export const metadata: Metadata = {
-  title: "Finance App",
-  description: "Personal finance management dashboard",
+  title: "TYRION — Finance",
+  description: "TYRION: your household finance agent and command surface",
 };
 
 export default function RootLayout({

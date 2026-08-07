@@ -6,10 +6,10 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { kidsData, kidsList } from "@/lib/mock-kids-data";
 import { useDataSource } from "@/lib/use-data-source";
 
-const kidColorClasses: Record<string, { activeBg: string; barColors: string[] }> = {
-  blue: { activeBg: "bg-blue-600", barColors: ["bg-blue-500", "bg-blue-400", "bg-blue-300", "bg-blue-200"] },
-  purple: { activeBg: "bg-purple-600", barColors: ["bg-purple-500", "bg-purple-400", "bg-purple-300", "bg-purple-200"] },
-  green: { activeBg: "bg-green-600", barColors: ["bg-green-500", "bg-green-400", "bg-green-300", "bg-green-200"] },
+const kidColorClasses: Record<string, { activeBg: string; barColors: string[]; dot: string }> = {
+  blue: { activeBg: "bg-jake", dot: "bg-jake", barColors: ["bg-jake", "bg-jake/80", "bg-jake/60", "bg-jake/40"] },
+  purple: { activeBg: "bg-emma", dot: "bg-emma", barColors: ["bg-emma", "bg-emma/80", "bg-emma/60", "bg-emma/40"] },
+  green: { activeBg: "bg-sophie", dot: "bg-sophie", barColors: ["bg-sophie", "bg-sophie/80", "bg-sophie/60", "bg-sophie/40"] },
 };
 
 export default function KidsPage() {
@@ -23,34 +23,34 @@ export default function KidsPage() {
     return (
       <div className="max-w-6xl mx-auto px-6 py-6">
         <div className="text-xs text-muted mb-4">
-          <span className="hover:text-white cursor-pointer">Finance</span> / <span className="text-white">Kids Spending</span>
+          <span className="hover:text-parchment cursor-pointer">Finance</span> / <span className="text-white">Kids Spending</span>
         </div>
 
         <div className="flex items-center gap-2 mb-6">
-          <span className="text-xs bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-full">
+          <span className="text-xs bg-success/30 text-success border border-success/50 px-2 py-1 rounded-full">
             Live Mode
           </span>
         </div>
 
         <div className="max-w-lg mx-auto mt-12">
-          <div className="border border-dashed border-[#333] rounded-xl p-8 text-center">
+          <div className="border border-dashed border-card-2 rounded-xl p-8 text-center">
             <div className="text-4xl mb-4">👨‍👩‍👧‍👦</div>
-            <h2 className="text-lg font-semibold text-[#999] mb-2">Kid Attribution Not Yet Configured</h2>
-            <p className="text-sm text-[#666] mb-6 leading-relaxed">
+            <h2 className="text-lg font-semibold text-muted mb-2">Kid Attribution Not Yet Configured</h2>
+            <p className="text-sm text-muted mb-6 leading-relaxed">
               To track per-kid spending, configure card rules and merchant patterns in Settings. 
               The kid attribution engine will automatically identify which transactions belong to each child.
             </p>
             <Link
               href="/settings"
-              className="inline-block px-4 py-2 rounded-lg bg-accent text-white text-sm hover:bg-accent/90 transition-colors"
+              className="inline-block px-4 py-2 rounded-lg bg-accent text-background text-sm hover:bg-accent/90 transition-colors"
             >
               Configure Kids
             </Link>
           </div>
 
-          <div className="mt-6 border border-dashed border-[#333] rounded-lg p-4">
-            <p className="text-xs text-[#555]">
-              💡 <span className="text-[#666]">Demo mode:</span> Switch to Mock Data on the dashboard to see an example of how kid tracking works.
+          <div className="mt-6 border border-dashed border-card-2 rounded-lg p-4">
+            <p className="text-xs text-dim">
+              💡 <span className="text-muted">Demo mode:</span> Switch to Mock Data on the dashboard to see an example of how kid tracking works.
             </p>
           </div>
         </div>
@@ -62,7 +62,7 @@ export default function KidsPage() {
     <div className="max-w-6xl mx-auto px-6 py-6">
       {/* Breadcrumb */}
       <div className="text-xs text-muted mb-4">
-        <span className="hover:text-white cursor-pointer">Finance</span> / <span className="text-white">Kids Spending</span>
+        <span className="hover:text-parchment cursor-pointer">Finance</span> / <span className="text-white">Kids Spending</span>
       </div>
 
       {/* Kid Selector Tabs */}
@@ -79,7 +79,7 @@ export default function KidsPage() {
                   : "text-muted border border-border hover:bg-card"
               }`}
             >
-              <div className={`w-2.5 h-2.5 rounded-full ${isActive ? "bg-white/60" : `bg-${kid.color}-500`}`} />
+              <div className={`w-2.5 h-2.5 rounded-full ${isActive ? "bg-white/60" : kidColorClasses[kid.color].dot}`} />
               {kid.name}
             </button>
           );
@@ -93,15 +93,15 @@ export default function KidsPage() {
       <div className="bg-card border border-border rounded-xl p-6 mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{profile.name}&apos;s Spending</h1>
+            <h1 className="text-3xl font-serif font-bold">{profile.name}&apos;s Spending</h1>
             <p className="text-sm text-muted mt-1">June 2026</p>
           </div>
           <div className="text-right">
             <p className="text-3xl font-bold font-mono">${profile.totalSpent}</p>
             {profile.totalSpent > profile.monthlyLimit ? (
-              <p className="text-sm text-red-400">Over monthly limit (${profile.monthlyLimit}) by ${profile.totalSpent - profile.monthlyLimit}</p>
+              <p className="text-sm text-error">Over monthly limit (${profile.monthlyLimit}) by ${profile.totalSpent - profile.monthlyLimit}</p>
             ) : (
-              <p className="text-sm text-green-400">Under monthly limit (${profile.monthlyLimit})</p>
+              <p className="text-sm text-success">Under monthly limit (${profile.monthlyLimit})</p>
             )}
           </div>
         </div>
@@ -111,25 +111,25 @@ export default function KidsPage() {
           <div>
             <p className="text-xs text-muted">Today</p>
             <p className="text-lg font-mono font-medium">${profile.todaySpent.toFixed(2)}</p>
-            <p className={`text-xs ${profile.todaySpent > profile.dailyLimit ? "text-red-400" : "text-green-400"}`}>
+            <p className={`text-xs ${profile.todaySpent > profile.dailyLimit ? "text-error" : "text-success"}`}>
               {profile.todaySpent > profile.dailyLimit ? "Over" : "Under"} ${profile.dailyLimit} daily limit
             </p>
           </div>
           <div>
             <p className="text-xs text-muted">This Week</p>
-            <p className={`text-lg font-mono font-medium ${profile.weeklySpent > profile.weeklyLimit ? "text-red-300" : ""}`}>
+            <p className={`text-lg font-mono font-medium ${profile.weeklySpent > profile.weeklyLimit ? "text-error" : ""}`}>
               ${profile.weeklySpent}
             </p>
-            <p className={`text-xs ${profile.weeklySpent > profile.weeklyLimit ? "text-red-400" : "text-green-400"}`}>
+            <p className={`text-xs ${profile.weeklySpent > profile.weeklyLimit ? "text-error" : "text-success"}`}>
               {profile.weeklySpent > profile.weeklyLimit ? `Over $${profile.weeklyLimit} weekly limit` : `Under $${profile.weeklyLimit} weekly limit`}
             </p>
           </div>
           <div>
             <p className="text-xs text-muted">This Month</p>
-            <p className={`text-lg font-mono font-medium ${profile.totalSpent > profile.monthlyLimit ? "text-red-300" : ""}`}>
+            <p className={`text-lg font-mono font-medium ${profile.totalSpent > profile.monthlyLimit ? "text-error" : ""}`}>
               ${profile.totalSpent}
             </p>
-            <p className={`text-xs ${profile.totalSpent > profile.monthlyLimit ? "text-red-400" : "text-green-400"}`}>
+            <p className={`text-xs ${profile.totalSpent > profile.monthlyLimit ? "text-error" : "text-success"}`}>
               {profile.totalSpent > profile.monthlyLimit ? `Over $${profile.monthlyLimit} monthly limit` : `Under $${profile.monthlyLimit} monthly limit`}
             </p>
           </div>
@@ -161,28 +161,28 @@ export default function KidsPage() {
               <div className="flex justify-between items-center">
                 <span className="text-xs">Daily</span>
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm font-mono ${profile.todaySpent > profile.dailyLimit ? "text-red-300" : ""}`}>
+                  <span className={`text-sm font-mono ${profile.todaySpent > profile.dailyLimit ? "text-error" : ""}`}>
                     ${profile.dailyLimit}
                   </span>
-                  <button className="text-xs text-muted hover:text-white">✏️</button>
+                  <button className="text-xs text-muted hover:text-parchment">✏️</button>
                 </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs">Weekly</span>
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm font-mono ${profile.weeklySpent > profile.weeklyLimit ? "text-red-300" : ""}`}>
+                  <span className={`text-sm font-mono ${profile.weeklySpent > profile.weeklyLimit ? "text-error" : ""}`}>
                     ${profile.weeklyLimit}
                   </span>
-                  <button className="text-xs text-muted hover:text-white">✏️</button>
+                  <button className="text-xs text-muted hover:text-parchment">✏️</button>
                 </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs">Monthly</span>
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm font-mono ${profile.totalSpent > profile.monthlyLimit ? "text-red-300" : ""}`}>
+                  <span className={`text-sm font-mono ${profile.totalSpent > profile.monthlyLimit ? "text-error" : ""}`}>
                     ${profile.monthlyLimit}
                   </span>
-                  <button className="text-xs text-muted hover:text-white">✏️</button>
+                  <button className="text-xs text-muted hover:text-parchment">✏️</button>
                 </div>
               </div>
             </div>
@@ -194,7 +194,7 @@ export default function KidsPage() {
           <div className="bg-card border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">{profile.name}&apos;s Transactions</h2>
-              <select className="bg-zinc-800 border border-border rounded-md text-xs px-2 py-1 text-muted">
+              <select className="bg-card-2 border border-border rounded-md text-xs px-2 py-1 text-muted">
                 <option>This Month</option>
                 <option>Last Month</option>
                 <option>Last 90 Days</option>
@@ -209,9 +209,9 @@ export default function KidsPage() {
                     {showDateLabel && (
                       <p className={`text-xs text-muted font-medium ${i > 0 ? "pt-4" : "pt-2"} pb-1`}>{txn.dateLabel}</p>
                     )}
-                    <div className="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
+                    <div className="flex items-center justify-between p-3 rounded-lg hover:bg-card-2/50">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs">
+                        <div className="w-8 h-8 rounded-full bg-card-2 flex items-center justify-center text-xs">
                           {txn.icon}
                         </div>
                         <div>
@@ -232,16 +232,16 @@ export default function KidsPage() {
             {/* Discussion Items */}
             {data.discussions.length > 0 && (
               <div className="mt-6 pt-4 border-t border-border">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-yellow-400 mb-3">🚩 Discussion Items</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-warning mb-3">🚩 Discussion Items</h3>
                 <div className="space-y-2">
                   {data.discussions.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-3 rounded-lg bg-yellow-950/20 border border-yellow-900/30">
+                    <div key={item.id} className="flex items-center justify-between p-3 rounded-lg bg-warning/20 border border-warning/30">
                       <div>
                         <p className="text-sm font-medium">{item.title}</p>
                         <p className="text-xs text-muted">{item.description}</p>
                       </div>
                       <div className="flex gap-2">
-                        <button className="px-2.5 py-1 text-xs rounded-md bg-yellow-900/50 text-yellow-300">Create Task</button>
+                        <button className="px-2.5 py-1 text-xs rounded-md bg-warning/50 text-warning">Create Task</button>
                         <button className="px-2.5 py-1 text-xs rounded-md text-muted border border-border">Dismiss</button>
                       </div>
                     </div>
