@@ -152,12 +152,12 @@ export default function TriagePage() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Transaction Triage</h1>
+          <h1 className="text-3xl font-serif font-bold">Transaction Triage</h1>
           <p className="text-sm text-muted mt-1">Review, categorize, and assign transactions</p>
         </div>
         <div className="flex gap-2 items-center">
           {dataSource === "live" && (
-            <span className="text-xs bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-full mr-2">
+            <span className="text-xs bg-success/30 text-success border border-success/50 px-2 py-1 rounded-full mr-2">
               Live • {counts.all} transactions
             </span>
           )}
@@ -168,7 +168,7 @@ export default function TriagePage() {
       </div>
 
       {liveLoading && dataSource === "live" && (
-        <div className="mb-4 px-3 py-2 rounded-md bg-emerald-950/20 border border-emerald-900/30 text-xs text-emerald-400">
+        <div className="mb-4 px-3 py-2 rounded-md bg-success/20 border border-success/30 text-xs text-success">
           Fetching live transactions from Monarch Money...
         </div>
       )}
@@ -181,7 +181,7 @@ export default function TriagePage() {
             onClick={() => setActiveTab(tab.key)}
             className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
               activeTab === tab.key
-                ? "bg-accent text-white"
+                ? "bg-accent text-background"
                 : "text-muted hover:bg-card"
             }`}
           >
@@ -248,7 +248,7 @@ function RuleSuggestionBanner({
         <div className="flex gap-2">
           <button
             onClick={onDismiss}
-            className="px-3 py-1.5 rounded-md text-xs bg-accent text-white hover:bg-accent/90"
+            className="px-3 py-1.5 rounded-md text-xs bg-accent text-background hover:bg-accent/90"
           >
             Create Rule
           </button>

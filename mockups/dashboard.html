@@ -1,266 +1,190 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Finance Dashboard — Mission Control</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: { extend: { colors: {
-        background: '#0a0a0a', card: '#141414', border: '#262626',
-        muted: '#737373', accent: '#3b82f6'
-      }}}
-    }
-  </script>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tyrion &mdash; Dashboard</title>
+<link rel="stylesheet" href="../brand/tyrion.css" />
+<style>
+  .cards4{margin-bottom:16px}
+</style>
 </head>
-<body class="bg-background text-white min-h-screen">
-  <!-- Top Nav -->
-  <header class="border-b border-border px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <span class="text-lg font-semibold">Mission Control</span>
-      <nav class="flex gap-1 ml-6">
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Tasks</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Alerts</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm bg-card text-white font-medium">Finance</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Today</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">AI</a>
-      </nav>
+<body>
+
+<!-- MOTION CONTROL (demo only) -->
+<div class="demobar">
+  <span class="lbl">Tyrion &middot; Dashboard</span>
+  <button class="replay" id="replay">&#8635; Replay motion</button>
+</div>
+
+<!-- APP HEADER -->
+<header class="app">
+  <div class="brandlock">
+    <svg width="30" height="30" viewBox="0 0 100 100" aria-label="Tyrion" class="coin">
+      <defs><radialGradient id="tycoin" cx="34%" cy="28%" r="80%"><stop offset="0%" stop-color="#F0D585"/><stop offset="55%" stop-color="#C9A24A"/><stop offset="100%" stop-color="#8A6B27"/></radialGradient></defs>
+      <circle cx="50" cy="50" r="47" fill="url(#tycoin)"/>
+      <circle cx="50" cy="50" r="47" fill="none" stroke="#6b5220" stroke-width="2.4"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#7a5e28" stroke-width="1.6" opacity=".7"/>
+      <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="54" fill="#3a2c0c">T</text>
+    </svg>
+    <span class="wm">Tyrion<span class="d">.</span></span>
+  </div>
+  <div class="sync">
+    <span class="t">Last synced 12 min ago &middot; Monarch</span>
+    <button class="btn btn-secondary">Sync now</button>
+  </div>
+</header>
+
+<main>
+  <div class="pagehead">
+    <div>
+      <h1>Good evening. Here&rsquo;s the count.</h1>
+      <div class="sub serif" style="font-style:italic;font-size:1.05rem">&ldquo;Every bill paid, once, on time. We&rsquo;re close.&rdquo;</div>
+      <div class="sub mono" style="margin-top:4px">June 2026 &middot; Week 3</div>
     </div>
-    <div class="flex items-center gap-3">
-      <span class="text-xs text-muted">Last synced: 12 min ago</span>
-      <button class="px-3 py-1.5 rounded-md text-sm bg-card border border-border hover:bg-zinc-800">Sync Now</button>
+    <div class="pill-row">
+      <button class="gpill active">This month</button>
+      <button class="gpill">Last month</button>
+      <button class="gpill">Custom</button>
     </div>
-  </header>
+  </div>
 
-  <main class="max-w-7xl mx-auto px-6 py-6">
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Finance Dashboard</h1>
-        <p class="text-sm text-muted mt-1">June 2026 • Week 3</p>
+  <!-- SUMMARY CARDS -->
+  <div class="grid cards4">
+    <div class="card reveal">
+      <div class="k">Total spent</div>
+      <div class="big cu" data-to="4832" data-pre="$">$0</div>
+      <div class="delta up">&#8593; 8% vs last month</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Income</div>
+      <div class="big cu" data-to="7200" data-pre="$">$0</div>
+      <div class="delta ok">On track</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Kids spending</div>
+      <div class="big cu" data-to="847" data-pre="$">$0</div>
+      <div class="delta warn">Jake over weekly limit</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Needs review</div>
+      <div class="big cu" data-to="12">0</div>
+      <div class="delta info">Open triage &rarr;</div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="grid cols3">
+    <!-- KIDS -->
+    <div class="card reveal">
+      <div class="sectitle">Kids this week</div>
+
+      <div class="barrow">
+        <div class="top"><span class="who"><span class="kav jake">J</span>Jake</span><span class="amt"><span class="mono" style="color:var(--parchment)">$112</span> / $100</span></div>
+        <div class="track"><span data-w="100%" style="background:var(--error)"></span></div>
+        <div class="flag up">Over weekly limit by $12</div>
       </div>
-      <div class="flex gap-2">
-        <button class="px-3 py-1.5 rounded-md text-sm bg-card border border-border">This Month</button>
-        <button class="px-3 py-1.5 rounded-md text-sm text-muted border border-border/50">Last Month</button>
-        <button class="px-3 py-1.5 rounded-md text-sm text-muted border border-border/50">Custom</button>
+
+      <div class="barrow">
+        <div class="top"><span class="who"><span class="kav emma">E</span>Emma</span><span class="amt"><span class="mono" style="color:var(--parchment)">$63</span> / $80</span></div>
+        <div class="track"><span data-w="79%" style="background:var(--emma)"></span></div>
       </div>
+
+      <div class="barrow">
+        <div class="top"><span class="who"><span class="kav sophie">S</span>Sophie</span><span class="amt"><span class="mono" style="color:var(--parchment)">$28</span> / $50</span></div>
+        <div class="track"><span data-w="56%" style="background:var(--sophie)"></span></div>
+      </div>
+
+      <a class="link" href="kid-spending.html">View kid details &rarr;</a>
     </div>
 
-    <!-- Summary Cards Row -->
-    <div class="grid grid-cols-4 gap-4 mb-6">
-      <div class="bg-card border border-border rounded-xl p-4">
-        <p class="text-xs text-muted uppercase tracking-wider">Total Spent</p>
-        <p class="text-2xl font-bold mt-1">$4,832</p>
-        <p class="text-xs text-red-400 mt-1">↑ 8% vs last month</p>
+    <!-- BUDGET VS ACTUAL -->
+    <div class="card reveal">
+      <div class="sectitle">Budget vs actual</div>
+
+      <div class="barrow">
+        <div class="cat-top"><span>Groceries</span><span class="amt warn">$680 / $700</span></div>
+        <div class="track"><span data-w="97%" style="background:var(--warning)"></span></div>
       </div>
-      <div class="bg-card border border-border rounded-xl p-4">
-        <p class="text-xs text-muted uppercase tracking-wider">Income</p>
-        <p class="text-2xl font-bold mt-1">$7,200</p>
-        <p class="text-xs text-green-400 mt-1">On track</p>
+      <div class="barrow">
+        <div class="cat-top"><span>Dining out</span><span class="amt up">$420 / $350</span></div>
+        <div class="track"><span data-w="100%" style="background:var(--error)"></span></div>
       </div>
-      <div class="bg-card border border-border rounded-xl p-4">
-        <p class="text-xs text-muted uppercase tracking-wider">Kids Spending</p>
-        <p class="text-2xl font-bold mt-1">$847</p>
-        <p class="text-xs text-yellow-400 mt-1">Jake over weekly limit</p>
+      <div class="barrow">
+        <div class="cat-top"><span>Shopping</span><span class="amt">$180 / $400</span></div>
+        <div class="track"><span data-w="45%" style="background:var(--cat-shopping)"></span></div>
       </div>
-      <div class="bg-card border border-border rounded-xl p-4">
-        <p class="text-xs text-muted uppercase tracking-wider">Needs Review</p>
-        <p class="text-2xl font-bold mt-1">12</p>
-        <p class="text-xs text-accent mt-1"><a href="triage-inbox.html">Open Triage →</a></p>
+      <div class="barrow">
+        <div class="cat-top"><span>Subscriptions</span><span class="amt">$156 / $175</span></div>
+        <div class="track"><span data-w="89%" style="background:var(--cat-subs)"></span></div>
       </div>
-    </div>
-
-    <!-- Main Content Grid -->
-    <div class="grid grid-cols-3 gap-6">
-      <!-- Left: Per-Kid Spending -->
-      <div class="col-span-1 bg-card border border-border rounded-xl p-5">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Kids This Week</h2>
-
-        <!-- Jake -->
-        <div class="mb-4">
-          <div class="flex items-center justify-between mb-1">
-            <div class="flex items-center gap-2">
-              <div class="w-3 h-3 rounded-full bg-blue-500"></div>
-              <span class="text-sm font-medium">Jake</span>
-            </div>
-            <span class="text-sm font-mono">$112 <span class="text-red-400">/ $100</span></span>
-          </div>
-          <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-            <div class="h-full bg-red-500 rounded-full" style="width: 112%"></div>
-          </div>
-          <p class="text-xs text-red-400 mt-1">⚠️ Over weekly limit by $12</p>
-        </div>
-
-        <!-- Emma -->
-        <div class="mb-4">
-          <div class="flex items-center justify-between mb-1">
-            <div class="flex items-center gap-2">
-              <div class="w-3 h-3 rounded-full bg-purple-500"></div>
-              <span class="text-sm font-medium">Emma</span>
-            </div>
-            <span class="text-sm font-mono">$63 <span class="text-muted">/ $80</span></span>
-          </div>
-          <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-            <div class="h-full bg-purple-500 rounded-full" style="width: 79%"></div>
-          </div>
-        </div>
-
-        <!-- Sophie -->
-        <div class="mb-4">
-          <div class="flex items-center justify-between mb-1">
-            <div class="flex items-center gap-2">
-              <div class="w-3 h-3 rounded-full bg-green-500"></div>
-              <span class="text-sm font-medium">Sophie</span>
-            </div>
-            <span class="text-sm font-mono">$28 <span class="text-muted">/ $50</span></span>
-          </div>
-          <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-            <div class="h-full bg-green-500 rounded-full" style="width: 56%"></div>
-          </div>
-        </div>
-
-        <a href="kid-spending.html" class="text-xs text-accent hover:underline mt-2 block">View kid details →</a>
+      <div class="barrow">
+        <div class="cat-top"><span>Transportation</span><span class="amt">$220 / $300</span></div>
+        <div class="track"><span data-w="73%" style="background:var(--cat-transport)"></span></div>
       </div>
-
-      <!-- Center: Budget vs Actual -->
-      <div class="col-span-1 bg-card border border-border rounded-xl p-5">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Budget vs Actual</h2>
-
-        <div class="space-y-3">
-          <div>
-            <div class="flex justify-between text-xs mb-1">
-              <span>Groceries</span>
-              <span class="text-yellow-400">$680 / $700</span>
-            </div>
-            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div class="h-full bg-yellow-400 rounded-full" style="width: 97%"></div>
-            </div>
-          </div>
-
-          <div>
-            <div class="flex justify-between text-xs mb-1">
-              <span>Dining Out</span>
-              <span class="text-red-400">$420 / $350</span>
-            </div>
-            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div class="h-full bg-red-400 rounded-full" style="width: 100%"></div>
-            </div>
-          </div>
-
-          <div>
-            <div class="flex justify-between text-xs mb-1">
-              <span>Shopping</span>
-              <span class="text-muted">$180 / $400</span>
-            </div>
-            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div class="h-full bg-zinc-500 rounded-full" style="width: 45%"></div>
-            </div>
-          </div>
-
-          <div>
-            <div class="flex justify-between text-xs mb-1">
-              <span>Subscriptions</span>
-              <span class="text-muted">$156 / $175</span>
-            </div>
-            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div class="h-full bg-zinc-500 rounded-full" style="width: 89%"></div>
-            </div>
-          </div>
-
-          <div>
-            <div class="flex justify-between text-xs mb-1">
-              <span>Transportation</span>
-              <span class="text-muted">$220 / $300</span>
-            </div>
-            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div class="h-full bg-zinc-500 rounded-full" style="width: 73%"></div>
-            </div>
-          </div>
-
-          <div>
-            <div class="flex justify-between text-xs mb-1">
-              <span>Kids - Activities</span>
-              <span class="text-muted">$340 / $500</span>
-            </div>
-            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div class="h-full bg-zinc-500 rounded-full" style="width: 68%"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Right: Recent Alerts + Upcoming Bills -->
-      <div class="col-span-1 space-y-4">
-        <!-- Alerts -->
-        <div class="bg-card border border-border rounded-xl p-5">
-          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Finance Alerts</h2>
-          <div class="space-y-2">
-            <div class="flex items-start gap-2 p-2 rounded-lg bg-red-950/30 border border-red-900/50">
-              <span class="text-red-400 text-xs mt-0.5">●</span>
-              <div>
-                <p class="text-xs font-medium">Jake exceeded weekly limit</p>
-                <p class="text-xs text-muted">$112 / $100 • 2 hours ago</p>
-              </div>
-            </div>
-            <div class="flex items-start gap-2 p-2 rounded-lg bg-yellow-950/30 border border-yellow-900/50">
-              <span class="text-yellow-400 text-xs mt-0.5">●</span>
-              <div>
-                <p class="text-xs font-medium">Dining Out over budget</p>
-                <p class="text-xs text-muted">$420 / $350 • Today</p>
-              </div>
-            </div>
-            <div class="flex items-start gap-2 p-2 rounded-lg bg-zinc-800/50 border border-border">
-              <span class="text-blue-400 text-xs mt-0.5">●</span>
-              <div>
-                <p class="text-xs font-medium">New subscription detected</p>
-                <p class="text-xs text-muted">Cursor Pro $20/mo • Jun 15</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Upcoming Bills -->
-        <div class="bg-card border border-border rounded-xl p-5">
-          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Upcoming Bills</h2>
-          <div class="space-y-2">
-            <div class="flex justify-between items-center py-1.5 border-b border-border/50">
-              <div>
-                <p class="text-xs font-medium">Mortgage</p>
-                <p class="text-xs text-muted">Jun 25</p>
-              </div>
-              <span class="text-sm font-mono">$2,450</span>
-            </div>
-            <div class="flex justify-between items-center py-1.5 border-b border-border/50">
-              <div>
-                <p class="text-xs font-medium">Electric (PSE&G)</p>
-                <p class="text-xs text-muted">Jun 28</p>
-              </div>
-              <span class="text-sm font-mono">$185</span>
-            </div>
-            <div class="flex justify-between items-center py-1.5 border-b border-border/50">
-              <div>
-                <p class="text-xs font-medium">Car Insurance</p>
-                <p class="text-xs text-muted">Jul 1</p>
-              </div>
-              <span class="text-sm font-mono">$312</span>
-            </div>
-            <div class="flex justify-between items-center py-1.5">
-              <div>
-                <p class="text-xs font-medium">Internet (Verizon)</p>
-                <p class="text-xs text-muted">Jul 3</p>
-              </div>
-              <span class="text-sm font-mono">$89</span>
-            </div>
-          </div>
-          <a href="bills-calendar.html" class="text-xs text-accent hover:underline mt-3 block">View full calendar →</a>
-        </div>
+      <div class="barrow">
+        <div class="cat-top"><span>Kids &middot; activities</span><span class="amt">$340 / $500</span></div>
+        <div class="track"><span data-w="68%" style="background:var(--cat-groceries)"></span></div>
       </div>
     </div>
-  </main>
+
+    <!-- RIGHT COLUMN -->
+    <div>
+      <div class="card reveal" style="margin-bottom:16px">
+        <div class="sectitle">What Tyrion noticed</div>
+        <div class="alert a-err"><div class="badge">&#10071;</div><div><div class="src">Tyrion</div><div class="ttl">Jake blew past his limit</div><div class="bd">$112 of $100, and still counting. Shall I have a word?</div></div></div>
+        <div class="alert a-warn"><div class="badge">&#9203;</div><div><div class="src">Tyrion</div><div class="ttl">Dining out is over budget</div><div class="bd">$70 past the line. Delicious, but over.</div></div></div>
+        <div class="alert a-info"><div class="badge">&#128064;</div><div><div class="src">Tyrion</div><div class="ttl">New subscription spotted</div><div class="bd">Cursor Pro, $20/mo since Jun 15. Keeping it?</div></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="sectitle">Upcoming bills</div>
+        <div class="row"><div><div class="n">Mortgage</div><div class="d">Jun 25</div></div><span class="mono">$2,450</span></div>
+        <div class="row"><div><div class="n">Electric &middot; PSE&amp;G</div><div class="d">Jun 28</div></div><span class="mono">$185</span></div>
+        <div class="row"><div><div class="n">Car insurance</div><div class="d">Jul 1</div></div><span class="mono">$312</span></div>
+        <div class="row"><div><div class="n">Internet &middot; Verizon</div><div class="d">Jul 3</div></div><span class="mono">$89</span></div>
+        <a class="link" href="bills-calendar.html">View full calendar &rarr;</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="motionnote mono">Motion demo &middot; production uses NumberFlow (figures) + Motion / motion.dev (reveals &amp; bars)</div>
+</main>
+
+<script>
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function countUp(el){
+    const to=parseFloat(el.dataset.to), pre=el.dataset.pre||'', suf=el.dataset.suf||'';
+    if(reduce){el.textContent=pre+to.toLocaleString('en-US')+suf;return;}
+    const dur=1000, t0=performance.now();
+    function step(now){
+      const p=Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
+      el.textContent=pre+Math.round(to*e).toLocaleString('en-US')+suf;
+      if(p<1)requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function play(){
+    document.querySelectorAll('.reveal').forEach((c,i)=>{
+      c.classList.remove('in');
+      if(reduce){c.classList.add('in');return;}
+      setTimeout(()=>c.classList.add('in'), 80*i);
+    });
+    document.querySelectorAll('.cu').forEach((el,i)=>{
+      el.textContent=(el.dataset.pre||'')+'0';
+      setTimeout(()=>countUp(el), reduce?0:200+60*i);
+    });
+    document.querySelectorAll('.track > span').forEach((s,i)=>{
+      const frac=parseFloat(s.dataset.w)/100;
+      s.style.transform='scaleX(0)';
+      setTimeout(()=>{ s.style.transform='scaleX('+frac+')'; }, reduce?0:250+50*i);
+    });
+  }
+
+  document.getElementById('replay').addEventListener('click', play);
+  window.addEventListener('load', play);
+</script>
 </body>
 </html>

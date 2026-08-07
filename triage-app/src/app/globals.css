@@ -1,13 +1,83 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --bg: #15171c;
+  --elevated: #1d2027;
+  --card: #23272f;
+  --card-2: #2a2f38;
+  --hair: #22262e;
+  --hair2: #2a2f38;
+  --parchment: #f3ecdd;
+  --muted: #a9a293;
+  --dim: #6e6a60;
+  --gold: #c9a24a;
+  --gold-hi: #e6c260;
+  --gold-deep: #8a6b27;
+}
 
 html {
   color-scheme: dark;
 }
 
 body {
-  background: #0a0a0a;
-  color: #ffffff;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: #ece7d9;
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Serif is a garnish (headlines only); numbers/labels/buttons stay sans or mono */
+.font-serif {
+  font-feature-settings: "liga" 1, "dlig" 1;
+}
+
+/* TYRION coin mark — used in the sidebar lockup */
+.coin {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Uppercase mono eyebrow/labels */
+.eyebrow {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Neutral integration source tags — loosely coupled (MC / OWL / Monarch) */
+.src-tag {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--hair2);
+  background: var(--card);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.src-tag.owl {
+  color: #b79be0;
+  border-color: rgba(138, 111, 176, 0.35);
+  background: rgba(138, 111, 176, 0.1);
+}
+.src-tag.monarch {
+  color: #7fa66a;
+  border-color: rgba(127, 166, 106, 0.3);
+  background: rgba(127, 166, 106, 0.08);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
 }

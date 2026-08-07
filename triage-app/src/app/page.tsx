@@ -17,15 +17,15 @@ import { getAccounts, getBudgets, getCashflow, getRecurring } from "@/lib/bridge
 import { setDataSourcePreference } from "@/lib/use-data-source";
 
 const alertColorMap = {
-  red: { bg: "bg-red-950/30", border: "border-red-900/50", dot: "text-red-400" },
-  yellow: { bg: "bg-yellow-950/30", border: "border-yellow-900/50", dot: "text-yellow-400" },
-  blue: { bg: "bg-zinc-800/50", border: "border-border", dot: "text-blue-400" },
+  red: { bg: "bg-error/10", border: "border-error/25", dot: "text-error" },
+  yellow: { bg: "bg-warning/10", border: "border-warning/25", dot: "text-warning" },
+  blue: { bg: "bg-elevated", border: "border-border", dot: "text-info" },
 };
 
 const kidBarColors: Record<string, string> = {
-  blue: "bg-blue-500",
-  purple: "bg-purple-500",
-  green: "bg-green-500",
+  blue: "bg-jake",
+  purple: "bg-emma",
+  green: "bg-sophie",
 };
 
 interface LiveDashboardData {
@@ -114,16 +114,16 @@ export default function DashboardPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Finance Dashboard</h1>
+          <h1 className="text-3xl font-serif font-bold">Finance Dashboard</h1>
           <p className="text-sm text-muted mt-1">June 2026 • Week 3</p>
         </div>
         <div className="flex gap-2 items-center">
           {/* Data Source Toggle */}
-          <div className="flex items-center gap-1 mr-4 bg-[#141414] border border-[#262626] rounded-lg p-0.5">
+          <div className="flex items-center gap-1 mr-4 bg-card border border-border rounded-lg p-0.5">
             <button
               onClick={() => handleSetDataSource("mock")}
               className={`px-3 py-1 rounded-md text-xs transition-colors ${
-                dataSource === "mock" ? "bg-[#262626] text-white" : "text-muted hover:text-white"
+                dataSource === "mock" ? "bg-card-2 text-parchment" : "text-muted hover:text-parchment"
               }`}
             >
               Mock Data
@@ -131,7 +131,7 @@ export default function DashboardPage() {
             <button
               onClick={() => handleSetDataSource("live")}
               className={`px-3 py-1 rounded-md text-xs transition-colors ${
-                dataSource === "live" ? "bg-emerald-900/50 text-emerald-400 border border-emerald-800/50" : "text-muted hover:text-white"
+                dataSource === "live" ? "bg-success/15 text-success border border-success/40" : "text-muted hover:text-parchment"
               }`}
             >
               Live Data
@@ -144,7 +144,7 @@ export default function DashboardPage() {
       </div>
 
       {liveLoading && dataSource === "live" && (
-        <div className="mb-4 px-3 py-2 rounded-md bg-emerald-950/20 border border-emerald-900/30 text-xs text-emerald-400">
+        <div className="mb-4 px-3 py-2 rounded-md bg-success/20 border border-success/30 text-xs text-success">
           Fetching live data from Monarch Money...
         </div>
       )}
@@ -173,9 +173,9 @@ export default function DashboardPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Kids This Week</h2>
 
           {dataSource === "live" ? (
-            <div className="border border-dashed border-[#333] rounded-lg p-4">
-              <p className="text-sm text-[#666]">Coming Soon</p>
-              <p className="text-xs text-[#555] mt-1">Configure kid rules in Settings to track per-kid spending automatically.</p>
+            <div className="border border-dashed border-card-2 rounded-lg p-4">
+              <p className="text-sm text-muted">Coming Soon</p>
+              <p className="text-xs text-dim mt-1">Configure kid rules in Settings to track per-kid spending automatically.</p>
               <Link href="/settings" className="text-xs text-accent hover:underline mt-3 block">
                 Configure Kids →
               </Link>
@@ -188,11 +188,11 @@ export default function DashboardPage() {
                     <KidBadge name={kid.name} color={kid.color} />
                     <span className="text-sm font-mono">
                       ${kid.spent}{" "}
-                      <span className={kid.spent > kid.limit ? "text-red-400" : "text-muted"}>/ ${kid.limit}</span>
+                      <span className={kid.spent > kid.limit ? "text-error" : "text-muted"}>/ ${kid.limit}</span>
                     </span>
                   </div>
                   <ProgressBar value={kid.spent} max={kid.limit} color={kidBarColors[kid.color]} showOverflow />
-                  {kid.warning && <p className="text-xs text-red-400 mt-1">{kid.warning}</p>}
+                  {kid.warning && <p className="text-xs text-error mt-1">{kid.warning}</p>}
                 </div>
               ))}
             </>
@@ -213,8 +213,8 @@ export default function DashboardPage() {
                 {liveData.budgets.map((item) => {
                   const isOver = item.spent > item.budget;
                   const isNear = item.budget > 0 && item.spent / item.budget > 0.9;
-                  const color = isOver ? "text-red-400" : isNear ? "text-yellow-400" : "text-muted";
-                  const barColor = isOver ? "bg-red-400" : isNear ? "bg-yellow-400" : "bg-zinc-500";
+                  const color = isOver ? "text-error" : isNear ? "text-warning" : "text-muted";
+                  const barColor = isOver ? "bg-error" : isNear ? "bg-warning" : "bg-card-2";
                   return (
                     <div key={item.category}>
                       <div className="flex justify-between text-xs mb-1">
@@ -227,9 +227,9 @@ export default function DashboardPage() {
                 })}
               </div>
             ) : (
-              <div className="border border-dashed border-[#333] rounded-lg p-4">
-                <p className="text-sm text-[#666]">No Budgets Configured</p>
-                <p className="text-xs text-[#555] mt-1">Set up budgets in Monarch to see progress here.</p>
+              <div className="border border-dashed border-card-2 rounded-lg p-4">
+                <p className="text-sm text-muted">No Budgets Configured</p>
+                <p className="text-xs text-dim mt-1">Set up budgets in Monarch to see progress here.</p>
               </div>
             )
           ) : (
@@ -237,8 +237,8 @@ export default function DashboardPage() {
               {budgetItems.map((item) => {
                 const isOver = item.spent > item.budget;
                 const isNear = item.spent / item.budget > 0.9;
-                const color = isOver ? "text-red-400" : isNear ? "text-yellow-400" : "text-muted";
-                const barColor = isOver ? "bg-red-400" : isNear ? "bg-yellow-400" : "bg-zinc-500";
+                const color = isOver ? "text-error" : isNear ? "text-warning" : "text-muted";
+                const barColor = isOver ? "bg-error" : isNear ? "bg-warning" : "bg-card-2";
                 return (
                   <div key={item.category}>
                     <div className="flex justify-between text-xs mb-1">
@@ -259,9 +259,9 @@ export default function DashboardPage() {
           <div className="bg-card border border-border rounded-xl p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Finance Alerts</h2>
             {dataSource === "live" ? (
-              <div className="border border-dashed border-[#333] rounded-lg p-4">
-                <p className="text-sm text-[#666]">Coming Soon</p>
-                <p className="text-xs text-[#555] mt-1">Alerts will appear once spending patterns are analyzed.</p>
+              <div className="border border-dashed border-card-2 rounded-lg p-4">
+                <p className="text-sm text-muted">Coming Soon</p>
+                <p className="text-xs text-dim mt-1">Alerts will appear once spending patterns are analyzed.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -303,9 +303,9 @@ export default function DashboardPage() {
                   ))}
                 </div>
               ) : (
-                <div className="border border-dashed border-[#333] rounded-lg p-4">
-                  <p className="text-sm text-[#666]">No Recurring Bills</p>
-                  <p className="text-xs text-[#555] mt-1">No recurring bills found in Monarch.</p>
+                <div className="border border-dashed border-card-2 rounded-lg p-4">
+                  <p className="text-sm text-muted">No Recurring Bills</p>
+                  <p className="text-xs text-dim mt-1">No recurring bills found in Monarch.</p>
                 </div>
               )
             ) : (

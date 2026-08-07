@@ -4,22 +4,22 @@ import { TriageTransaction, KidProfile } from "@/lib/types";
 
 const kidColorMap: Record<string, { bg: string; border: string; text: string; activeBg: string }> = {
   blue: {
-    bg: "bg-blue-900/30",
-    border: "border-blue-800/50",
-    text: "text-blue-300",
-    activeBg: "bg-blue-600",
+    bg: "bg-jake/15",
+    border: "border-jake/40",
+    text: "text-jake",
+    activeBg: "bg-jake",
   },
   purple: {
-    bg: "bg-purple-900/30",
-    border: "border-purple-800/50",
-    text: "text-purple-300",
-    activeBg: "bg-purple-600",
+    bg: "bg-emma/15",
+    border: "border-emma/40",
+    text: "text-emma",
+    activeBg: "bg-emma",
   },
   green: {
-    bg: "bg-green-900/30",
-    border: "border-green-800/50",
-    text: "text-green-300",
-    activeBg: "bg-green-600",
+    bg: "bg-sophie/15",
+    border: "border-sophie/40",
+    text: "text-sophie",
+    activeBg: "bg-sophie",
   },
 };
 
@@ -60,7 +60,7 @@ export function TransactionCard({
   const renderBadge = () => {
     if (isFlagged) {
       return (
-        <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-800">
+        <span className="text-xs px-2 py-0.5 rounded-full bg-error/15 text-error border border-error/40">
           🚩 Flagged
         </span>
       );
@@ -76,13 +76,13 @@ export function TransactionCard({
     if (txn.triageStatus === "uncategorized") {
       if (txn.originalCategory) {
         return (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-800">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 text-warning border border-warning/40">
             Category: &ldquo;{txn.originalCategory}&rdquo;
           </span>
         );
       }
       return (
-        <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-800">
+        <span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 text-warning border border-warning/40">
           Uncategorized
         </span>
       );
@@ -96,8 +96,8 @@ export function TransactionCard({
         isRemoving ? "animate-slide-out" : ""
       } ${
         isFlagged
-          ? "border border-red-900/50"
-          : "border border-border hover:border-accent/50"
+          ? "border border-error/40"
+          : "border border-border hover:border-gold/50"
       }`}
     >
       {/* Top row: badge + date + amount */}
@@ -113,22 +113,22 @@ export function TransactionCard({
             {txn.originalCategory ? ` • ${txn.originalCategory}` : ""}
           </p>
         </div>
-        <span className="text-xl font-mono font-bold text-red-300">{formatAmount(txn.amount)}</span>
+        <span className="text-xl font-mono font-bold text-error">{formatAmount(txn.amount)}</span>
       </div>
 
       {/* Suggestion reason (pattern match info) */}
       {txn.suggestionReason && !isFlagged && (
-        <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-blue-950/20 border border-blue-900/30">
+        <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-info/10 border border-info/25">
           <span className="text-xs">🧠</span>
-          <span className="text-xs text-blue-200">{txn.suggestionReason}</span>
+          <span className="text-xs text-info">{txn.suggestionReason}</span>
         </div>
       )}
 
       {/* Flag reason */}
       {isFlagged && txn.flagReason && (
-        <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-red-950/20 border border-red-900/30">
+        <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-error/10 border border-error/25">
           <span className="text-xs">⚠️</span>
-          <span className="text-xs text-red-200">{txn.flagReason}</span>
+          <span className="text-xs text-error">{txn.flagReason}</span>
         </div>
       )}
 
@@ -141,7 +141,7 @@ export function TransactionCard({
               <button
                 key={cat}
                 onClick={() => onConfirmCategory(txn.id, cat)}
-                className="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border hover:border-accent hover:bg-accent/10 transition-colors"
+                className="px-2.5 py-1 rounded-md text-xs bg-card-2 border border-border hover:border-gold hover:bg-gold/10 transition-colors"
               >
                 {cat}
               </button>
@@ -184,7 +184,7 @@ export function TransactionCard({
           {/* "Mine" button */}
           <button
             onClick={() => onAssignKid(txn.id, "Mine")}
-            className="px-2.5 py-1 rounded-md text-xs bg-zinc-800 border border-border text-muted hover:bg-zinc-700 transition-colors"
+            className="px-2.5 py-1 rounded-md text-xs bg-card-2 border border-border text-muted hover:border-gold transition-colors"
           >
             Mine
           </button>
@@ -194,14 +194,14 @@ export function TransactionCard({
           {!isFlagged && (
             <button
               onClick={() => onFlag(txn.id)}
-              className="px-2.5 py-1 rounded-md text-xs text-red-400 border border-red-900/50 hover:bg-red-950/30 transition-colors"
+              className="px-2.5 py-1 rounded-md text-xs text-error border border-error/40 hover:bg-error/10 transition-colors"
             >
               🚩 Flag
             </button>
           )}
           <button
             onClick={() => onSkip(txn.id)}
-            className="px-2.5 py-1 rounded-md text-xs text-muted border border-border hover:bg-zinc-800 transition-colors"
+            className="px-2.5 py-1 rounded-md text-xs text-muted border border-border hover:border-gold transition-colors"
           >
             Skip
           </button>

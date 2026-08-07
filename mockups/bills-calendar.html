@@ -1,249 +1,232 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Upcoming Bills — Mission Control</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: { extend: { colors: {
-        background: '#0a0a0a', card: '#141414', border: '#262626',
-        muted: '#737373', accent: '#3b82f6'
-      }}}
-    }
-  </script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tyrion &mdash; Bills calendar</title>
+<link rel="stylesheet" href="../brand/tyrion.css" />
+<style>
+  .bill-cal{grid-template-columns:1.35fr .85fr}
+  .cal .day{display:flex;flex-direction:column;gap:4px}
+  .cal .day b{font-weight:600}
+  .cal .day .mini{font-size:.62rem;color:var(--muted);line-height:1.2}
+  .cal .day .dots{margin-top:auto;display:flex;gap:4px;flex-wrap:wrap}
+  .cal .day .dot.paid{background:var(--success)}
+  .cal .day .dot.due{background:var(--warning)}
+  .cal .day .dot.overdue{background:var(--error)}
+  .cal .day .dot.scheduled{background:var(--info)}
+  @media(max-width:900px){.bill-cal{grid-template-columns:1fr}.cal .day{min-height:74px}}
+</style>
 </head>
-<body class="bg-background text-white min-h-screen">
-  <!-- Top Nav -->
-  <header class="border-b border-border px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <span class="text-lg font-semibold">Mission Control</span>
-      <nav class="flex gap-1 ml-6">
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Tasks</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Alerts</a>
-        <a href="dashboard.html" class="px-3 py-1.5 rounded-md text-sm bg-card text-white font-medium">Finance</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Today</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">AI</a>
-      </nav>
-    </div>
-  </header>
+<body>
 
-  <main class="max-w-5xl mx-auto px-6 py-6">
-    <div class="flex items-center justify-between mb-6">
+<!-- MOTION CONTROL (demo only) -->
+<div class="demobar">
+  <span class="lbl">Tyrion &middot; Bills calendar</span>
+  <button class="replay" id="replay">&#8635; Replay motion</button>
+</div>
+
+<!-- APP HEADER -->
+<header class="app">
+  <div class="brandlock">
+    <svg width="30" height="30" viewBox="0 0 100 100" aria-label="Tyrion" class="coin">
+      <defs><radialGradient id="tycoin" cx="34%" cy="28%" r="80%"><stop offset="0%" stop-color="#F0D585"/><stop offset="55%" stop-color="#C9A24A"/><stop offset="100%" stop-color="#8A6B27"/></radialGradient></defs>
+      <circle cx="50" cy="50" r="47" fill="url(#tycoin)"/>
+      <circle cx="50" cy="50" r="47" fill="none" stroke="#6b5220" stroke-width="2.4"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#7a5e28" stroke-width="1.6" opacity=".7"/>
+      <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="54" fill="#3a2c0c">T</text>
+    </svg>
+    <span class="wm">Tyrion<span class="d">.</span></span>
+  </div>
+  <div class="sync">
+    <span class="t mono">Last synced 12 min ago &middot; <span class="src-tag monarch">Monarch</span></span>
+    <button class="btn btn-secondary">Sync now</button>
+  </div>
+</header>
+
+<main>
+  <div class="pagehead">
+    <div>
+      <h1>Upcoming Bills &amp; Payments</h1>
+      <div class="sub serif" style="font-style:italic;font-size:1.05rem">&ldquo;Debts arrive like ravens. We prefer ours house-trained.&rdquo;</div>
+      <div class="sub mono" style="margin-top:4px">Next 30 days &middot; Total due: $4,218</div>
+    </div>
+    <div class="pill-row">
+      <button class="gpill active">Calendar View</button>
+      <button class="gpill">List View</button>
+    </div>
+  </div>
+
+  <!-- SUMMARY CARDS -->
+  <div class="grid cards4" style="margin-bottom:16px">
+    <div class="card reveal">
+      <div class="k">This Week</div>
+      <div class="big cu" data-to="2635" data-pre="$">$0</div>
+      <div class="delta muted">3 bills</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Next Week</div>
+      <div class="big cu" data-to="401" data-pre="$">$0</div>
+      <div class="delta muted">4 bills</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Week 3</div>
+      <div class="big cu" data-to="870" data-pre="$">$0</div>
+      <div class="delta muted">3 bills</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Week 4</div>
+      <div class="big cu" data-to="312" data-pre="$">$0</div>
+      <div class="delta muted">2 bills</div>
+    </div>
+  </div>
+
+  <div class="grid bill-cal">
+    <!-- CALENDAR -->
+    <div class="card reveal">
+      <div class="sectitle">Calendar &middot; Jun 20&ndash;Jul 20</div>
+      <div class="cal" aria-label="Upcoming bills calendar">
+        <div class="dow">Sat</div>
+        <div class="dow">Sun</div>
+        <div class="dow">Mon</div>
+        <div class="dow">Tue</div>
+        <div class="dow">Wed</div>
+        <div class="dow">Thu</div>
+        <div class="dow">Fri</div>
+
+        <div class="day today"><b class="mono">20</b><span class="mini">Today</span><span class="dots"></span></div>
+        <div class="day"><b class="mono">21</b><span class="dots"></span></div>
+        <div class="day"><b class="mono">22</b><span class="mini">Electric<br /><span class="mono">$185</span></span><span class="dots"><span class="dot due" title="Due soon"></span></span></div>
+        <div class="day"><b class="mono">23</b><span class="dots"></span></div>
+        <div class="day"><b class="mono">24</b><span class="dots"></span></div>
+        <div class="day"><b class="mono">25</b><span class="mini">Mortgage<br /><span class="mono">$2,450</span></span><span class="dots"><span class="dot scheduled" title="Scheduled"></span></span></div>
+        <div class="day"><b class="mono">26</b><span class="dots"></span></div>
+
+        <div class="day"><b class="mono">27</b><span class="dots"></span></div>
+        <div class="day"><b class="mono">28</b><span class="mini">Internet<br /><span class="mono">$89</span></span><span class="dots"><span class="dot scheduled" title="Scheduled"></span></span></div>
+        <div class="day"><b class="mono">29</b><span class="dots"></span></div>
+        <div class="day"><b class="mono">30</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">1</b><span class="mini">Car insurance<br /><span class="mono">$312</span></span><span class="dots"><span class="dot scheduled" title="Scheduled"></span></span></div>
+        <div class="day dim"><b class="mono">2</b><span class="mini">Cell phone<br /><span class="mono">$185</span></span><span class="dots"><span class="dot scheduled" title="Scheduled"></span></span></div>
+        <div class="day dim"><b class="mono">3</b><span class="dots"></span></div>
+
+        <div class="day dim"><b class="mono">4</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">5</b><span class="mini">Water/Sewer<br /><span class="mono">$210</span></span><span class="dots"><span class="dot due" title="Due soon"></span></span></div>
+        <div class="day dim"><b class="mono">6</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">7</b><span class="mini">Gym Membership<br /><span class="mono">$49</span></span><span class="dots"><span class="dot scheduled" title="Scheduled"></span><span class="dot scheduled" title="Scheduled"></span></span></div>
+        <div class="day dim"><b class="mono">8</b><span class="mini">Bundle</span><span class="dots"><span class="dot scheduled" title="Scheduled"></span></span></div>
+        <div class="day dim"><b class="mono">9</b><span class="mini">Bundle</span><span class="dots"><span class="dot scheduled" title="Scheduled"></span></span></div>
+        <div class="day dim"><b class="mono">10</b><span class="mini">Bundle</span><span class="dots"><span class="dot scheduled" title="Scheduled"></span></span></div>
+
+        <div class="day dim"><b class="mono">11</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">12</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">13</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">14</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">15</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">16</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">17</b><span class="dots"></span></div>
+
+        <div class="day dim"><b class="mono">18</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">19</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">20</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">21</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">22</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">23</b><span class="dots"></span></div>
+        <div class="day dim"><b class="mono">24</b><span class="dots"></span></div>
+      </div>
+      <div class="pill-row" style="margin-top:12px">
+        <span class="status s-ok">Paid</span>
+        <span class="status s-warn">Due soon</span>
+        <span class="status s-err">Overdue</span>
+        <span class="status s-info">Scheduled</span>
+      </div>
+    </div>
+
+    <!-- SIDE LIST -->
+    <div>
+      <div class="card reveal" style="margin-bottom:16px">
+        <div class="sectitle">This Week (Jun 20&ndash;26)</div>
+        <div class="row">
+          <div><div class="n">Mortgage</div><div class="d">Chase Home Lending &middot; Auto-pay</div></div>
+          <div style="text-align:right"><div class="mono">$2,450</div><div class="d mono">Due Jun 25</div><span class="status s-info">Auto-pay</span></div>
+        </div>
+        <div class="row">
+          <div><div class="n">Electric (PSE&amp;G)</div><div class="d">Checking ...2341 &middot; Manual pay</div></div>
+          <div style="text-align:right"><div class="mono">$185</div><div class="d mono">Due Jun 22 (2 days)</div><span class="status s-warn">Manual</span></div>
+        </div>
+      </div>
+
+      <div class="card reveal" style="margin-bottom:16px">
+        <div class="sectitle">Next Week (Jun 27&ndash;Jul 3)</div>
+        <div class="row"><div><div class="n">Internet (Verizon FiOS)</div><div class="d">Amex ...1234 &middot; Auto-pay</div></div><div style="text-align:right"><div class="mono">$89</div><div class="d mono">Due Jun 28</div><span class="status s-info">Auto-pay</span></div></div>
+        <div class="row"><div><div class="n">Car Insurance (Progressive)</div><div class="d">Checking ...2341 &middot; Auto-pay</div></div><div style="text-align:right"><div class="mono">$312</div><div class="d mono">Due Jul 1</div><span class="status s-info">Auto-pay</span></div></div>
+        <div class="row"><div><div class="n">Cell Phone (T-Mobile)</div><div class="d">Amex ...1234 &middot; Auto-pay</div></div><div style="text-align:right"><div class="mono">$185</div><div class="d mono">Due Jul 2</div><span class="status s-info">Auto-pay</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="sectitle">Week 3 (Jul 4&ndash;10)</div>
+        <div class="row"><div><div class="n">Water/Sewer</div><div class="d">Checking ...2341 &middot; Manual pay (quarterly)</div></div><div style="text-align:right"><div class="mono">$210</div><div class="d mono">Due Jul 5</div><span class="status s-warn">Manual</span></div></div>
+        <div class="row"><div><div class="n">Gym Membership</div><div class="d">Chase ...9876 &middot; Auto-pay</div></div><div style="text-align:right"><div class="mono">$49</div><div class="d mono">Due Jul 7</div><span class="status s-info">Auto-pay</span></div></div>
+        <div class="row"><div><div class="n">Subscriptions Bundle</div><div class="d">Netflix (<span class="mono">$22</span>) + Spotify (<span class="mono">$17</span>) + iCloud (<span class="mono">$10</span>) + Disney+ (<span class="mono">$14</span>)</div></div><div style="text-align:right"><div class="mono">$63</div><div class="d mono">Jul 7&ndash;10</div><span class="status s-info">Auto-pay</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CASH FLOW PROJECTION -->
+  <div class="card reveal" style="margin-top:16px">
+    <div class="sectitle">Cash Flow Projection</div>
+    <div class="grid cards2">
       <div>
-        <h1 class="text-2xl font-bold">Upcoming Bills & Payments</h1>
-        <p class="text-sm text-muted mt-1">Next 30 days • Total due: $4,218</p>
+        <div class="k">Checking Balance Now</div>
+        <div class="big mono ok">$8,420</div>
       </div>
-      <div class="flex gap-2">
-        <button class="px-3 py-1.5 rounded-md text-sm bg-card border border-border">Calendar View</button>
-        <button class="px-3 py-1.5 rounded-md text-sm bg-accent text-white">List View</button>
-      </div>
-    </div>
-
-    <!-- Summary Bar -->
-    <div class="grid grid-cols-4 gap-4 mb-6">
-      <div class="bg-card border border-border rounded-xl p-4">
-        <p class="text-xs text-muted">This Week</p>
-        <p class="text-xl font-bold font-mono">$2,635</p>
-        <p class="text-xs text-muted">3 bills</p>
-      </div>
-      <div class="bg-card border border-border rounded-xl p-4">
-        <p class="text-xs text-muted">Next Week</p>
-        <p class="text-xl font-bold font-mono">$401</p>
-        <p class="text-xs text-muted">4 bills</p>
-      </div>
-      <div class="bg-card border border-border rounded-xl p-4">
-        <p class="text-xs text-muted">Week 3</p>
-        <p class="text-xl font-bold font-mono">$870</p>
-        <p class="text-xs text-muted">3 bills</p>
-      </div>
-      <div class="bg-card border border-border rounded-xl p-4">
-        <p class="text-xs text-muted">Week 4</p>
-        <p class="text-xl font-bold font-mono">$312</p>
-        <p class="text-xs text-muted">2 bills</p>
+      <div>
+        <div class="k">After All Bills (30 days)</div>
+        <div class="big mono">$4,202</div>
+        <div class="d muted mono">Assumes avg $1,800 discretionary + $4,218 bills</div>
       </div>
     </div>
+    <hr class="hair" />
+    <div class="alert a-ok"><div class="badge">&#10003;</div><div><div class="src">Tyrion</div><div class="ttl">You&rsquo;re in good shape</div><div class="bd">Projected balance stays above $4,000 through <span class="mono">July 20</span>.</div></div></div>
+  </div>
 
-    <!-- Bills List -->
-    <div class="bg-card border border-border rounded-xl overflow-hidden">
-      <!-- This Week -->
-      <div class="px-5 py-3 bg-zinc-900/50 border-b border-border">
-        <p class="text-xs font-semibold uppercase tracking-wider text-muted">This Week (Jun 20–26)</p>
-      </div>
+  <div class="motionnote mono">Motion demo &middot; production uses NumberFlow (figures) + Motion / motion.dev (reveals &amp; bars)</div>
+</main>
 
-      <div class="divide-y divide-border">
-        <div class="flex items-center justify-between px-5 py-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-red-900/20 flex items-center justify-center">
-              <span class="text-lg">🏠</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium">Mortgage</p>
-              <p class="text-xs text-muted">Chase Home Lending • Auto-pay</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <p class="text-base font-mono font-bold">$2,450</p>
-            <p class="text-xs text-muted">Due Jun 25</p>
-          </div>
-          <span class="px-2 py-0.5 rounded text-xs bg-green-900/30 text-green-400 border border-green-800/50">Auto-pay</span>
-        </div>
+<script>
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-        <div class="flex items-center justify-between px-5 py-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-yellow-900/20 flex items-center justify-center">
-              <span class="text-lg">⚡</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium">Electric (PSE&G)</p>
-              <p class="text-xs text-muted">Checking ...2341 • Manual pay</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <p class="text-base font-mono font-bold">$185</p>
-            <p class="text-xs text-yellow-400">Due Jun 22 (2 days)</p>
-          </div>
-          <span class="px-2 py-0.5 rounded text-xs bg-yellow-900/30 text-yellow-400 border border-yellow-800/50">Manual</span>
-        </div>
-      </div>
+  function countUp(el){
+    const to=parseFloat(el.dataset.to), pre=el.dataset.pre||'', suf=el.dataset.suf||'';
+    if(reduce){el.textContent=pre+to.toLocaleString('en-US')+suf;return;}
+    const dur=1000, t0=performance.now();
+    function step(now){
+      const p=Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
+      el.textContent=pre+Math.round(to*e).toLocaleString('en-US')+suf;
+      if(p<1)requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
 
-      <!-- Next Week -->
-      <div class="px-5 py-3 bg-zinc-900/50 border-b border-border border-t">
-        <p class="text-xs font-semibold uppercase tracking-wider text-muted">Next Week (Jun 27–Jul 3)</p>
-      </div>
+  function play(){
+    document.querySelectorAll('.reveal').forEach((c,i)=>{
+      c.classList.remove('in');
+      if(reduce){c.classList.add('in');return;}
+      setTimeout(()=>c.classList.add('in'), 80*i);
+    });
+    document.querySelectorAll('.cu').forEach((el,i)=>{
+      el.textContent=(el.dataset.pre||'')+'0';
+      setTimeout(()=>countUp(el), reduce?0:200+60*i);
+    });
+    document.querySelectorAll('.track > span').forEach((s,i)=>{
+      const frac=parseFloat(s.dataset.w)/100;
+      s.style.transform='scaleX(0)';
+      setTimeout(()=>{ s.style.transform='scaleX('+frac+')'; }, reduce?0:250+50*i);
+    });
+  }
 
-      <div class="divide-y divide-border">
-        <div class="flex items-center justify-between px-5 py-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-blue-900/20 flex items-center justify-center">
-              <span class="text-lg">🌐</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium">Internet (Verizon FiOS)</p>
-              <p class="text-xs text-muted">Amex ...1234 • Auto-pay</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <p class="text-base font-mono font-bold">$89</p>
-            <p class="text-xs text-muted">Due Jun 28</p>
-          </div>
-          <span class="px-2 py-0.5 rounded text-xs bg-green-900/30 text-green-400 border border-green-800/50">Auto-pay</span>
-        </div>
-
-        <div class="flex items-center justify-between px-5 py-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-blue-900/20 flex items-center justify-center">
-              <span class="text-lg">🚗</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium">Car Insurance (Progressive)</p>
-              <p class="text-xs text-muted">Checking ...2341 • Auto-pay</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <p class="text-base font-mono font-bold">$312</p>
-            <p class="text-xs text-muted">Due Jul 1</p>
-          </div>
-          <span class="px-2 py-0.5 rounded text-xs bg-green-900/30 text-green-400 border border-green-800/50">Auto-pay</span>
-        </div>
-
-        <div class="flex items-center justify-between px-5 py-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-purple-900/20 flex items-center justify-center">
-              <span class="text-lg">📱</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium">Cell Phone (T-Mobile)</p>
-              <p class="text-xs text-muted">Amex ...1234 • Auto-pay</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <p class="text-base font-mono font-bold">$185</p>
-            <p class="text-xs text-muted">Due Jul 2</p>
-          </div>
-          <span class="px-2 py-0.5 rounded text-xs bg-green-900/30 text-green-400 border border-green-800/50">Auto-pay</span>
-        </div>
-      </div>
-
-      <!-- Week 3 -->
-      <div class="px-5 py-3 bg-zinc-900/50 border-b border-border border-t">
-        <p class="text-xs font-semibold uppercase tracking-wider text-muted">Week 3 (Jul 4–10)</p>
-      </div>
-
-      <div class="divide-y divide-border">
-        <div class="flex items-center justify-between px-5 py-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-green-900/20 flex items-center justify-center">
-              <span class="text-lg">💧</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium">Water/Sewer</p>
-              <p class="text-xs text-muted">Checking ...2341 • Manual pay (quarterly)</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <p class="text-base font-mono font-bold">$210</p>
-            <p class="text-xs text-muted">Due Jul 5</p>
-          </div>
-          <span class="px-2 py-0.5 rounded text-xs bg-yellow-900/30 text-yellow-400 border border-yellow-800/50">Manual</span>
-        </div>
-
-        <div class="flex items-center justify-between px-5 py-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-orange-900/20 flex items-center justify-center">
-              <span class="text-lg">🏋️</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium">Gym Membership</p>
-              <p class="text-xs text-muted">Chase ...9876 • Auto-pay</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <p class="text-base font-mono font-bold">$49</p>
-            <p class="text-xs text-muted">Due Jul 7</p>
-          </div>
-          <span class="px-2 py-0.5 rounded text-xs bg-green-900/30 text-green-400 border border-green-800/50">Auto-pay</span>
-        </div>
-
-        <div class="flex items-center justify-between px-5 py-4">
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-pink-900/20 flex items-center justify-center">
-              <span class="text-lg">🎵</span>
-            </div>
-            <div>
-              <p class="text-sm font-medium">Subscriptions Bundle</p>
-              <p class="text-xs text-muted">Netflix ($22) + Spotify ($17) + iCloud ($10) + Disney+ ($14)</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <p class="text-base font-mono font-bold">$63</p>
-            <p class="text-xs text-muted">Jul 7–10</p>
-          </div>
-          <span class="px-2 py-0.5 rounded text-xs bg-green-900/30 text-green-400 border border-green-800/50">Auto-pay</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Cash Flow Projection -->
-    <div class="mt-6 bg-card border border-border rounded-xl p-5">
-      <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Cash Flow Projection</h2>
-      <div class="grid grid-cols-2 gap-6">
-        <div>
-          <p class="text-xs text-muted mb-1">Checking Balance Now</p>
-          <p class="text-xl font-mono font-bold text-green-400">$8,420</p>
-        </div>
-        <div>
-          <p class="text-xs text-muted mb-1">After All Bills (30 days)</p>
-          <p class="text-xl font-mono font-bold">$4,202</p>
-          <p class="text-xs text-muted mt-1">Assumes avg $1,800 discretionary + $4,218 bills</p>
-        </div>
-      </div>
-      <div class="mt-4 p-3 rounded-lg bg-green-950/20 border border-green-900/30">
-        <p class="text-xs text-green-300">✓ You're in good shape — projected balance stays above $4,000 through July 20.</p>
-      </div>
-    </div>
-  </main>
+  document.getElementById('replay').addEventListener('click', play);
+  window.addEventListener('load', play);
+</script>
 </body>
 </html>
