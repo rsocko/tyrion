@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TYRION &mdash; Logo Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{--gold:#C9A24A;--gold-hi:#E6C260;--bg:#15171C;--elevated:#1D2027;--card:#23272F;--parchment:#F3ECDD;--muted:#A9A293;--dim:#6E6A60;--hair:rgba(243,236,221,.08);--hair2:rgba(243,236,221,.14)}
+  body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--parchment);line-height:1.6;padding-bottom:80px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  section{padding:48px 0;border-bottom:1px solid var(--hair)}
+  .kicker{font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin-bottom:12px}
+  h2.sec{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;margin-bottom:6px}
+  .desc{color:var(--muted);margin-bottom:26px;max-width:64ch}
+  .hero{padding:72px 0 40px;text-align:center;border-bottom:1px solid var(--hair)}
+  .hero .brand{font-family:'Cormorant Garamond',serif;font-size:3.4rem;font-weight:700;letter-spacing:1px}
+  .hero .brand .d{color:var(--gold)}
+  .hero p{color:var(--muted);margin-top:8px}
+  .row{display:flex;align-items:flex-end;gap:28px;flex-wrap:wrap}
+  .spec{text-align:center}
+  .spec .cap{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--dim);margin-top:10px;letter-spacing:.08em}
+  .coin-svg{display:block}
+  .panel{background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:22px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:820px){.g3,.g4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}}
+  .light{background:var(--parchment);border-radius:14px;padding:22px;color:#2a2620}
+  .tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:6px;border:1px solid var(--hair2);color:var(--muted)}
+  .good{color:#7fe0b0;border-color:rgba(47,177,112,.35)}
+  .bad{color:#eda19c;border-color:rgba(210,69,61,.35)}
+  .note{font-size:.86rem;color:var(--muted)}
+  .note b{color:var(--parchment)}
+  /* app tile */
+  .tile{background:var(--bg);border:1px solid var(--hair);display:grid;place-items:center;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+  .tile.gold{background:radial-gradient(120% 120% at 30% 20%,#E6C260,#C9A24A 55%,#8A6B27)}
+  .r22{border-radius:22.37%}
+  /* browser chrome */
+  .chrome{background:var(--elevated);border:1px solid var(--hair);border-radius:10px;overflow:hidden;max-width:420px}
+  .chrome .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--hair);background:#191c22}
+  .dotset{display:flex;gap:5px}.dotset i{width:9px;height:9px;border-radius:50%;background:#3a3f48}
+  .tab{display:flex;align-items:center;gap:7px;background:var(--card);padding:6px 12px;border-radius:7px;font-size:.78rem;color:var(--muted)}
+  /* dock */
+  .dock{display:inline-flex;gap:10px;padding:10px 14px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid var(--hair2);backdrop-filter:blur(6px)}
+  .dockicon{width:52px;height:52px;border-radius:24%;display:grid;place-items:center}
+  /* lockups */
+  .lockup{display:inline-flex;align-items:center;gap:14px}
+  .lockup .wm,.stacked .wm{font-family:'Cormorant Garamond',serif;font-weight:700;letter-spacing:1px}
+  .lockup .wm .d,.stacked .wm .d{color:var(--gold)}
+  .stacked{display:inline-flex;flex-direction:column;align-items:center;gap:8px}
+  .mono-label{font-family:'JetBrains Mono',monospace;letter-spacing:.28em;color:var(--muted);font-size:.8rem}
+  .sidebar{width:210px;background:var(--elevated);border:1px solid var(--hair);border-radius:12px;padding:12px}
+  .navrow{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:.85rem;color:var(--muted)}
+  .navrow.active{background:var(--card);color:var(--parchment)}
+  .clearbox{position:relative;display:inline-block;padding:36px;border:1px dashed var(--hair2);border-radius:12px}
+  .coin-hover use, .coin-hover circle{transition:transform .5s cubic-bezier(.2,0,0,1)}
+  .coin-hover:hover{transform:rotateY(180deg)}
+  .dont li{margin:6px 0;font-size:.88rem;color:var(--muted)}
+  .dont b{color:#eda19c}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ============ SHARED SVG DEFINITIONS (drawn in a 0 0 100 100 space) ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <radialGradient id="gold" cx="34%" cy="28%" r="80%">
+    <stop offset="0%" stop-color="#F0D585"/><stop offset="55%" stop-color="#C9A24A"/><stop offset="100%" stop-color="#8A6B27"/>
+  </radialGradient>
+  <!-- FULL: fine reeding + inner ring + serif T. For >=56px -->
+  <g id="cFull">
+    <circle cx="50" cy="50" r="47" fill="url(#gold)"/>
+    <circle cx="50" cy="50" r="47" fill="none" stroke="#6b5220" stroke-width="1.5" stroke-dasharray="2 2.2"/>
+    <circle cx="50" cy="50" r="39" fill="none" stroke="#7a5e28" stroke-width="1.4" opacity=".7"/>
+    <text x="50" y="50" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="46" fill="#3a2c0c">T</text>
+  </g>
+  <!-- SIMPLIFIED: solid rim + inner ring kept, reeding dropped, bigger T. For 24-52px -->
+  <g id="cSimple">
+    <circle cx="50" cy="50" r="47" fill="url(#gold)"/>
+    <circle cx="50" cy="50" r="47" fill="none" stroke="#6b5220" stroke-width="2.4"/>
+    <circle cx="50" cy="50" r="38" fill="none" stroke="#7a5e28" stroke-width="1.8" opacity=".75"/>
+    <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="54" fill="#3a2c0c">T</text>
+  </g>
+  <!-- MICRO: rings gone but a solid coin RIM stays (never a bare disc); fattened T. For <=20px -->
+  <g id="cMicro">
+    <circle cx="50" cy="50" r="48" fill="url(#gold)"/>
+    <circle cx="50" cy="50" r="48" fill="none" stroke="#6b5220" stroke-width="5"/>
+    <text x="50" y="52" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="72" fill="#3a2c0c" stroke="#3a2c0c" stroke-width="3" paint-order="stroke">T</text>
+  </g>
+  <!-- MONO flat gold on transparent -->
+  <g id="cMonoGold">
+    <circle cx="50" cy="50" r="47" fill="#C9A24A"/>
+    <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="60" fill="#15171C">T</text>
+  </g>
+  <!-- MONO inverted: charcoal coin, gold T -->
+  <g id="cInverted">
+    <circle cx="50" cy="50" r="47" fill="#15171C" stroke="#C9A24A" stroke-width="3"/>
+    <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="60" fill="#C9A24A">T</text>
+  </g>
+  <!-- OUTLINE / knockout: uses currentColor -->
+  <g id="cOutline">
+    <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="3"/>
+    <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="58" fill="currentColor">T</text>
+  </g>
+  <!-- ===== Detailed monochrome cuts (reeding + inner ring), for >=56px ===== -->
+  <!-- Flat gold, dark reeding + dark inner ring + dark T -->
+  <g id="cMonoFull">
+    <circle cx="50" cy="50" r="47" fill="#C9A24A"/>
+    <circle cx="50" cy="50" r="47" fill="none" stroke="#8A6B27" stroke-width="1.3" stroke-dasharray="1.5 1.8" opacity=".65"/>
+    <circle cx="50" cy="50" r="38" fill="none" stroke="#8A6B27" stroke-width="1.5" opacity=".75"/>
+    <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="52" fill="#15171C">T</text>
+  </g>
+  <!-- Inverted: charcoal coin, gold reeded edge + gold inner ring + gold T -->
+  <g id="cInvFull">
+    <circle cx="50" cy="50" r="47" fill="#15171C"/>
+    <circle cx="50" cy="50" r="47" fill="none" stroke="#C9A24A" stroke-width="2.6"/>
+    <circle cx="50" cy="50" r="47" fill="none" stroke="#8A6B27" stroke-width="1.3" stroke-dasharray="1.5 1.8" opacity=".85"/>
+    <circle cx="50" cy="50" r="38" fill="none" stroke="#C9A24A" stroke-width="1.6" opacity=".6"/>
+    <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="52" fill="#C9A24A">T</text>
+  </g>
+  <!-- Inverted simplified: charcoal coin, gold rim + gold inner ring (no reeding), for 24-52px -->
+  <g id="cInvSimple">
+    <circle cx="50" cy="50" r="47" fill="#15171C"/>
+    <circle cx="50" cy="50" r="47" fill="none" stroke="#C9A24A" stroke-width="3"/>
+    <circle cx="50" cy="50" r="38" fill="none" stroke="#C9A24A" stroke-width="1.6" opacity=".6"/>
+    <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="54" fill="#C9A24A">T</text>
+  </g>
+  <!-- Outline with inner ring (double-line coin), currentColor -->
+  <g id="cOutlineFull">
+    <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="3"/>
+    <circle cx="50" cy="50" r="37" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".7"/>
+    <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="52" fill="currentColor">T</text>
+  </g>
+</defs></svg>
+
+<!-- ============ HERO ============ -->
+<div class="hero"><div class="wrap">
+  <svg class="coin-svg coin-hover" width="88" height="88" viewBox="0 0 100 100" style="margin:0 auto 18px"><use href="#cFull"/></svg>
+  <div class="brand">Tyrion<span class="d">.</span></div>
+  <p>Logo Lab &mdash; sizes, optical cuts, monochrome, app tiles &amp; lockups</p>
+</div></div>
+
+<!-- ============ SIZE LADDER ============ -->
+<section><div class="wrap">
+  <div class="kicker">01 &middot; Size ladder</div>
+  <h2 class="sec">One mark, every size</h2>
+  <p class="desc">The primary mark rendered at real pixel sizes on the app background. Each size below uses the correct optical cut for that scale (see section 02).</p>
+  <div class="panel">
+    <div class="row" style="justify-content:space-between">
+      <div class="spec"><svg class="coin-svg" width="128" height="128" viewBox="0 0 100 100"><use href="#cFull"/></svg><div class="cap">128 &middot; splash</div></div>
+      <div class="spec"><svg class="coin-svg" width="96" height="96" viewBox="0 0 100 100"><use href="#cFull"/></svg><div class="cap">96 &middot; hero</div></div>
+      <div class="spec"><svg class="coin-svg" width="64" height="64" viewBox="0 0 100 100"><use href="#cFull"/></svg><div class="cap">64 &middot; card</div></div>
+      <div class="spec"><svg class="coin-svg" width="48" height="48" viewBox="0 0 100 100"><use href="#cSimple"/></svg><div class="cap">48 &middot; nav</div></div>
+      <div class="spec"><svg class="coin-svg" width="32" height="32" viewBox="0 0 100 100"><use href="#cSimple"/></svg><div class="cap">32 &middot; avatar</div></div>
+      <div class="spec"><svg class="coin-svg" width="24" height="24" viewBox="0 0 100 100"><use href="#cSimple"/></svg><div class="cap">24 &middot; inline</div></div>
+      <div class="spec"><svg class="coin-svg" width="16" height="16" viewBox="0 0 100 100"><use href="#cMicro"/></svg><div class="cap">16 &middot; favicon</div></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ OPTICAL CUTS ============ -->
+<section><div class="wrap">
+  <div class="kicker">02 &middot; Optical cuts</div>
+  <h2 class="sec">Three cuts, chosen by size</h2>
+  <p class="desc">Fine detail that reads beautifully at 96px turns to noise at 16px. So the mark ships in three cuts. The renderer picks by target size &mdash; the silhouette stays constant, the interior detail scales down.</p>
+  <div class="grid g3">
+    <div class="panel" style="text-align:center">
+      <svg class="coin-svg" width="120" height="120" viewBox="0 0 100 100" style="margin:0 auto"><use href="#cFull"/></svg>
+      <div style="margin-top:14px"><span class="tag">Full</span></div>
+      <p class="note" style="margin-top:8px"><b>&ge; 56px.</b> Reeded edge, inner ring, radial emboss, true high-contrast serif T. The signature.</p>
+    </div>
+    <div class="panel" style="text-align:center">
+      <svg class="coin-svg" width="120" height="120" viewBox="0 0 100 100" style="margin:0 auto"><use href="#cSimple"/></svg>
+      <div style="margin-top:14px"><span class="tag">Simplified</span></div>
+      <p class="note" style="margin-top:8px"><b>24&ndash;52px.</b> Reeding drops, but the <b>inner ring stays</b> for coin depth; T grown ~20% and re-centered.</p>
+    </div>
+    <div class="panel" style="text-align:center">
+      <svg class="coin-svg" width="120" height="120" viewBox="0 0 100 100" style="margin:0 auto"><use href="#cMicro"/></svg>
+      <div style="margin-top:14px"><span class="tag">Micro</span></div>
+      <p class="note" style="margin-top:8px"><b>&le; 20px.</b> Inner ring gone, but a <b>solid coin rim stays</b> so it never reads as a bare disc; T fattened with a stroke so serifs survive.</p>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="panel">
+      <div class="note" style="margin-bottom:12px"><span class="tag bad">Wrong</span> &nbsp;Full cut forced down to small sizes &mdash; reeding shimmers, T thins out and vanishes.</div>
+      <div class="row" style="gap:20px;align-items:center">
+        <svg class="coin-svg" width="20" height="20" viewBox="0 0 100 100"><use href="#cFull"/></svg>
+        <svg class="coin-svg" width="16" height="16" viewBox="0 0 100 100"><use href="#cFull"/></svg>
+        <svg class="coin-svg" width="14" height="14" viewBox="0 0 100 100"><use href="#cFull"/></svg>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="note" style="margin-bottom:12px"><span class="tag good">Right</span> &nbsp;Micro cut at the same sizes &mdash; a solid, legible coin with a strong T.</div>
+      <div class="row" style="gap:20px;align-items:center">
+        <svg class="coin-svg" width="20" height="20" viewBox="0 0 100 100"><use href="#cMicro"/></svg>
+        <svg class="coin-svg" width="16" height="16" viewBox="0 0 100 100"><use href="#cMicro"/></svg>
+        <svg class="coin-svg" width="14" height="14" viewBox="0 0 100 100"><use href="#cMicro"/></svg>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ ON LIGHT ============ -->
+<section><div class="wrap">
+  <div class="kicker">03 &middot; On light</div>
+  <h2 class="sec">Holds up on parchment too</h2>
+  <p class="desc">The gold coin carries its own contrast, so it survives on light surfaces (statements, print, email) without a container.</p>
+  <div class="light">
+    <div class="row" style="align-items:center">
+      <svg class="coin-svg" width="88" height="88" viewBox="0 0 100 100"><use href="#cFull"/></svg>
+      <svg class="coin-svg" width="56" height="56" viewBox="0 0 100 100"><use href="#cFull"/></svg>
+      <svg class="coin-svg" width="40" height="40" viewBox="0 0 100 100"><use href="#cSimple"/></svg>
+      <svg class="coin-svg" width="24" height="24" viewBox="0 0 100 100"><use href="#cSimple"/></svg>
+      <svg class="coin-svg" width="16" height="16" viewBox="0 0 100 100"><use href="#cMicro"/></svg>
+      <span class="lockup"><span class="wm" style="font-size:2rem;color:#2a2620">Tyrion<span style="color:#9a7a24">.</span></span></span>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ MONOCHROME ============ -->
+<section><div class="wrap">
+  <div class="kicker">04 &middot; Monochrome &amp; 1-color</div>
+  <h2 class="sec">When gold isn&rsquo;t available</h2>
+  <p class="desc">For embossing, watermarks, single-ink print, disabled states, or dense UI. The T-in-a-coin silhouette does all the work.</p>
+  <div class="grid g4">
+    <div class="panel" style="text-align:center"><svg class="coin-svg" width="72" height="72" viewBox="0 0 100 100"><use href="#cMonoFull"/></svg><div style="margin-top:12px"><span class="tag">Flat gold</span></div></div>
+    <div class="panel" style="text-align:center"><svg class="coin-svg" width="72" height="72" viewBox="0 0 100 100"><use href="#cInvFull"/></svg><div style="margin-top:12px"><span class="tag">Inverted</span></div></div>
+    <div class="panel" style="text-align:center;color:var(--parchment)"><svg class="coin-svg" width="72" height="72" viewBox="0 0 100 100"><use href="#cOutlineFull"/></svg><div style="margin-top:12px"><span class="tag">Knockout / line</span></div></div>
+    <div class="light" style="text-align:center;color:#2a2620"><svg class="coin-svg" width="72" height="72" viewBox="0 0 100 100" style="color:#2a2620"><use href="#cOutlineFull"/></svg><div style="margin-top:12px"><span class="tag" style="border-color:rgba(0,0,0,.2);color:#5a5346">Line on light</span></div></div>
+  </div>
+</div></section>
+
+<!-- ============ APP TILES ============ -->
+<section><div class="wrap">
+  <div class="kicker">05 &middot; App icon tiles</div>
+  <h2 class="sec">Home-screen &amp; installed app</h2>
+  <p class="desc">On iOS/Android/desktop the coin sits inside a rounded-square tile. Keep the coin at ~62% of the tile so the OS mask never clips it. Two treatments: coin-on-charcoal (default) and embossed gold tile.</p>
+  <div class="row" style="align-items:flex-end">
+    <div class="spec"><div class="tile r22" style="width:120px;height:120px"><svg class="coin-svg" width="74" height="74" viewBox="0 0 100 100"><use href="#cFull"/></svg></div><div class="cap">charcoal &middot; 120</div></div>
+    <div class="spec"><div class="tile r22" style="width:80px;height:80px"><svg class="coin-svg" width="50" height="50" viewBox="0 0 100 100"><use href="#cSimple"/></svg></div><div class="cap">charcoal &middot; 80</div></div>
+    <div class="spec"><div class="tile r22" style="width:60px;height:60px"><svg class="coin-svg" width="38" height="38" viewBox="0 0 100 100"><use href="#cSimple"/></svg></div><div class="cap">charcoal &middot; 60</div></div>
+    <div class="spec"><div class="tile gold r22" style="width:120px;height:120px"><svg class="coin-svg" width="74" height="74" viewBox="0 0 100 100"><use href="#cInvFull"/></svg></div><div class="cap">gold tile &middot; 120</div></div>
+    <div class="spec"><div class="tile gold r22" style="width:60px;height:60px"><svg class="coin-svg" width="38" height="38" viewBox="0 0 100 100"><use href="#cInvSimple"/></svg></div><div class="cap">gold tile &middot; 60</div></div>
+  </div>
+</div></section>
+
+<!-- ============ IN CONTEXT ============ -->
+<section><div class="wrap">
+  <div class="kicker">06 &middot; In context</div>
+  <h2 class="sec">Where it actually shows up</h2>
+  <div class="grid g2">
+    <div class="panel">
+      <div class="note" style="margin-bottom:12px">Browser tab (16px favicon &mdash; micro cut)</div>
+      <div class="chrome">
+        <div class="bar"><span class="dotset"><i></i><i></i><i></i></span><span class="tab"><svg width="16" height="16" viewBox="0 0 100 100"><use href="#cMicro"/></svg> Tyrion &mdash; Finance</span></div>
+        <div style="height:40px;background:var(--bg)"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="note" style="margin-bottom:12px">macOS dock &amp; chat avatar</div>
+      <div class="row" style="align-items:center;gap:22px">
+        <div class="dock"><div class="dockicon" style="background:var(--elevated)"><svg width="34" height="34" viewBox="0 0 100 100"><use href="#cSimple"/></svg></div><div class="dockicon tile gold"><svg width="34" height="34" viewBox="0 0 100 100"><use href="#cInvSimple"/></svg></div></div>
+        <svg width="40" height="40" viewBox="0 0 100 100" style="border-radius:50%;overflow:hidden"><use href="#cFull"/></svg>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="note" style="margin-bottom:12px">Sidebar (expanded &amp; collapsed)</div>
+      <div class="row" style="align-items:flex-start;gap:16px">
+        <div class="sidebar">
+          <div class="navrow active"><svg width="22" height="22" viewBox="0 0 100 100"><use href="#cSimple"/></svg> Tyrion</div>
+          <div class="navrow" style="padding-left:16px">Dashboard</div>
+          <div class="navrow" style="padding-left:16px">Triage</div>
+          <div class="navrow" style="padding-left:16px">Kids</div>
+        </div>
+        <div class="sidebar" style="width:52px;padding:8px"><div class="navrow active" style="justify-content:center;padding:8px"><svg width="24" height="24" viewBox="0 0 100 100"><use href="#cSimple"/></svg></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="note" style="margin-bottom:12px">Notification badge (coin + status dot)</div>
+      <div class="row" style="align-items:center;gap:22px">
+        <div style="position:relative;width:44px;height:44px"><svg width="44" height="44" viewBox="0 0 100 100"><use href="#cSimple"/></svg><span style="position:absolute;top:-2px;right:-2px;width:14px;height:14px;border-radius:50%;background:#D2453D;border:2px solid var(--bg)"></span></div>
+        <div style="position:relative;width:44px;height:44px"><svg width="44" height="44" viewBox="0 0 100 100"><use href="#cSimple"/></svg><span style="position:absolute;top:-2px;right:-2px;width:14px;height:14px;border-radius:50%;background:#2FB170;border:2px solid var(--bg)"></span></div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ WORDMARK LOCKUPS ============ -->
+<section><div class="wrap">
+  <div class="kicker">07 &middot; Wordmark lockups</div>
+  <h2 class="sec">Coin &plus; name</h2>
+  <p class="desc">Horizontal is the default. The coin&rsquo;s cap-height aligns to the wordmark&rsquo;s. Never stretch, re-space, or swap the serif.</p>
+  <div class="grid g2">
+    <div class="panel"><div class="lockup"><svg width="44" height="44" viewBox="0 0 100 100"><use href="#cFull"/></svg><span class="wm" style="font-size:2.2rem">Tyrion<span class="d">.</span></span></div><div class="note" style="margin-top:10px">Horizontal &middot; primary</div></div>
+    <div class="panel" style="text-align:center"><div class="stacked"><svg width="56" height="56" viewBox="0 0 100 100"><use href="#cFull"/></svg><span class="wm" style="font-size:1.9rem">Tyrion<span class="d">.</span></span></div><div class="note" style="margin-top:10px">Stacked &middot; splash / auth</div></div>
+    <div class="panel"><div class="lockup"><svg width="30" height="30" viewBox="0 0 100 100"><use href="#cSimple"/></svg><span class="mono-label">TYRION</span></div><div class="note" style="margin-top:10px">Mono label &middot; system / API voice</div></div>
+    <div class="panel"><div class="lockup"><svg width="40" height="40" viewBox="0 0 100 100"><use href="#cFull"/></svg><div><span class="wm" style="font-size:1.5rem">Tyrion<span class="d">.</span></span><div class="note" style="font-size:.78rem;font-style:italic;font-family:'Cormorant Garamond',serif">Master of Coin</div></div></div><div class="note" style="margin-top:10px">With role &middot; marketing / about</div></div>
+  </div>
+</div></section>
+
+<!-- ============ CLEAR SPACE & DON'TS ============ -->
+<section><div class="wrap">
+  <div class="kicker">08 &middot; Rules</div>
+  <h2 class="sec">Clear space &amp; don&rsquo;ts</h2>
+  <div class="grid g2">
+    <div class="panel">
+      <div class="note" style="margin-bottom:14px"><b>Clear space</b> = half the coin&rsquo;s diameter on every side. <b>Minimum size</b> = 16px (micro cut).</div>
+      <div class="clearbox"><svg width="72" height="72" viewBox="0 0 100 100"><use href="#cFull"/></svg></div>
+    </div>
+    <div class="panel">
+      <ul class="dont" style="list-style:none">
+        <li><b>Don&rsquo;t</b> recolor the T to a status hue (red/green/amber).</li>
+        <li><b>Don&rsquo;t</b> stretch, skew, or rotate the coin.</li>
+        <li><b>Don&rsquo;t</b> add a Lannister lion or heraldry &mdash; the reference stays light.</li>
+        <li><b>Don&rsquo;t</b> place gold coin on amber warning fill (they blur together).</li>
+        <li><b>Don&rsquo;t</b> use the Full cut below 56px &mdash; switch to Simplified / Micro.</li>
+        <li><b>Don&rsquo;t</b> swap Cormorant for another serif in the T.</li>
+      </ul>
+    </div>
+  </div>
+</div></section>
+
+<footer style="padding:40px 0;text-align:center;color:var(--dim)">
+  <svg width="26" height="26" viewBox="0 0 100 100" style="vertical-align:middle"><use href="#cSimple"/></svg>
+  <span class="mono-label" style="margin-left:8px;vertical-align:middle">TYRION &middot; LOGO LAB</span>
+</footer>
+
+</body>
+</html>

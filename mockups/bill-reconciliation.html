@@ -1,579 +1,433 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bill Reconciliation — Mission Control</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: { extend: { colors: {
-        background: '#0a0a0a', card: '#141414', border: '#262626',
-        muted: '#737373', accent: '#3b82f6'
-      }}}
-    }
-  </script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tyrion &mdash; Bill reconciliation</title>
+<link rel="stylesheet" href="../brand/tyrion.css" />
+<style>
+  .cards4{margin-bottom:16px}
+  .source-strip{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+  .ledger-wrap{overflow-x:auto;border-radius:var(--r-lg)}
+  .bill-cell{min-width:220px}.bill-title{font-weight:600}.bill-meta{font-size:.74rem;color:var(--dim);margin-top:2px}
+  .action-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.action-row.left{justify-content:flex-start}
+  .section{margin-top:18px}.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 12px;flex-wrap:wrap}
+  .section-head h2{font-family:var(--mono),monospace;font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  .case-card{background:var(--card);border:1px solid var(--hair);border-radius:var(--r-lg);padding:18px;box-shadow:var(--shadow)}
+  .case-card+.case-card{margin-top:12px}.case-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+  .case-title{font-size:1rem;font-weight:700;margin-top:6px}.case-sub{font-size:.78rem;color:var(--muted);margin-top:1px}
+  .due{text-align:right}.due .amt{display:block;font-family:var(--mono),monospace;font-size:1.35rem;font-weight:600;color:var(--parchment)}
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:12px}.compare.three{grid-template-columns:repeat(3,1fr)}
+  .pane{background:var(--elevated);border:1px solid var(--hair);border-radius:var(--r-md);padding:13px}.pane-title{font-family:var(--mono),monospace;font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  .facts{display:grid;gap:8px;font-size:.78rem}.fact{display:flex;justify-content:space-between;gap:12px;padding-bottom:7px;border-bottom:1px solid var(--hair)}.fact:last-child{border-bottom:none;padding-bottom:0}.fact span:last-child{text-align:right}
+  .docline{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--hair);font-size:.78rem}.docline:last-child{border-bottom:none}
+  .callouts{display:grid;gap:9px;margin:12px 0}.mini-note{font-size:.78rem;color:var(--muted)}
+  .match-list{display:grid;gap:10px}.match-card{background:var(--elevated);border:1px solid var(--hair);border-radius:var(--r-md);padding:13px}.match-card.best{background:rgba(47,177,112,.06);border-color:rgba(47,177,112,.2)}
+  .match-main{display:flex;align-items:center;justify-content:space-between;gap:14px}.match-data{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:.78rem;margin-top:5px}.score-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:7px;font-size:.74rem}
+  .score-grid{display:grid;gap:9px;margin-top:10px}.score-line{display:grid;grid-template-columns:70px 1fr 42px;gap:10px;align-items:center;font-size:.74rem;color:var(--muted)}
+  .paid-list .row{padding:11px 0}.row-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.learn{margin-top:18px;text-align:center}
+  @media(max-width:760px){.compare,.compare.three{grid-template-columns:1fr}.case-top,.match-main{flex-direction:column}.due{text-align:left}.action-row{justify-content:flex-start}.docline{grid-template-columns:1fr}.sync{align-items:flex-end;flex-direction:column;gap:7px}}
+</style>
 </head>
-<body class="bg-background text-white min-h-screen">
-  <!-- Top Nav -->
-  <header class="border-b border-border px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <span class="text-lg font-semibold">Mission Control</span>
-      <nav class="flex gap-1 ml-6">
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Tasks</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Alerts</a>
-        <a href="dashboard.html" class="px-3 py-1.5 rounded-md text-sm bg-card text-white font-medium">Finance</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Today</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">AI</a>
-      </nav>
-    </div>
-    <div class="flex items-center gap-2 text-xs text-muted">
-      <span class="px-2 py-0.5 rounded bg-green-900/30 text-green-400 border border-green-800/50">Monarch: synced</span>
-      <span class="px-2 py-0.5 rounded bg-green-900/30 text-green-400 border border-green-800/50">Paperless: connected</span>
-    </div>
-  </header>
+<body>
 
-  <main class="max-w-5xl mx-auto px-6 py-6">
-    <!-- Breadcrumb + Title -->
-    <div class="text-xs text-muted mb-2">
-      <a href="dashboard.html" class="hover:text-white">Finance</a> / <a href="bills-calendar.html" class="hover:text-white">Bills</a> / <span class="text-white">Reconciliation</span>
+<!-- MOTION CONTROL (demo only) -->
+<div class="demobar">
+  <span class="lbl">Tyrion &middot; Bill reconciliation</span>
+  <button class="replay" id="replay">&#8635; Replay motion</button>
+</div>
+
+<!-- APP HEADER -->
+<header class="app">
+  <div class="brandlock">
+    <svg width="30" height="30" viewBox="0 0 100 100" aria-label="Tyrion" class="coin">
+      <defs><radialGradient id="tycoin" cx="34%" cy="28%" r="80%"><stop offset="0%" stop-color="#F0D585"/><stop offset="55%" stop-color="#C9A24A"/><stop offset="100%" stop-color="#8A6B27"/></radialGradient></defs>
+      <circle cx="50" cy="50" r="47" fill="url(#tycoin)"/>
+      <circle cx="50" cy="50" r="47" fill="none" stroke="#6b5220" stroke-width="2.4"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#7a5e28" stroke-width="1.6" opacity=".7"/>
+      <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="54" fill="#3a2c0c">T</text>
+    </svg>
+    <span class="wm">Tyrion<span class="d">.</span></span>
+  </div>
+  <div class="sync">
+    <span class="t">Last synced 12 min ago &middot; Monarch</span>
+    <button class="btn btn-secondary">Sync now</button>
+  </div>
+</header>
+
+<main>
+  <div class="pagehead">
+    <div>
+      <h1>Bill Payment Reconciliation</h1>
+      <div class="sub serif" style="font-style:italic;font-size:1.05rem">&ldquo;A ledger with ghosts is merely a horror story with invoices.&rdquo;</div>
+      <div class="sub mono" style="margin-top:4px">Finance / Bills / Reconciliation &middot; Cross-referencing Paperless bills with Monarch transactions</div>
     </div>
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Bill Payment Reconciliation</h1>
-        <p class="text-sm text-muted mt-1">Cross-referencing Paperless bills with Monarch transactions</p>
+    <div class="pill-row">
+      <button class="gpill active">All (12)</button>
+      <button class="gpill">Unpaid (3)</button>
+      <button class="gpill">Needs Review (2)</button>
+      <button class="gpill">Overdue (1)</button>
+      <button class="gpill">Medical (3)</button>
+    </div>
+  </div>
+
+  <div class="source-strip reveal">
+    <span class="src-tag monarch">Monarch synced</span>
+    <span class="src-tag owl">Paperless connected</span>
+    <span class="src-tag owl">OWL document intelligence</span>
+    <span class="src-tag">Bank feed</span>
+  </div>
+
+  <!-- SUMMARY CARDS -->
+  <div class="grid cards4">
+    <div class="card reveal">
+      <div class="k">Paid</div>
+      <div class="big cu" data-to="7">0</div>
+      <div class="delta ok">Confirmed against Monarch</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Needs review</div>
+      <div class="big cu" data-to="2">0</div>
+      <div class="delta warn">Candidate matches await a ruling</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Unpaid</div>
+      <div class="big cu" data-to="3">0</div>
+      <div class="delta up">One already overdue</div>
+    </div>
+    <div class="card reveal">
+      <div class="k">Auto-match rate</div>
+      <div class="big cu" data-to="84" data-suf="%">0%</div>
+      <div class="delta ok">Up from 67% last month</div>
+    </div>
+  </div>
+
+  <div class="card reveal">
+    <div class="section-head">
+      <h2>Reconciliation grid</h2>
+      <div class="pill-row"><span class="tag">23 matches confirmed this month</span><span class="tag">12 bills in scope</span></div>
+    </div>
+    <div class="ledger-wrap">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Bill</th>
+            <th class="num">Expected</th>
+            <th class="num">Actual</th>
+            <th class="num">Variance</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">Dr. Smith &mdash; Office Visit (Mar 15)</div><div class="bill-meta">Medical &middot; 2 Paperless copies &middot; EOB Apr 12 &middot; Due Jun 30 (10 days)</div></td>
+            <td class="num">$312.00</td><td class="num">$0.00</td><td class="num neg">$312.00</td>
+            <td><span class="status s-err">Unpaid</span></td>
+            <td><div class="action-row"><button class="btn btn-primary btn-sm">Create Payment Task ($312)</button><button class="btn btn-secondary btn-sm">I Already Paid This</button></div></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">Water/Sewer (Township)</div><div class="bill-meta">Quarterly bill &middot; Paperless doc #2891 &middot; Due Jun 15 (5 days overdue!)</div></td>
+            <td class="num">$210.00</td><td class="num">$0.00</td><td class="num neg">$210.00</td>
+            <td><span class="status s-err">Overdue</span></td>
+            <td><div class="action-row"><button class="btn btn-primary btn-sm">Pay Now &mdash; Create Task</button><button class="btn btn-secondary btn-sm">Search Transactions</button></div></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">PSE&amp;G Electric</div><div class="bill-meta">Monthly utility &middot; Paperless doc #3021 &middot; 87% confidence</div></td>
+            <td class="num">$185.00</td><td class="num">-$185.00</td><td class="num ok">$0.00</td>
+            <td><span class="status s-warn">Needs review</span></td>
+            <td><div class="action-row"><button class="btn btn-primary btn-sm">Confirm Match</button><button class="btn btn-secondary btn-sm">Show Info</button><button class="btn btn-ghost btn-sm">Reject</button></div></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">Gym Membership (Lifetime)</div><div class="bill-meta">Monthly recurring &middot; Paperless doc #2987 &middot; 72% confidence &middot; Due Jul 7</div></td>
+            <td class="num">$49.00</td><td class="num">-$49.00</td><td class="num ok">$0.00</td>
+            <td><span class="status s-warn">Needs review</span></td>
+            <td><div class="action-row"><button class="btn btn-primary btn-sm">Confirm</button><button class="btn btn-ghost btn-sm">Reject</button></div></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">Mortgage (Chase)</div><div class="bill-meta">Matched: CHASE HOME LENDING &middot; Jun 23 &middot; HIGH</div></td>
+            <td class="num">$2,450.00</td><td class="num">-$2,450.00</td><td class="num ok">$0.00</td>
+            <td><span class="status s-ok">Paid</span></td>
+            <td><div class="action-row"><button class="btn btn-secondary btn-sm">Info</button><button class="btn btn-ghost btn-sm">Undo Match</button></div></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">Internet (Verizon FiOS)</div><div class="bill-meta">Matched: VERIZON FIOS PAYMENT &middot; Jun 26 &middot; HIGH</div></td>
+            <td class="num">$89.00</td><td class="num">-$89.00</td><td class="num ok">$0.00</td>
+            <td><span class="status s-ok">Paid</span></td>
+            <td><button class="btn btn-secondary btn-sm">Info</button></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">Cell Phone (T-Mobile)</div><div class="bill-meta">Matched: TMOBILE PAYMENT &middot; Jun 30 &middot; HIGH</div></td>
+            <td class="num">$185.00</td><td class="num">-$185.00</td><td class="num ok">$0.00</td>
+            <td><span class="status s-ok">Paid</span></td>
+            <td><button class="btn btn-secondary btn-sm">Info</button></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">Car Insurance (Progressive)</div><div class="bill-meta">Matched: PROGRESSIVE INS &middot; Jun 29 &middot; HIGH</div></td>
+            <td class="num">$312.00</td><td class="num">-$312.00</td><td class="num ok">$0.00</td>
+            <td><span class="status s-ok">Paid</span></td>
+            <td><button class="btn btn-secondary btn-sm">Info</button></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">Netflix</div><div class="bill-meta">Matched: NETFLIX.COM &middot; Jul 8 &middot; HIGH</div></td>
+            <td class="num">$22.99</td><td class="num">-$22.99</td><td class="num ok">$0.00</td>
+            <td><span class="status s-ok">Paid</span></td>
+            <td><button class="btn btn-secondary btn-sm">Info</button></td>
+          </tr>
+          <tr>
+            <td class="bill-cell"><div class="bill-title">HOA Quarterly Assessment</div><div class="bill-meta">Expected ~Jul 1 based on recurring pattern (Statement Tracker)</div></td>
+            <td class="num">~$425.00</td><td class="num dim">Not received</td><td class="num info">Pending</td>
+            <td><span class="status s-info">Expected</span></td>
+            <td><button class="btn btn-secondary btn-sm">Remind Me</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section grid cards2">
+    <div class="card reveal">
+      <div class="sectitle">Tyrion&rsquo;s suggestions</div>
+      <div class="alert a-warn"><div class="badge">&#9888;</div><div><div class="src">Tyrion</div><div class="ttl">Pay the EOB amount, not the louder paper</div><div class="bd">Dr. Smith says <span class="mono">$450</span>, but the EOB confirms your responsibility is <span class="mono">$312</span>. Pay the EOB amount.</div></div></div>
+      <div class="alert a-warn"><div class="badge">&#128203;</div><div><div class="src">Tyrion</div><div class="ttl">Duplicate detected</div><div class="bd">The Apr 5 bill is a resend of the Mar 20 bill. Do NOT pay twice; charity begins after reconciliation.</div></div></div>
+      <div class="alert a-err"><div class="badge">&#10071;</div><div><div class="src">Tyrion</div><div class="ttl">No matching payment found</div><div class="bd">Dr. Smith and Water/Sewer have no matching payment in Monarch. Water/Sewer is 5 days overdue.</div></div></div>
+      <div class="alert a-info"><div class="badge">&#128161;</div><div><div class="src">Tyrion</div><div class="ttl">Let the alias learn</div><div class="bd">Confirming Lifetime will create the vendor alias &ldquo;Lifetime&rdquo; &harr; &ldquo;LIFETIME FITNESS&rdquo; for future auto-matching.</div></div></div>
+    </div>
+    <div class="card reveal">
+      <div class="sectitle">Document and feed sources</div>
+      <div class="row"><div><div class="n">Paperless bills</div><div class="d">Bills, duplicate copies, EOBs, document previews</div></div><span class="src-tag owl">OWL</span></div>
+      <div class="row"><div><div class="n">Monarch transactions</div><div class="d">Merchant, amount, account, recurring status, category</div></div><span class="src-tag monarch">Monarch</span></div>
+      <div class="row"><div><div class="n">Statement Tracker</div><div class="d">Recurring quarterly bill patterns and expected statements</div></div><span class="src-tag">Tracker</span></div>
+      <div class="row"><div><div class="n">Bank feed</div><div class="d">Checking ...2341 and Chase ...9876</div></div><span class="src-tag">Bank feed</span></div>
+    </div>
+  </div>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Action Needed</h2>
+      <div class="pill-row"><span class="status s-err">2 bills</span><span class="tag">Medical (3)</span></div>
+    </div>
+
+    <article class="case-card reveal">
+      <div class="case-top">
+        <div>
+          <div class="pill-row"><span class="status s-err">Medical</span><span class="status s-warn">Duplicate Detected</span></div>
+          <div class="case-title">Dr. Smith &mdash; Office Visit (Mar 15)</div>
+          <div class="case-sub">2 copies of this bill in Paperless &middot; EOB received Apr 12</div>
+        </div>
+        <div class="due"><span class="amt">$312</span><span class="case-sub">Due: Jun 30 (10 days)</span></div>
       </div>
-      <div class="flex gap-2 text-xs">
-        <span class="px-2.5 py-1 rounded-full bg-green-900/20 text-green-400 border border-green-800/40">7 Paid</span>
-        <span class="px-2.5 py-1 rounded-full bg-yellow-900/20 text-yellow-400 border border-yellow-800/40">2 Needs Review</span>
-        <span class="px-2.5 py-1 rounded-full bg-red-900/20 text-red-400 border border-red-800/40">3 Unpaid</span>
-      </div>
-    </div>
-
-    <!-- Filter Tabs -->
-    <div class="flex gap-2 mb-6">
-      <button class="px-3 py-1.5 rounded-md text-sm bg-accent text-white">All (12)</button>
-      <button class="px-3 py-1.5 rounded-md text-sm text-muted border border-border hover:bg-card">Unpaid (3)</button>
-      <button class="px-3 py-1.5 rounded-md text-sm text-muted border border-border hover:bg-card">Needs Review (2)</button>
-      <button class="px-3 py-1.5 rounded-md text-sm text-muted border border-border hover:bg-card">Overdue (1)</button>
-      <button class="px-3 py-1.5 rounded-md text-sm text-muted border border-border hover:bg-card">Medical (3)</button>
-    </div>
-
-    <!-- SECTION: Action Needed -->
-    <div class="mb-8">
-      <h2 class="text-xs font-semibold uppercase tracking-wider text-red-400 mb-3 flex items-center gap-2">
-        <span>🚨</span> Action Needed
-      </h2>
-
-      <!-- Medical bill with dedup warning -->
-      <div class="bg-card border border-red-900/40 rounded-xl p-5 mb-3">
-        <div class="flex items-start justify-between mb-3">
-          <div>
-            <div class="flex items-center gap-2 mb-1">
-              <span class="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-800">🏥 Medical</span>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-300 border border-yellow-800">⚠️ Duplicate Detected</span>
-            </div>
-            <h3 class="text-base font-medium mt-1">Dr. Smith — Office Visit (Mar 15)</h3>
-            <p class="text-xs text-muted mt-0.5">2 copies of this bill in Paperless • EOB received Apr 12</p>
-          </div>
-          <div class="text-right">
-            <p class="text-xl font-mono font-bold text-red-300">$312</p>
-            <p class="text-xs text-muted">Due: Jun 30 (10 days)</p>
-          </div>
+      <div class="compare">
+        <div class="pane">
+          <div class="pane-title">Paperless document cluster</div>
+          <div class="docline"><span>&#128196; Bill (received Mar 20)</span><span class="num">$450.00</span><a class="link" href="#">View in Paperless</a></div>
+          <div class="docline"><span class="warn">&#128196; Bill (received Apr 5) &mdash; DUPLICATE</span><span class="num">$450.00</span><a class="link" href="#">View in Paperless</a></div>
+          <div class="docline"><span class="ok">&#128203; EOB (received Apr 12)</span><span class="num ok">You owe: $312</span><a class="link" href="#">View in Paperless</a></div>
         </div>
-
-        <!-- Document cluster -->
-        <div class="bg-zinc-900/50 rounded-lg p-3 mb-3 space-y-2">
-          <div class="flex items-center justify-between text-xs">
-            <div class="flex items-center gap-2">
-              <span>📄</span>
-              <span>Bill (received Mar 20)</span>
-            </div>
-            <span class="font-mono">$450.00</span>
-            <a href="#" class="text-accent hover:underline">View in Paperless</a>
+        <div class="pane">
+          <div class="pane-title">Monarch transaction</div>
+          <div class="alert a-err"><div class="badge">&#10060;</div><div><div class="ttl">No matching payment found in Monarch</div><div class="bd">This bill appears unpaid.</div></div></div>
+          <div class="callouts">
+            <div class="alert a-warn"><div class="badge">&#9888;</div><div><div class="bd">Bill says <span class="mono">$450</span> but EOB confirms your responsibility is <strong>$312</strong>.</div></div></div>
+            <div class="alert a-warn"><div class="badge">&#9888;</div><div><div class="bd">Duplicate bill detected (Apr 5). Do NOT pay twice &mdash; this is a resend of the Mar 20 bill.</div></div></div>
           </div>
-          <div class="flex items-center justify-between text-xs">
-            <div class="flex items-center gap-2">
-              <span>📄</span>
-              <span class="text-yellow-400">Bill (received Apr 5) — DUPLICATE</span>
-            </div>
-            <span class="font-mono">$450.00</span>
-            <a href="#" class="text-accent hover:underline">View in Paperless</a>
-          </div>
-          <div class="flex items-center justify-between text-xs">
-            <div class="flex items-center gap-2">
-              <span>📋</span>
-              <span class="text-green-400">EOB (received Apr 12)</span>
-            </div>
-            <span class="font-mono text-green-400">You owe: $312</span>
-            <a href="#" class="text-accent hover:underline">View in Paperless</a>
-          </div>
-        </div>
-
-        <!-- Warning callouts -->
-        <div class="space-y-2 mb-3">
-          <div class="flex items-center gap-2 p-2 rounded-lg bg-yellow-950/30 border border-yellow-900/30">
-            <span class="text-xs">⚠️</span>
-            <span class="text-xs text-yellow-200">Bill says $450 but EOB confirms your responsibility is <strong>$312</strong>. Pay the EOB amount.</span>
-          </div>
-          <div class="flex items-center gap-2 p-2 rounded-lg bg-yellow-950/30 border border-yellow-900/30">
-            <span class="text-xs">⚠️</span>
-            <span class="text-xs text-yellow-200">Duplicate bill detected (Apr 5). Do NOT pay twice — this is a resend of the Mar 20 bill.</span>
-          </div>
-        </div>
-
-        <!-- No matching payment -->
-        <div class="flex items-center gap-2 p-2 rounded-lg bg-red-950/20 border border-red-900/30 mb-3">
-          <span class="text-xs">❌</span>
-          <span class="text-xs text-red-200">No matching payment found in Monarch. This bill appears unpaid.</span>
-        </div>
-
-        <div class="flex items-center justify-between pt-3 border-t border-border">
-          <div class="flex gap-2">
-            <button class="px-3 py-1.5 rounded-md text-xs bg-accent text-white">Create Payment Task ($312)</button>
-            <button class="px-3 py-1.5 rounded-md text-xs bg-card border border-border text-muted">I Already Paid This</button>
-          </div>
-          <button class="px-2.5 py-1 rounded-md text-xs text-muted border border-border">Dismiss</button>
-        </div>
-      </div>
-
-      <!-- Regular overdue bill -->
-      <div class="bg-card border border-red-900/40 rounded-xl p-5 mb-3">
-        <div class="flex items-start justify-between mb-2">
-          <div>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-800">OVERDUE</span>
-            <h3 class="text-base font-medium mt-1">Water/Sewer (Township)</h3>
-            <p class="text-xs text-muted mt-0.5">Quarterly bill • Paperless doc #2891</p>
-          </div>
-          <div class="text-right">
-            <p class="text-xl font-mono font-bold text-red-300">$210</p>
-            <p class="text-xs text-red-400">Due: Jun 15 (5 days overdue!)</p>
-          </div>
-        </div>
-        <div class="flex items-center gap-2 p-2 rounded-lg bg-red-950/20 border border-red-900/30 mb-3">
-          <span class="text-xs">❌</span>
-          <span class="text-xs text-red-200">No matching payment found. Statement Tracker confirms this is a recurring quarterly bill.</span>
-        </div>
-        <div class="flex gap-2">
-          <button class="px-3 py-1.5 rounded-md text-xs bg-red-600 text-white">Pay Now — Create Task</button>
-          <button class="px-3 py-1.5 rounded-md text-xs bg-card border border-border text-muted">Search Transactions</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- SECTION: Needs Review (Show Matches) -->
-    <div class="mb-8">
-      <h2 class="text-xs font-semibold uppercase tracking-wider text-yellow-400 mb-3 flex items-center gap-2">
-        <span>⚡</span> Needs Review — Confirm Match
-      </h2>
-
-      <!-- Bill with candidate matches -->
-      <div class="bg-card border border-yellow-900/30 rounded-xl p-5 mb-3">
-        <div class="flex items-start justify-between mb-3">
-          <div>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-300 border border-yellow-800">87% confidence</span>
-            <h3 class="text-base font-medium mt-1">PSE&G Electric</h3>
-            <p class="text-xs text-muted mt-0.5">Monthly utility • Paperless doc #3021</p>
-          </div>
-          <div class="text-right">
-            <p class="text-xl font-mono font-bold">$185</p>
-            <p class="text-xs text-muted">Due: Jun 22</p>
-          </div>
-        </div>
-
-        <!-- Candidate matches -->
-        <div class="mb-3">
-          <p class="text-xs text-muted mb-2">Candidate transactions from Monarch:</p>
-
-          <!-- Best match -->
-          <div class="p-3 rounded-lg bg-green-950/10 border border-green-900/30 mb-2">
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-xs px-1.5 py-0.5 rounded bg-green-900/50 text-green-300">Best Match</span>
-                  <span class="text-sm font-medium">PSEG PAYMENT</span>
-                </div>
-                <div class="flex gap-4 mt-1 text-xs text-muted">
-                  <span>Jun 20, 2026</span>
-                  <span>Checking ...2341</span>
-                  <span class="font-mono">-$185.00</span>
-                </div>
-                <div class="flex gap-3 mt-1.5 text-xs">
-                  <span class="text-green-400">Vendor: 92%</span>
-                  <span class="text-green-400">Amount: exact</span>
-                  <span class="text-green-400">2 days before due</span>
-                </div>
-              </div>
-              <div class="flex gap-2">
-                <button class="px-3 py-1.5 rounded-md text-xs bg-green-600 text-white font-medium">✓ Confirm Match</button>
-                <button onclick="document.getElementById('detail-pseg').classList.toggle('hidden')" class="px-2.5 py-1.5 rounded-md text-xs bg-zinc-800 border border-border text-accent hover:bg-zinc-700">🔍 Show Info</button>
-                <button class="px-2 py-1.5 rounded-md text-xs text-muted border border-border">✗</button>
-              </div>
-            </div>
-
-            <!-- EXPANDED DETAIL PANEL (Show Info) -->
-            <div id="detail-pseg" class="mt-4 border-t border-border/50 pt-4">
-              <div class="grid grid-cols-2 gap-4">
-                <!-- Left: Paperless Document Preview -->
-                <div class="rounded-lg border border-border overflow-hidden">
-                  <div class="bg-zinc-900 px-3 py-2 flex items-center justify-between border-b border-border">
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs">📄</span>
-                      <span class="text-xs font-medium">Paperless Doc #3021</span>
-                    </div>
-                    <a href="#" class="text-xs text-accent hover:underline">Open in Paperless ↗</a>
-                  </div>
-                  <!-- Simulated document preview -->
-                  <div class="p-4 bg-white/5 min-h-[200px]">
-                    <div class="space-y-2 text-xs">
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Correspondent:</span>
-                        <span class="font-medium">Public Service Electric & Gas</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Document Date:</span>
-                        <span>Jun 5, 2026</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Amount Due:</span>
-                        <span class="font-mono font-bold">$185.00</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Due Date:</span>
-                        <span class="font-medium">Jun 22, 2026</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Account #:</span>
-                        <span class="font-mono">12-345-6789-0</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Service Period:</span>
-                        <span>May 8 – Jun 5, 2026</span>
-                      </div>
-                      <div class="flex justify-between">
-                        <span class="text-muted">Tags:</span>
-                        <div class="flex gap-1">
-                          <span class="px-1.5 py-0.5 rounded bg-zinc-700 text-xs">bill</span>
-                          <span class="px-1.5 py-0.5 rounded bg-zinc-700 text-xs">utility</span>
-                          <span class="px-1.5 py-0.5 rounded bg-yellow-900/50 text-yellow-300 text-xs">payment-pending</span>
-                        </div>
-                      </div>
-                    </div>
-                    <!-- Thumbnail area -->
-                    <div class="mt-3 p-3 rounded border border-dashed border-border/50 text-center">
-                      <p class="text-xs text-muted">📋 Document thumbnail</p>
-                      <p class="text-xs text-muted mt-1">(PDF preview from Paperless)</p>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Right: Monarch Transaction Detail -->
-                <div class="rounded-lg border border-border overflow-hidden">
-                  <div class="bg-zinc-900 px-3 py-2 flex items-center justify-between border-b border-border">
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs">💳</span>
-                      <span class="text-xs font-medium">Monarch Transaction</span>
-                    </div>
-                    <a href="#" class="text-xs text-accent hover:underline">View in Monarch ↗</a>
-                  </div>
-                  <div class="p-4 bg-white/5 min-h-[200px]">
-                    <div class="space-y-2 text-xs">
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Merchant:</span>
-                        <span class="font-medium">PSEG PAYMENT</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Date:</span>
-                        <span>Jun 20, 2026</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Amount:</span>
-                        <span class="font-mono font-bold text-red-300">-$185.00</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Account:</span>
-                        <span>Checking ...2341</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Category:</span>
-                        <span>Utilities</span>
-                      </div>
-                      <div class="flex justify-between border-b border-border/30 pb-2">
-                        <span class="text-muted">Is Recurring:</span>
-                        <span class="text-green-400">Yes (monthly)</span>
-                      </div>
-                      <div class="flex justify-between">
-                        <span class="text-muted">Notes:</span>
-                        <span class="text-muted italic">—</span>
-                      </div>
-                    </div>
-
-                    <!-- Match scoring breakdown -->
-                    <div class="mt-4 p-3 rounded-lg bg-zinc-800/50 border border-border">
-                      <p class="text-xs font-medium mb-2">Match Score Breakdown</p>
-                      <div class="space-y-1.5">
-                        <div class="flex items-center gap-2">
-                          <div class="w-16 text-xs text-muted">Vendor</div>
-                          <div class="flex-1 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
-                            <div class="h-full bg-green-500 rounded-full" style="width: 92%"></div>
-                          </div>
-                          <span class="text-xs text-green-400 w-8">92%</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <div class="w-16 text-xs text-muted">Amount</div>
-                          <div class="flex-1 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
-                            <div class="h-full bg-green-500 rounded-full" style="width: 100%"></div>
-                          </div>
-                          <span class="text-xs text-green-400 w-8">100%</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <div class="w-16 text-xs text-muted">Timing</div>
-                          <div class="flex-1 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
-                            <div class="h-full bg-green-500 rounded-full" style="width: 95%"></div>
-                          </div>
-                          <span class="text-xs text-green-400 w-8">95%</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <div class="w-16 text-xs text-muted">Account</div>
-                          <div class="flex-1 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
-                            <div class="h-full bg-green-500 rounded-full" style="width: 80%"></div>
-                          </div>
-                          <span class="text-xs text-green-400 w-8">80%</span>
-                        </div>
-                      </div>
-                      <p class="text-xs text-muted mt-2">Overall: <span class="text-yellow-300 font-medium">87% — MEDIUM-HIGH</span></p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Action bar within expanded view -->
-              <div class="mt-3 flex items-center justify-between p-3 rounded-lg bg-zinc-900/50 border border-border">
-                <div class="flex gap-2">
-                  <button class="px-3 py-1.5 rounded-md text-xs bg-green-600 text-white font-medium">✓ Confirm This Match</button>
-                  <button class="px-3 py-1.5 rounded-md text-xs bg-card border border-border text-muted">Link a Different Transaction</button>
-                  <button class="px-3 py-1.5 rounded-md text-xs bg-card border border-border text-muted">Mark as Unpaid</button>
-                </div>
-                <button onclick="document.getElementById('detail-pseg').classList.toggle('hidden')" class="px-3 py-1.5 rounded-md text-xs text-muted border border-border">Collapse ▲</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Alternative match -->
-          <div class="p-3 rounded-lg bg-zinc-800/50 border border-border">
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-xs text-muted">Alternative</span>
-                  <span class="text-sm font-medium">PSEG BUDGET BILL</span>
-                </div>
-                <div class="flex gap-4 mt-1 text-xs text-muted">
-                  <span>Jun 18, 2026</span>
-                  <span>Checking ...2341</span>
-                  <span class="font-mono">-$185.00</span>
-                </div>
-              </div>
-              <div class="flex gap-2">
-                <button class="px-2.5 py-1 rounded-md text-xs text-muted border border-border">This One Instead</button>
-                <button class="px-2.5 py-1 rounded-md text-xs text-accent border border-accent/30 hover:bg-accent/10">🔍 Info</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex gap-2 pt-3 border-t border-border">
-          <button class="px-3 py-1.5 rounded-md text-xs text-muted border border-border">Mark as Unpaid</button>
-          <button class="px-3 py-1.5 rounded-md text-xs text-muted border border-border">Link Different Transaction</button>
         </div>
       </div>
+      <div class="action-row left" style="margin-top:14px"><button class="btn btn-primary">Create Payment Task ($312)</button><button class="btn btn-secondary">I Already Paid This</button><button class="btn btn-ghost">Dismiss</button></div>
+    </article>
 
-      <!-- Second needs-review item -->
-      <div class="bg-card border border-yellow-900/30 rounded-xl p-5">
-        <div class="flex items-start justify-between mb-3">
-          <div>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-300 border border-yellow-800">72% confidence</span>
-            <h3 class="text-base font-medium mt-1">Gym Membership (Lifetime)</h3>
-            <p class="text-xs text-muted mt-0.5">Monthly recurring • Paperless doc #2987</p>
-          </div>
-          <div class="text-right">
-            <p class="text-xl font-mono font-bold">$49</p>
-            <p class="text-xs text-muted">Due: Jul 7</p>
-          </div>
+    <article class="case-card reveal">
+      <div class="case-top">
+        <div>
+          <span class="status s-err">OVERDUE</span>
+          <div class="case-title">Water/Sewer (Township)</div>
+          <div class="case-sub">Quarterly bill &middot; Paperless doc #2891</div>
         </div>
+        <div class="due"><span class="amt">$210</span><span class="case-sub neg">Due: Jun 15 (5 days overdue!)</span></div>
+      </div>
+      <div class="alert a-err"><div class="badge">&#10060;</div><div><div class="ttl">No matching payment found</div><div class="bd">Statement Tracker confirms this is a recurring quarterly bill.</div></div></div>
+      <div class="action-row left" style="margin-top:14px"><button class="btn btn-primary">Pay Now &mdash; Create Task</button><button class="btn btn-secondary">Search Transactions</button></div>
+    </article>
+  </section>
 
-        <div class="p-3 rounded-lg bg-zinc-800/50 border border-border mb-3">
-          <div class="flex items-center justify-between">
+  <section class="section">
+    <div class="section-head">
+      <h2>Needs Review &mdash; Confirm Match</h2>
+      <span class="status s-warn">2 candidate matches</span>
+    </div>
+
+    <article class="case-card reveal">
+      <div class="case-top">
+        <div>
+          <span class="status s-warn">87% confidence</span>
+          <div class="case-title">PSE&amp;G Electric</div>
+          <div class="case-sub">Monthly utility &middot; Paperless doc #3021</div>
+        </div>
+        <div class="due"><span class="amt">$185</span><span class="case-sub">Due: Jun 22</span></div>
+      </div>
+
+      <div class="mini-note">Candidate transactions from Monarch:</div>
+      <div class="match-list" style="margin-top:8px">
+        <div class="match-card best">
+          <div class="match-main">
             <div>
-              <span class="text-sm font-medium">LIFETIME FITNESS</span>
-              <div class="flex gap-4 mt-1 text-xs text-muted">
-                <span>Jul 5, 2026</span>
-                <span>Chase ...9876</span>
-                <span class="font-mono">-$49.00</span>
-              </div>
-              <div class="flex gap-3 mt-1.5 text-xs">
-                <span class="text-yellow-400">Vendor: 72%</span>
-                <span class="text-green-400">Amount: exact</span>
-                <span class="text-green-400">2 days before due</span>
-              </div>
+              <div class="pill-row"><span class="status s-ok">Best Match</span><strong>PSEG PAYMENT</strong></div>
+              <div class="match-data"><span>Jun 20, 2026</span><span>Checking ...2341</span><span class="num">-$185.00</span></div>
+              <div class="score-row"><span class="ok">Vendor: 92%</span><span class="ok">Amount: exact</span><span class="ok">2 days before due</span></div>
             </div>
-            <div class="flex gap-2">
-              <button class="px-3 py-1.5 rounded-md text-xs bg-green-600 text-white font-medium">✓ Confirm</button>
-              <button class="px-2 py-1.5 rounded-md text-xs text-muted border border-border">✗</button>
-            </div>
+            <div class="action-row"><button class="btn btn-primary btn-sm">Confirm Match</button><button class="btn btn-secondary btn-sm">Show Info</button><button class="btn btn-ghost btn-sm">Reject</button></div>
           </div>
         </div>
 
-        <p class="text-xs text-muted italic">💡 Confirming will create a vendor alias: "Lifetime" ↔ "LIFETIME FITNESS" for future auto-matching.</p>
-      </div>
-    </div>
-
-    <!-- SECTION: Confirmed Paid -->
-    <div class="mb-8">
-      <h2 class="text-xs font-semibold uppercase tracking-wider text-green-400 mb-3 flex items-center gap-2">
-        <span>✅</span> Confirmed Paid
-      </h2>
-
-      <div class="bg-card border border-border rounded-xl overflow-hidden">
-        <div class="divide-y divide-border">
-          <div class="group">
-            <div class="flex items-center justify-between px-5 py-3 hover:bg-zinc-800/30">
-              <div class="flex items-center gap-3">
-                <span class="text-green-400 text-xs">✓</span>
-                <div>
-                  <p class="text-sm font-medium">Mortgage (Chase)</p>
-                  <p class="text-xs text-muted">Matched: CHASE HOME LENDING • Jun 23</p>
-                </div>
-              </div>
-              <div class="flex items-center gap-3">
-                <span class="text-sm font-mono">$2,450</span>
-                <span class="text-xs text-green-400">HIGH</span>
-                <button onclick="document.getElementById('detail-mortgage').classList.toggle('hidden')" class="px-2 py-1 rounded-md text-xs text-accent border border-accent/30 hover:bg-accent/10 opacity-0 group-hover:opacity-100 transition-opacity">🔍 Info</button>
-              </div>
+        <div class="compare">
+          <div class="pane">
+            <div class="pane-title">Paperless Doc #3021</div>
+            <div class="facts">
+              <div class="fact"><span>Correspondent:</span><span>Public Service Electric &amp; Gas</span></div>
+              <div class="fact"><span>Document Date:</span><span>Jun 5, 2026</span></div>
+              <div class="fact"><span>Amount Due:</span><span class="num">$185.00</span></div>
+              <div class="fact"><span>Due Date:</span><span>Jun 22, 2026</span></div>
+              <div class="fact"><span>Account #:</span><span class="num">12-345-6789-0</span></div>
+              <div class="fact"><span>Service Period:</span><span>May 8 &ndash; Jun 5, 2026</span></div>
+              <div class="fact"><span>Tags:</span><span><span class="tag">bill</span> <span class="tag">utility</span> <span class="status s-warn">payment-pending</span></span></div>
             </div>
-            <!-- Expandable detail for confirmed match -->
-            <div id="detail-mortgage" class="hidden px-5 pb-4">
-              <div class="grid grid-cols-2 gap-3 p-4 rounded-lg bg-zinc-900/50 border border-border">
-                <!-- Paperless side -->
-                <div class="space-y-1.5 text-xs">
-                  <p class="font-medium text-muted uppercase tracking-wider mb-2">📄 Paperless Doc #2845</p>
-                  <div class="flex justify-between"><span class="text-muted">Vendor:</span><span>Chase Home Lending</span></div>
-                  <div class="flex justify-between"><span class="text-muted">Amount:</span><span class="font-mono">$2,450.00</span></div>
-                  <div class="flex justify-between"><span class="text-muted">Due:</span><span>Jun 25, 2026</span></div>
-                  <div class="flex justify-between"><span class="text-muted">Account:</span><span class="font-mono">****7721</span></div>
-                  <a href="#" class="text-accent hover:underline mt-2 block">Open in Paperless ↗</a>
-                </div>
-                <!-- Monarch side -->
-                <div class="space-y-1.5 text-xs">
-                  <p class="font-medium text-muted uppercase tracking-wider mb-2">💳 Monarch Transaction</p>
-                  <div class="flex justify-between"><span class="text-muted">Merchant:</span><span>CHASE HOME LENDING</span></div>
-                  <div class="flex justify-between"><span class="text-muted">Amount:</span><span class="font-mono text-red-300">-$2,450.00</span></div>
-                  <div class="flex justify-between"><span class="text-muted">Date:</span><span>Jun 23, 2026</span></div>
-                  <div class="flex justify-between"><span class="text-muted">Account:</span><span>Checking ...2341</span></div>
-                  <div class="flex justify-between"><span class="text-muted">Category:</span><span>Housing</span></div>
-                  <a href="#" class="text-accent hover:underline mt-2 block">View in Monarch ↗</a>
-                </div>
-              </div>
-              <div class="flex gap-2 mt-3">
-                <button class="px-3 py-1.5 rounded-md text-xs bg-red-900/30 text-red-300 border border-red-800/50 hover:bg-red-900/50">↩ Undo Match</button>
-                <button class="px-3 py-1.5 rounded-md text-xs bg-card border border-border text-muted">Re-link to Different Transaction</button>
-                <button class="px-3 py-1.5 rounded-md text-xs bg-card border border-border text-muted">Edit Match Notes</button>
-              </div>
-            </div>
+            <div class="pane" style="margin-top:12px;text-align:center"><div class="mini-note">&#128203; Document thumbnail</div><div class="mini-note">(PDF preview from Paperless)</div></div>
+            <a class="link" href="#">Open in Paperless &nearr;</a>
           </div>
-
-          <div class="flex items-center justify-between px-5 py-3 hover:bg-zinc-800/30 group">
-            <div class="flex items-center gap-3">
-              <span class="text-green-400 text-xs">✓</span>
-              <div>
-                <p class="text-sm font-medium">Internet (Verizon FiOS)</p>
-                <p class="text-xs text-muted">Matched: VERIZON FIOS PAYMENT • Jun 26</p>
-              </div>
+          <div class="pane">
+            <div class="pane-title">Monarch Transaction</div>
+            <div class="facts">
+              <div class="fact"><span>Merchant:</span><span>PSEG PAYMENT</span></div>
+              <div class="fact"><span>Date:</span><span>Jun 20, 2026</span></div>
+              <div class="fact"><span>Amount:</span><span class="num neg">-$185.00</span></div>
+              <div class="fact"><span>Account:</span><span>Checking ...2341</span></div>
+              <div class="fact"><span>Category:</span><span>Utilities</span></div>
+              <div class="fact"><span>Is Recurring:</span><span class="ok">Yes (monthly)</span></div>
+              <div class="fact"><span>Notes:</span><span class="muted">&mdash;</span></div>
             </div>
-            <div class="flex items-center gap-3">
-              <span class="text-sm font-mono">$89</span>
-              <span class="text-xs text-green-400">HIGH</span>
-              <button class="px-2 py-1 rounded-md text-xs text-accent border border-accent/30 hover:bg-accent/10 opacity-0 group-hover:opacity-100 transition-opacity">🔍 Info</button>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between px-5 py-3 hover:bg-zinc-800/30 group">
-            <div class="flex items-center gap-3">
-              <span class="text-green-400 text-xs">✓</span>
-              <div>
-                <p class="text-sm font-medium">Cell Phone (T-Mobile)</p>
-                <p class="text-xs text-muted">Matched: TMOBILE PAYMENT • Jun 30</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="text-sm font-mono">$185</span>
-              <span class="text-xs text-green-400">HIGH</span>
-              <button class="px-2 py-1 rounded-md text-xs text-accent border border-accent/30 hover:bg-accent/10 opacity-0 group-hover:opacity-100 transition-opacity">🔍 Info</button>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between px-5 py-3 hover:bg-zinc-800/30 group">
-            <div class="flex items-center gap-3">
-              <span class="text-green-400 text-xs">✓</span>
-              <div>
-                <p class="text-sm font-medium">Car Insurance (Progressive)</p>
-                <p class="text-xs text-muted">Matched: PROGRESSIVE INS • Jun 29</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="text-sm font-mono">$312</span>
-              <span class="text-xs text-green-400">HIGH</span>
-              <button class="px-2 py-1 rounded-md text-xs text-accent border border-accent/30 hover:bg-accent/10 opacity-0 group-hover:opacity-100 transition-opacity">🔍 Info</button>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between px-5 py-3 hover:bg-zinc-800/30 group">
-            <div class="flex items-center gap-3">
-              <span class="text-green-400 text-xs">✓</span>
-              <div>
-                <p class="text-sm font-medium">Netflix</p>
-                <p class="text-xs text-muted">Matched: NETFLIX.COM • Jul 8</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="text-sm font-mono">$22.99</span>
-              <span class="text-xs text-green-400">HIGH</span>
-              <button class="px-2 py-1 rounded-md text-xs text-accent border border-accent/30 hover:bg-accent/10 opacity-0 group-hover:opacity-100 transition-opacity">🔍 Info</button>
-            </div>
+            <a class="link" href="#">View in Monarch &nearr;</a>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- SECTION: Missing Statement -->
-    <div class="mb-8">
-      <h2 class="text-xs font-semibold uppercase tracking-wider text-muted mb-3 flex items-center gap-2">
-        <span>❓</span> Expected — Not Yet Received
-      </h2>
-      <div class="bg-card border border-border/50 rounded-xl p-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <span class="text-muted text-xs">📅</span>
+        <div class="pane">
+          <div class="pane-title">Match Score Breakdown</div>
+          <div class="score-grid">
+            <div class="score-line"><span>Vendor</span><div class="track"><span data-w="92%" style="background:var(--success)"></span></div><span class="ok">92%</span></div>
+            <div class="score-line"><span>Amount</span><div class="track"><span data-w="100%" style="background:var(--success)"></span></div><span class="ok">100%</span></div>
+            <div class="score-line"><span>Timing</span><div class="track"><span data-w="95%" style="background:var(--success)"></span></div><span class="ok">95%</span></div>
+            <div class="score-line"><span>Account</span><div class="track"><span data-w="80%" style="background:var(--success)"></span></div><span class="ok">80%</span></div>
+          </div>
+          <div class="mini-note" style="margin-top:10px">Overall: <span class="warn">87% &mdash; MEDIUM-HIGH</span></div>
+        </div>
+
+        <div class="match-card">
+          <div class="match-main">
             <div>
-              <p class="text-sm font-medium text-muted">HOA Quarterly Assessment</p>
-              <p class="text-xs text-muted">Expected ~Jul 1 based on recurring pattern (Statement Tracker)</p>
+              <div class="pill-row"><span class="tag">Alternative</span><strong>PSEG BUDGET BILL</strong></div>
+              <div class="match-data"><span>Jun 18, 2026</span><span>Checking ...2341</span><span class="num">-$185.00</span></div>
             </div>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-sm font-mono text-muted">~$425</span>
-            <button class="px-2.5 py-1 rounded-md text-xs text-muted border border-border">Remind Me</button>
+            <div class="action-row"><button class="btn btn-secondary btn-sm">This One Instead</button><button class="btn btn-secondary btn-sm">Info</button></div>
           </div>
         </div>
       </div>
+      <div class="action-row left" style="margin-top:14px"><button class="btn btn-primary">Confirm This Match</button><button class="btn btn-secondary">Link a Different Transaction</button><button class="btn btn-secondary">Mark as Unpaid</button><button class="btn btn-ghost">Collapse</button></div>
+    </article>
+
+    <article class="case-card reveal">
+      <div class="case-top">
+        <div>
+          <span class="status s-warn">72% confidence</span>
+          <div class="case-title">Gym Membership (Lifetime)</div>
+          <div class="case-sub">Monthly recurring &middot; Paperless doc #2987</div>
+        </div>
+        <div class="due"><span class="amt">$49</span><span class="case-sub">Due: Jul 7</span></div>
+      </div>
+      <div class="match-card">
+        <div class="match-main">
+          <div>
+            <strong>LIFETIME FITNESS</strong>
+            <div class="match-data"><span>Jul 5, 2026</span><span>Chase ...9876</span><span class="num">-$49.00</span></div>
+            <div class="score-row"><span class="warn">Vendor: 72%</span><span class="ok">Amount: exact</span><span class="ok">2 days before due</span></div>
+          </div>
+          <div class="action-row"><button class="btn btn-primary btn-sm">Confirm</button><button class="btn btn-ghost btn-sm">Reject</button></div>
+        </div>
+      </div>
+      <div class="alert a-info" style="margin-top:12px"><div class="badge">&#128161;</div><div><div class="ttl">Vendor alias opportunity</div><div class="bd">Confirming will create a vendor alias: &ldquo;Lifetime&rdquo; &harr; &ldquo;LIFETIME FITNESS&rdquo; for future auto-matching.</div></div></div>
+    </article>
+  </section>
+
+  <section class="section grid cards2">
+    <div class="card reveal paid-list">
+      <div class="sectitle">Confirmed Paid</div>
+      <div class="row"><div><div class="n">Mortgage (Chase)</div><div class="d">Matched: CHASE HOME LENDING &middot; Jun 23</div></div><div class="row-actions"><span class="num">$2,450</span><span class="status s-ok">HIGH</span><button class="btn btn-secondary btn-sm">Info</button></div></div>
+      <div class="pane">
+        <div class="compare">
+          <div>
+            <div class="pane-title">Paperless Doc #2845</div>
+            <div class="facts"><div class="fact"><span>Vendor:</span><span>Chase Home Lending</span></div><div class="fact"><span>Amount:</span><span class="num">$2,450.00</span></div><div class="fact"><span>Due:</span><span>Jun 25, 2026</span></div><div class="fact"><span>Account:</span><span class="num">****7721</span></div></div>
+            <a class="link" href="#">Open in Paperless &nearr;</a>
+          </div>
+          <div>
+            <div class="pane-title">Monarch Transaction</div>
+            <div class="facts"><div class="fact"><span>Merchant:</span><span>CHASE HOME LENDING</span></div><div class="fact"><span>Amount:</span><span class="num neg">-$2,450.00</span></div><div class="fact"><span>Date:</span><span>Jun 23, 2026</span></div><div class="fact"><span>Account:</span><span>Checking ...2341</span></div><div class="fact"><span>Category:</span><span>Housing</span></div></div>
+            <a class="link" href="#">View in Monarch &nearr;</a>
+          </div>
+        </div>
+        <div class="action-row left" style="margin-top:12px"><button class="btn btn-ghost btn-sm">Undo Match</button><button class="btn btn-secondary btn-sm">Re-link to Different Transaction</button><button class="btn btn-secondary btn-sm">Edit Match Notes</button></div>
+      </div>
+      <div class="row"><div><div class="n">Internet (Verizon FiOS)</div><div class="d">Matched: VERIZON FIOS PAYMENT &middot; Jun 26</div></div><div class="row-actions"><span class="num">$89</span><span class="status s-ok">HIGH</span><button class="btn btn-secondary btn-sm">Info</button></div></div>
+      <div class="row"><div><div class="n">Cell Phone (T-Mobile)</div><div class="d">Matched: TMOBILE PAYMENT &middot; Jun 30</div></div><div class="row-actions"><span class="num">$185</span><span class="status s-ok">HIGH</span><button class="btn btn-secondary btn-sm">Info</button></div></div>
+      <div class="row"><div><div class="n">Car Insurance (Progressive)</div><div class="d">Matched: PROGRESSIVE INS &middot; Jun 29</div></div><div class="row-actions"><span class="num">$312</span><span class="status s-ok">HIGH</span><button class="btn btn-secondary btn-sm">Info</button></div></div>
+      <div class="row"><div><div class="n">Netflix</div><div class="d">Matched: NETFLIX.COM &middot; Jul 8</div></div><div class="row-actions"><span class="num">$22.99</span><span class="status s-ok">HIGH</span><button class="btn btn-secondary btn-sm">Info</button></div></div>
     </div>
 
-    <!-- Footer: Learning indicator -->
-    <div class="mt-8 p-4 rounded-xl bg-accent/5 border border-accent/20 text-center">
-      <p class="text-xs text-muted">
-        🧠 Vendor matching improves over time. You've confirmed <strong class="text-white">23 matches</strong> this month — 
-        auto-match rate is now <strong class="text-green-400">84%</strong> (up from 67% last month).
-      </p>
+    <div class="card reveal">
+      <div class="sectitle">Expected &mdash; Not Yet Received</div>
+      <div class="row">
+        <div><div class="n muted">HOA Quarterly Assessment</div><div class="d">Expected ~Jul 1 based on recurring pattern (Statement Tracker)</div></div>
+        <div class="row-actions"><span class="num muted">~$425</span><button class="btn btn-secondary btn-sm">Remind Me</button></div>
+      </div>
+      <div class="learn alert a-info"><div class="badge">&#129504;</div><div><div class="ttl">Vendor matching improves over time</div><div class="bd">You&rsquo;ve confirmed <strong class="num">23 matches</strong> this month &mdash; auto-match rate is now <strong class="num ok">84%</strong> (up from <span class="num">67%</span> last month).</div></div></div>
     </div>
-  </main>
+  </section>
+
+  <div class="motionnote mono">Motion demo &middot; production uses NumberFlow (figures) + Motion / motion.dev (reveals &amp; bars)</div>
+</main>
+
+<script>
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function countUp(el){
+    const to=parseFloat(el.dataset.to), pre=el.dataset.pre||'', suf=el.dataset.suf||'';
+    if(reduce){el.textContent=pre+to.toLocaleString('en-US')+suf;return;}
+    const dur=1000, t0=performance.now();
+    function step(now){
+      const p=Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
+      el.textContent=pre+Math.round(to*e).toLocaleString('en-US')+suf;
+      if(p<1)requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function play(){
+    document.querySelectorAll('.reveal').forEach((c,i)=>{
+      c.classList.remove('in');
+      if(reduce){c.classList.add('in');return;}
+      setTimeout(()=>c.classList.add('in'), 80*i);
+    });
+    document.querySelectorAll('.cu').forEach((el,i)=>{
+      el.textContent=(el.dataset.pre||'')+'0';
+      setTimeout(()=>countUp(el), reduce?0:200+60*i);
+    });
+    document.querySelectorAll('.track > span').forEach((s,i)=>{
+      const frac=parseFloat(s.dataset.w)/100;
+      s.style.transform='scaleX(0)';
+      setTimeout(()=>{ s.style.transform='scaleX('+frac+')'; }, reduce?0:250+50*i);
+    });
+  }
+
+  document.getElementById('replay').addEventListener('click', play);
+  window.addEventListener('load', play);
+</script>
 </body>
 </html>

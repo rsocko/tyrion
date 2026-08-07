@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TYRION â€” Brand & Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --gold:#C9A24A; --gold-hi:#E6C260; --oxblood:#6A2233;
+    --bg:#15171C; --elevated:#1D2027; --card:#23272F; --card-2:#2A2F38;
+    --parchment:#F3ECDD; --muted:#A9A293; --dim:#6E6A60;
+    --success:#2FB170; --warning:#E7A13A; --error:#D2453D; --info:#4F8FF7;
+    --hair:rgba(243,236,221,.08); --hair-2:rgba(243,236,221,.14);
+    --sp:8px; --r-sm:6px; --r-md:10px; --r-lg:14px;
+    --sh-sm:0 1px 2px rgba(0,0,0,.45); --sh-md:0 6px 18px rgba(0,0,0,.38); --sh-lg:0 16px 40px rgba(0,0,0,.45);
+    --glow:0 0 0 3px rgba(201,162,74,.22);
+  }
+  html{-webkit-font-smoothing:antialiased}
+  body{font-family:'IBM Plex Sans',sans-serif;background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(201,162,74,.06), transparent 60%),
+      var(--bg);color:var(--parchment);line-height:1.6;padding-bottom:80px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  section{padding:56px 0;border-bottom:1px solid var(--hair)}
+  h2.sec{font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;letter-spacing:.5px;margin-bottom:6px}
+  .sec-desc{color:var(--muted);margin-bottom:28px;max-width:60ch}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .kicker{font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
+
+  /* HERO */
+  .hero{padding:88px 0 64px;text-align:center;border-bottom:1px solid var(--hair)}
+  .coin{width:96px;height:96px;margin:0 auto 22px;display:block;filter:drop-shadow(0 6px 18px rgba(201,162,74,.25))}
+  .brand{font-family:'Cormorant Garamond',serif;font-size:4.6rem;font-weight:700;letter-spacing:2px;line-height:1}
+  .brand .dot{color:var(--gold)}
+  .role{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:1.5rem;color:var(--gold);margin-top:6px}
+  .hero .sub{color:var(--muted);margin-top:18px;font-size:1.05rem}
+  .hero .url{margin-top:22px;font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--dim);letter-spacing:.1em}
+
+  /* generic grid */
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:820px){.g3,.g4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}}
+
+  .card{background:var(--card);border:1px solid var(--hair);border-radius:var(--r-lg);padding:18px;box-shadow:var(--sh-sm)}
+  .card h3{font-size:.95rem;font-weight:600;margin-bottom:6px}
+  .card p{font-size:.86rem;color:var(--muted)}
+
+  /* color swatches */
+  .sw{border-radius:var(--r-md);overflow:hidden;border:1px solid var(--hair);background:var(--elevated)}
+  .sw .chip{height:66px}
+  .sw .meta{padding:8px 10px;font-size:.72rem}
+  .sw .name{font-weight:600}
+  .sw .hex{font-family:'JetBrains Mono',monospace;color:var(--muted)}
+
+  /* type specimens */
+  .type-row{padding:16px 0;border-bottom:1px solid var(--hair)}
+  .type-row:last-child{border-bottom:none}
+  .type-row .lbl{font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+
+  /* buttons */
+  .btn{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Sans';font-weight:600;font-size:.86rem;padding:10px 16px;border-radius:var(--r-md);border:1px solid transparent;cursor:pointer;transition:all .16s cubic-bezier(.2,0,0,1)}
+  .btn-primary{background:linear-gradient(180deg,var(--gold-hi),var(--gold));color:#241c07}
+  .btn-primary:hover{filter:brightness(1.06);box-shadow:var(--glow)}
+  .btn-secondary{background:var(--card-2);color:var(--parchment);border-color:var(--hair-2)}
+  .btn-secondary:hover{border-color:var(--gold)}
+  .btn-ghost{background:transparent;color:var(--muted)}
+  .btn-ghost:hover{color:var(--parchment);background:var(--card)}
+
+  /* pills */
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:.74rem;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid transparent}
+  .pill::before{content:"";width:7px;height:7px;border-radius:50%}
+  .p-success{background:rgba(47,177,112,.12);color:#7fe0b0;border-color:rgba(47,177,112,.3)} .p-success::before{background:var(--success)}
+  .p-warning{background:rgba(231,161,58,.12);color:#f2c88a;border-color:rgba(231,161,58,.3)} .p-warning::before{background:var(--warning)}
+  .p-error{background:rgba(210,69,61,.12);color:#eda19c;border-color:rgba(210,69,61,.3)} .p-error::before{background:var(--error)}
+  .p-info{background:rgba(79,143,247,.12);color:#a9c8fb;border-color:rgba(79,143,247,.3)} .p-info::before{background:var(--info)}
+
+  /* transaction row */
+  .txn{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--card);border:1px solid var(--hair);border-radius:var(--r-md)}
+  .txn+.txn{margin-top:8px}
+  .txn .ic{width:36px;height:36px;border-radius:9px;background:var(--card-2);display:grid;place-items:center;font-size:1rem}
+  .txn .body{flex:1;min-width:0}
+  .txn .merch{font-weight:600;font-size:.9rem}
+  .txn .cat{font-size:.76rem;color:var(--muted)}
+  .txn .amt{font-family:'JetBrains Mono',monospace;font-weight:600;font-variant-numeric:tabular-nums}
+  .amt.neg{color:var(--parchment)} .amt.pos{color:var(--success)}
+
+  /* kid chips */
+  .kid{display:inline-flex;align-items:center;gap:7px;padding:4px 10px 4px 4px;border-radius:999px;background:var(--card-2);font-size:.78rem;font-weight:600}
+  .kav{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:.7rem;color:#15171c;font-weight:700}
+
+  /* progress coin ring */
+  .ring-wrap{display:flex;gap:20px;flex-wrap:wrap}
+  .ring{position:relative;width:120px;text-align:center}
+  .ring .val{position:absolute;top:44px;left:0;right:0;font-family:'JetBrains Mono',monospace;font-weight:600;font-size:1.1rem}
+  .ring .cap{font-size:.76rem;color:var(--muted);margin-top:6px}
+
+  /* category bars */
+  .catbar{margin-bottom:12px}
+  .catbar .top{display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:5px}
+  .catbar .amt{font-family:'JetBrains Mono',monospace;color:var(--muted);font-variant-numeric:tabular-nums}
+  .track{height:8px;background:var(--card-2);border-radius:999px;overflow:hidden}
+  .track > span{display:block;height:100%;border-radius:999px}
+
+  /* chat */
+  .chat{background:var(--elevated);border:1px solid var(--hair);border-radius:var(--r-lg);padding:18px;max-width:560px}
+  .msg{display:flex;gap:10px;margin-bottom:14px}
+  .msg .av{flex-shrink:0}
+  .bub{background:var(--card);border:1px solid var(--hair);border-radius:12px;border-top-left-radius:3px;padding:10px 13px;font-size:.9rem}
+  .msg.me{flex-direction:row-reverse}
+  .msg.me .bub{background:rgba(201,162,74,.14);border-color:rgba(201,162,74,.28);border-top-left-radius:12px;border-top-right-radius:3px}
+  .bub .amt{font-family:'JetBrains Mono',monospace;color:var(--gold-hi)}
+  .typing{display:inline-flex;gap:4px;padding:4px 2px}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+  .prompts{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .prompt{font-size:.78rem;color:var(--muted);border:1px solid var(--hair-2);border-radius:999px;padding:6px 12px;cursor:pointer}
+  .prompt:hover{border-color:var(--gold);color:var(--parchment)}
+
+  /* alert cards */
+  .alert{display:flex;gap:12px;padding:14px;border-radius:var(--r-md);background:var(--card);border:1px solid var(--hair)}
+  .alert .badge{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:grid;place-items:center;font-size:.9rem}
+  .a-info .badge{background:rgba(79,143,247,.14);color:#a9c8fb} .a-warn .badge{background:rgba(231,161,58,.14);color:#f2c88a} .a-err .badge{background:rgba(210,69,61,.14);color:#eda19c} .a-ok .badge{background:rgba(47,177,112,.14);color:#7fe0b0}
+  .alert .src{font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.12em;color:var(--gold);text-transform:uppercase}
+  .alert .ttl{font-weight:600;font-size:.9rem;margin:2px 0 3px}
+  .alert .bd{font-size:.84rem;color:var(--muted)}
+
+  /* states */
+  .state{text-align:center;padding:34px 20px;border:1px dashed var(--hair-2);border-radius:var(--r-lg);background:var(--card)}
+  .state .em{font-size:1.6rem;margin-bottom:8px}
+  .state .q{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:1.15rem;color:var(--parchment)}
+  .state .s{font-size:.82rem;color:var(--muted);margin-top:4px}
+  .sk{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--card) 25%,var(--card-2) 50%,var(--card) 75%);background-size:200% 100%;animation:sh 1.4s infinite}
+  @keyframes sh{to{background-position:-200% 0}}
+
+  .voice{border-left:2px solid var(--gold);padding:4px 0 4px 14px;margin-bottom:12px}
+  .voice .ctx{font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .voice .line{font-size:.92rem;margin-top:2px}
+
+  footer{padding:44px 0;text-align:center;color:var(--dim)}
+  footer .m{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:1.3rem;color:var(--gold)}
+  .lockup{display:inline-flex;align-items:center;gap:10px}
+</style>
+</head>
+<body>
+
+<!-- ============ HERO ============ -->
+<div class="hero">
+  <div class="wrap">
+    <!-- COIN MARK -->
+    <svg class="coin" viewBox="0 0 100 100" aria-label="Tyrion coin mark">
+      <defs>
+        <radialGradient id="g" cx="38%" cy="32%" r="75%">
+          <stop offset="0%" stop-color="#F0D585"/><stop offset="55%" stop-color="#C9A24A"/><stop offset="100%" stop-color="#8A6B27"/>
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r="47" fill="url(#g)"/>
+      <circle cx="50" cy="50" r="47" fill="none" stroke="#6b5220" stroke-width="1.5" stroke-dasharray="2 2.2"/>
+      <circle cx="50" cy="50" r="39" fill="none" stroke="#7a5e28" stroke-width="1.4" opacity=".7"/>
+      <text x="50" y="50" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond, serif" font-weight="700" font-size="46" fill="#3a2c0c">T</text>
+    </svg>
+    <div class="brand">Tyrion<span class="dot">.</span></div>
+    <div class="role">Master of Coin</div>
+    <div class="sub">Your household finances, managed by someone clever.</div>
+    <div class="url">tyrion.socko.us</div>
+  </div>
+</div>
+
+<!-- ============ ESSENCE ============ -->
+<section><div class="wrap">
+  <div class="kicker">Essence</div>
+  <h2 class="sec">One name. Three jobs.</h2>
+  <p class="sec-desc">Like OWL, a single character-name that is the product you <em>open</em>, the agent you <em>ask</em>, and the voice that <em>acts</em>. Named for the wittiest, most honest Master of Coin in fiction.</p>
+  <div class="grid g3">
+    <div class="card"><h3>Open</h3><p>The UI: dashboard, triage, kids, bills. “Tyrion” in the top-left.</p></div>
+    <div class="card"><h3>Ask</h3><p>The agent: “Ask Tyrion if we can afford the trip.” Natural-language finance chat.</p></div>
+    <div class="card"><h3>Acts</h3><p>The autonomous voice: “Tyrion found a duplicate charge.” Alerts, reconciliation, forecasts.</p></div>
+  </div>
+</div></section>
+
+<!-- ============ COLOR ============ -->
+<section><div class="wrap">
+  <div class="kicker">Color</div>
+  <h2 class="sec">Gold is quiet. Status is loud.</h2>
+  <p class="sec-desc">Dark-first. Gold is a brand accent used sparingly (~5%) and <strong>never</strong> as a status color. Red / amber / green / blue are reserved for meaning.</p>
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="sw"><div class="chip" style="background:#C9A24A"></div><div class="meta"><div class="name">Brand Gold</div><div class="hex">#C9A24A</div></div></div>
+    <div class="sw"><div class="chip" style="background:#E6C260"></div><div class="meta"><div class="name">Gold Highlight</div><div class="hex">#E6C260</div></div></div>
+    <div class="sw"><div class="chip" style="background:#6A2233"></div><div class="meta"><div class="name">Oxblood</div><div class="hex">#6A2233</div></div></div>
+    <div class="sw"><div class="chip" style="background:#F3ECDD"></div><div class="meta"><div class="name">Parchment</div><div class="hex">#F3ECDD</div></div></div>
+  </div>
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="sw"><div class="chip" style="background:#15171C"></div><div class="meta"><div class="name">Charcoal Base</div><div class="hex">#15171C</div></div></div>
+    <div class="sw"><div class="chip" style="background:#1D2027"></div><div class="meta"><div class="name">Elevated</div><div class="hex">#1D2027</div></div></div>
+    <div class="sw"><div class="chip" style="background:#23272F"></div><div class="meta"><div class="name">Card</div><div class="hex">#23272F</div></div></div>
+    <div class="sw"><div class="chip" style="background:#A9A293"></div><div class="meta"><div class="name">Muted Text</div><div class="hex">#A9A293</div></div></div>
+  </div>
+  <div class="grid g4">
+    <div class="sw"><div class="chip" style="background:#2FB170"></div><div class="meta"><div class="name">Success</div><div class="hex">#2FB170</div></div></div>
+    <div class="sw"><div class="chip" style="background:#E7A13A"></div><div class="meta"><div class="name">Warning</div><div class="hex">#E7A13A</div></div></div>
+    <div class="sw"><div class="chip" style="background:#D2453D"></div><div class="meta"><div class="name">Error</div><div class="hex">#D2453D</div></div></div>
+    <div class="sw"><div class="chip" style="background:#4F8FF7"></div><div class="meta"><div class="name">Info</div><div class="hex">#4F8FF7</div></div></div>
+  </div>
+</div></section>
+
+<!-- ============ TYPE ============ -->
+<section><div class="wrap">
+  <div class="kicker">Typography</div>
+  <h2 class="sec">Serif for character. Sans for clarity. Mono for money.</h2>
+  <div class="type-row">
+    <div class="lbl">Cormorant Garamond — Display &amp; Wordmark</div>
+    <div style="font-family:'Cormorant Garamond',serif;font-size:2.6rem;font-weight:600">Tyrion — Master of Coin</div>
+  </div>
+  <div class="type-row">
+    <div class="lbl">IBM Plex Sans &mdash; Interface &amp; Body (engineered ledger / enterprise sans)</div>
+    <div style="font-size:1.15rem">Every bill paid, once, on time. Nothing missed.</div>
+  </div>
+  <div class="type-row">
+    <div class="lbl">JetBrains Mono — Figures &amp; Data (tabular)</div>
+    <div class="mono" style="font-size:1.15rem;font-variant-numeric:tabular-nums">$2,340.18 &nbsp; –$185.00 &nbsp; +$840.00 &nbsp; 12.4%</div>
+  </div>
+</div></section>
+
+<!-- ============ COMPONENTS ============ -->
+<section><div class="wrap">
+  <div class="kicker">Components</div>
+  <h2 class="sec">The pieces</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-bottom:12px">Buttons</h3>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary">Pay bill</button>
+        <button class="btn btn-secondary">Reassign</button>
+        <button class="btn btn-ghost">Skip</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">Status pills</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span class="pill p-success">Paid</span>
+        <span class="pill p-warning">Due soon</span>
+        <span class="pill p-error">Overdue</span>
+        <span class="pill p-info">Pending</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:16px" class="grid g2">
+    <div class="card">
+      <h3 style="margin-bottom:12px">Transaction rows</h3>
+      <div class="txn"><div class="ic">⚡</div><div class="body"><div class="merch">PSEG Payment</div><div class="cat">Utilities · Checking ·2341</div></div><div class="amt neg">–$185.00</div></div>
+      <div class="txn"><div class="ic">🛒</div><div class="body"><div class="merch">Whole Foods</div><div class="cat">Groceries · Visa ·4417</div></div><div class="amt neg">–$92.36</div></div>
+      <div class="txn"><div class="ic">💰</div><div class="body"><div class="merch">Payroll Deposit</div><div class="cat">Income · Checking ·2341</div></div><div class="amt pos">+$3,120.00</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px">Kid attribution</h3>
+      <p style="margin-bottom:12px">Each child gets a fixed color + monogram used across triage, charts, and alerts.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <span class="kid"><span class="kav" style="background:#4F8FA8">J</span>Jake</span>
+        <span class="kid"><span class="kav" style="background:#C9743D">M</span>Maya</span>
+        <span class="kid"><span class="kav" style="background:#7FA66A">E</span>Eli</span>
+      </div>
+      <div style="margin-top:14px">
+        <div class="catbar"><div class="top"><span>Jake — weekly limit</span><span class="amt">$58 / $50</span></div><div class="track"><span style="width:100%;background:var(--warning)"></span></div></div>
+        <div class="catbar"><div class="top"><span>Maya — weekly limit</span><span class="amt">$21 / $50</span></div><div class="track"><span style="width:42%;background:#C9743D"></span></div></div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ DATA VIZ ============ -->
+<section><div class="wrap">
+  <div class="kicker">Data Visualization</div>
+  <h2 class="sec">Coins, stacks &amp; bars</h2>
+  <p class="sec-desc">Goals render as filling <strong>coin rings</strong>; spending as muted category bars. Charts avoid status hues so green/amber/red always mean status, never a category.</p>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-bottom:14px">Savings goals (coin rings)</h3>
+      <div class="ring-wrap">
+        <div>
+          <div class="ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="#2A2F38" stroke-width="10"/>
+              <circle cx="60" cy="60" r="50" fill="none" stroke="#C9A24A" stroke-width="10" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="86" transform="rotate(-90 60 60)"/>
+            </svg>
+            <div class="val">73%</div>
+          </div>
+          <div class="cap">Emergency fund</div>
+        </div>
+        <div>
+          <div class="ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="#2A2F38" stroke-width="10"/>
+              <circle cx="60" cy="60" r="50" fill="none" stroke="#E6C260" stroke-width="10" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="204" transform="rotate(-90 60 60)"/>
+            </svg>
+            <div class="val">35%</div>
+          </div>
+          <div class="cap">Vacation</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:14px">Spending by category</h3>
+      <div class="catbar"><div class="top"><span>Housing</span><span class="amt">$1,850</span></div><div class="track"><span style="width:100%;background:#C9A24A"></span></div></div>
+      <div class="catbar"><div class="top"><span>Groceries</span><span class="amt">$740</span></div><div class="track"><span style="width:52%;background:#7FA66A"></span></div></div>
+      <div class="catbar"><div class="top"><span>Dining</span><span class="amt">$410</span></div><div class="track"><span style="width:34%;background:#C9743D"></span></div></div>
+      <div class="catbar"><div class="top"><span>Transport</span><span class="amt">$300</span></div><div class="track"><span style="width:26%;background:#4F8FA8"></span></div></div>
+      <div class="catbar"><div class="top"><span>Subscriptions</span><span class="amt">$96</span></div><div class="track"><span style="width:12%;background:#8A6FB0"></span></div></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ AGENT / CHAT ============ -->
+<section><div class="wrap">
+  <div class="kicker">The Agent</div>
+  <h2 class="sec">Talking to Tyrion</h2>
+  <p class="sec-desc">The coin is Tyrion’s avatar. Voice is witty, candid, brief — and always family-safe.</p>
+  <div class="chat">
+    <div class="msg me"><div class="bub">Can we afford a weekend away next month?</div></div>
+    <div class="msg">
+      <svg class="av" width="30" height="30" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" fill="url(#g)"/><text x="50" y="52" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="46" fill="#3a2c0c">T</text></svg>
+      <div class="bub">Comfortably. After rent and the usual suspects you’ll have about <span class="amt">$840</span> to spare. A weekend away costs you roughly <span class="amt">$520</span> — so yes, and you’ll still close the month ahead.</div>
+    </div>
+    <div class="msg">
+      <svg class="av" width="30" height="30" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" fill="url(#g)"/><text x="50" y="52" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="46" fill="#3a2c0c">T</text></svg>
+      <div class="bub"><span class="typing"><i></i><i></i><i></i></span></div>
+    </div>
+    <div class="prompts">
+      <span class="prompt">What did we spend on the kids?</span>
+      <span class="prompt">Any forgotten subscriptions?</span>
+      <span class="prompt">Was the electric bill paid?</span>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ ALERTS ============ -->
+<section><div class="wrap">
+  <div class="kicker">Alerts &amp; Notifications</div>
+  <h2 class="sec">What Tyrion surfaces</h2>
+  <p class="sec-desc">Alerts carry a <span class="mono" style="color:var(--gold)">TYRION</span> source label into Mission Control’s feed. Severity uses the left border + status color; the copy stays in-character.</p>
+  <div class="grid g2">
+    <div class="alert a-warn"><div class="badge">⏳</div><div><div class="src">Tyrion</div><div class="ttl">Bill due in 3 days</div><div class="bd">PSE&amp;G, $185. Want me to earmark it now so it isn’t a surprise?</div></div></div>
+    <div class="alert a-err"><div class="badge">❗</div><div><div class="src">Tyrion</div><div class="ttl">Possible duplicate payment</div><div class="bd">You paid Verizon twice this month. Generous. Shall I flag it for a refund?</div></div></div>
+    <div class="alert a-info"><div class="badge">👤</div><div><div class="src">Tyrion</div><div class="ttl">Jake is near his limit</div><div class="bd">$42 of $50 this week. Two more snack runs and we’ll have words.</div></div></div>
+    <div class="alert a-ok"><div class="badge">✓</div><div><div class="src">Tyrion</div><div class="ttl">A clean week</div><div class="bd">Every bill paid, once, on time. A rare and beautiful thing.</div></div></div>
+  </div>
+</div></section>
+
+<!-- ============ STATES ============ -->
+<section><div class="wrap">
+  <div class="kicker">States</div>
+  <h2 class="sec">Empty, loading, error</h2>
+  <div class="grid g3">
+    <div class="state"><div class="em">🪙</div><div class="q">“Nothing to triage.”</div><div class="s">Every transaction is categorized. Enjoy the quiet.</div></div>
+    <div class="state">
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
+        <div class="sk" style="width:70%"></div><div class="sk" style="width:90%"></div><div class="sk" style="width:55%"></div>
+      </div>
+      <div class="s" style="margin-top:14px">Counting the coin…</div>
+    </div>
+    <div class="state"><div class="em">⚔️</div><div class="q">“Monarch won’t talk to me.”</div><div class="s">The connection dropped. Retry, and I’ll pick up where we left off.</div></div>
+  </div>
+</div></section>
+
+<!-- ============ VOICE ============ -->
+<section><div class="wrap">
+  <div class="kicker">Voice &amp; Microcopy</div>
+  <h2 class="sec">Wit in the words, calm in the chrome</h2>
+  <p class="sec-desc">The personality lives in copy, not loud visuals. Dry, honest, brief — never scolding, never off-color.</p>
+  <div class="grid g2">
+    <div>
+      <div class="voice"><div class="ctx">Sync complete</div><div class="line">“Fetched 42 transactions. Three are pretending to be groceries.”</div></div>
+      <div class="voice"><div class="ctx">Subscription audit</div><div class="line">“You’re paying for two music services. Even I can only listen to one at a time.”</div></div>
+      <div class="voice"><div class="ctx">Forecast</div><div class="line">“At this pace you’ll close the month about $840 ahead. Nicely done.”</div></div>
+    </div>
+    <div>
+      <div class="voice"><div class="ctx">Onboarding</div><div class="line">“A Lannister always pays his debts. Let’s make sure you do too — on time, and exactly once.”</div></div>
+      <div class="voice"><div class="ctx">All clear</div><div class="line">“Every bill paid, once, on time. A rare and beautiful thing.”</div></div>
+      <div class="voice"><div class="ctx">Hero line</div><div class="line">“I count, and I know things.”</div></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============ UNIVERSE ============ -->
+<section><div class="wrap">
+  <div class="kicker">The Realm</div>
+  <h2 class="sec">Tyrion, OWL &amp; Mission Control</h2>
+  <p class="sec-desc">Mission Control is the small council; each agent is an officer with its own identity but a shared, restrained, dark-first family look.</p>
+  <div class="grid g3">
+    <div class="card"><h3 style="color:#4F8FF7">Mission Control</h3><p>The capital / command hub. Blue. Unifies tasks, alerts, and the council of agents.</p></div>
+    <div class="card"><h3 style="color:#F5A623">OWL — the Maester</h3><p>Documents &amp; knowledge. Amber-on-navy, wise night-bird. Organize · Watch · Learn.</p></div>
+    <div class="card"><h3 style="color:#C9A24A">Tyrion — Master of Coin</h3><p>Money &amp; debts. Gold-on-charcoal, witty steward. Counts the coin so you don’t have to.</p></div>
+  </div>
+</div></section>
+
+<footer>
+  <div class="wrap">
+    <div class="lockup">
+      <svg width="24" height="24" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" fill="url(#g)"/><text x="50" y="52" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="46" fill="#3a2c0c">T</text></svg>
+      <span class="mono" style="letter-spacing:.1em;color:var(--muted)">TYRION</span>
+    </div>
+    <div class="m" style="margin-top:10px">“Always pays your debts.”</div>
+    <div style="margin-top:8px;font-size:.75rem">tyrion.socko.us · a Mission Control agent</div>
+  </div>
+</footer>
+
+</body>
+</html>

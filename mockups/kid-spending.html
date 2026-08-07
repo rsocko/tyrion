@@ -1,308 +1,282 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kid Spending — Mission Control</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: { extend: { colors: {
-        background: '#0a0a0a', card: '#141414', border: '#262626',
-        muted: '#737373', accent: '#3b82f6'
-      }}}
-    }
-  </script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tyrion &mdash; Kid spending</title>
+<link rel="stylesheet" href="../brand/tyrion.css" />
+<style>
+  .kid-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .kid-tabs .gpill{display:inline-flex;align-items:center;gap:8px;min-height:36px}
+  .kid-tabs .active{background:rgba(79,143,247,.12);border-color:var(--jake);color:var(--parchment)}
+  .hero{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-bottom:16px}
+  .hero-main{display:flex;align-items:center;justify-content:space-between;gap:18px}
+  .kid-title{display:flex;align-items:center;gap:12px}
+  .hero-total{text-align:right}
+  .periods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px;padding-top:18px;border-top:1px solid var(--hair)}
+  .period .label,.limit-row .label{color:var(--muted)}
+  .period .value{font-size:1.25rem;font-weight:600;margin-top:2px}
+  .period .note{margin-top:2px}
+  .detail-grid{display:grid;grid-template-columns:.82fr 1.18fr;gap:16px}
+  .stack{display:grid;gap:16px}
+  .category-list{display:grid;gap:14px}
+  .cat-name{display:flex;align-items:center;gap:8px}
+  .cat-dot{width:9px;height:9px;border-radius:50%;background:var(--jake)}
+  .limit-list{display:grid;gap:12px}
+  .limit-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--hair)}
+  .limit-row:last-child{border-bottom:none}
+  .limit-actions{display:flex;align-items:center;gap:8px}
+  .icon-btn{width:28px;height:28px;border-radius:var(--r-sm);border:1px solid var(--hair2);background:var(--elevated);color:var(--muted);cursor:pointer}
+  .icon-btn:hover{border-color:var(--gold);color:var(--parchment)}
+  .txn-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+  .date-label{color:var(--muted);font-weight:600;padding:14px 0 5px}
+  .txn-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px;border:1px solid transparent;border-radius:var(--r-md)}
+  .txn-row:hover{background:var(--elevated);border-color:var(--hair)}
+  .txn-left{display:flex;align-items:center;gap:11px;min-width:0}
+  .txn-ico{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;background:var(--elevated);border:1px solid var(--hair)}
+  .txn-meta{min-width:0}.txn-meta .n{font-weight:600}.txn-meta .d{color:var(--muted)}
+  .txn-amt{text-align:right;white-space:nowrap}.txn-amt .src{margin-top:2px}
+  .discussion-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  @media(max-width:900px){.hero,.detail-grid{grid-template-columns:1fr}.hero-main{align-items:flex-start}.periods{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.hero-main,.txn-row,.txn-toolbar{align-items:flex-start;flex-direction:column}.hero-total{text-align:left}.periods{grid-template-columns:1fr}.txn-amt{text-align:left}.sync{width:100%;justify-content:space-between}header.app{align-items:flex-start;flex-direction:column}}
+</style>
 </head>
-<body class="bg-background text-white min-h-screen">
-  <!-- Top Nav -->
-  <header class="border-b border-border px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <span class="text-lg font-semibold">Mission Control</span>
-      <nav class="flex gap-1 ml-6">
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Tasks</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Alerts</a>
-        <a href="dashboard.html" class="px-3 py-1.5 rounded-md text-sm bg-card text-white font-medium">Finance</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">Today</a>
-        <a href="#" class="px-3 py-1.5 rounded-md text-sm text-muted hover:bg-card">AI</a>
-      </nav>
+<body>
+
+<!-- MOTION CONTROL (demo only) -->
+<div class="demobar">
+  <span class="lbl">Tyrion &middot; Kid spending</span>
+  <button class="replay" id="replay">&#8635; Replay motion</button>
+</div>
+
+<!-- APP HEADER -->
+<header class="app">
+  <div class="brandlock">
+    <svg width="30" height="30" viewBox="0 0 100 100" aria-label="Tyrion" class="coin">
+      <defs><radialGradient id="tycoin" cx="34%" cy="28%" r="80%"><stop offset="0%" stop-color="#F0D585"/><stop offset="55%" stop-color="#C9A24A"/><stop offset="100%" stop-color="#8A6B27"/></radialGradient></defs>
+      <circle cx="50" cy="50" r="47" fill="url(#tycoin)"/>
+      <circle cx="50" cy="50" r="47" fill="none" stroke="#6b5220" stroke-width="2.4"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#7a5e28" stroke-width="1.6" opacity=".7"/>
+      <text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Cormorant Garamond,serif" font-weight="700" font-size="54" fill="#3a2c0c">T</text>
+    </svg>
+    <span class="wm">Tyrion<span class="d">.</span></span>
+  </div>
+  <div class="sync">
+    <span class="t">Last synced 12 min ago &middot; Monarch</span>
+    <button class="btn btn-secondary">Sync now</button>
+  </div>
+</header>
+
+<main>
+  <div class="pagehead">
+    <div>
+      <h1>Jake&rsquo;s spending, counted without mercy.</h1>
+      <div class="sub serif" style="font-style:italic;font-size:1.05rem">&ldquo;A dragon is expensive. So, apparently, is Steam.&rdquo;</div>
+      <div class="sub mono" style="margin-top:4px">Finance / Kids Spending &middot; June 2026</div>
     </div>
-  </header>
-
-  <main class="max-w-6xl mx-auto px-6 py-6">
-    <!-- Breadcrumb -->
-    <div class="text-xs text-muted mb-4">
-      <a href="dashboard.html" class="hover:text-white">Finance</a> / <span class="text-white">Kids Spending</span>
+    <div class="pill-row">
+      <button class="gpill active">This Month</button>
+      <button class="gpill">Last Month</button>
+      <button class="gpill">Last 90 Days</button>
     </div>
+  </div>
 
-    <!-- Kid Selector Tabs -->
-    <div class="flex gap-2 mb-6">
-      <button class="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white flex items-center gap-2">
-        <div class="w-2.5 h-2.5 rounded-full bg-blue-300"></div>
-        Jake
-      </button>
-      <button class="px-4 py-2 rounded-lg text-sm text-muted border border-border hover:bg-card flex items-center gap-2">
-        <div class="w-2.5 h-2.5 rounded-full bg-purple-500"></div>
-        Emma
-      </button>
-      <button class="px-4 py-2 rounded-lg text-sm text-muted border border-border hover:bg-card flex items-center gap-2">
-        <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
-        Sophie
-      </button>
-      <button class="px-4 py-2 rounded-lg text-sm text-muted border border-border hover:bg-card flex items-center gap-2">
-        All Kids (Combined)
-      </button>
-    </div>
+  <div class="kid-tabs" aria-label="Kid selector tabs">
+    <button class="gpill active"><span class="kav jake">J</span>Jake</button>
+    <button class="gpill"><span class="kav emma">E</span>Emma</button>
+    <button class="gpill"><span class="kav sophie">S</span>Sophie</button>
+    <button class="gpill">All Kids (Combined)</button>
+  </div>
 
-    <!-- Jake's Header -->
-    <div class="bg-card border border-border rounded-xl p-6 mb-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-2xl font-bold">Jake's Spending</h1>
-          <p class="text-sm text-muted mt-1">June 2026</p>
-        </div>
-        <div class="text-right">
-          <p class="text-3xl font-bold font-mono">$347</p>
-          <p class="text-sm text-red-400">Over monthly limit ($300) by $47</p>
-        </div>
-      </div>
-
-      <!-- Period Summaries -->
-      <div class="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-border">
-        <div>
-          <p class="text-xs text-muted">Today</p>
-          <p class="text-lg font-mono font-medium">$14.32</p>
-          <p class="text-xs text-green-400">Under $30 daily limit</p>
-        </div>
-        <div>
-          <p class="text-xs text-muted">This Week</p>
-          <p class="text-lg font-mono font-medium text-red-300">$112</p>
-          <p class="text-xs text-red-400">Over $100 weekly limit</p>
-        </div>
-        <div>
-          <p class="text-xs text-muted">This Month</p>
-          <p class="text-lg font-mono font-medium text-red-300">$347</p>
-          <p class="text-xs text-red-400">Over $300 monthly limit</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-3 gap-6">
-      <!-- Left: Category Breakdown -->
-      <div class="col-span-1">
-        <div class="bg-card border border-border rounded-xl p-5">
-          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">By Category</h2>
-          <div class="space-y-3">
-            <div>
-              <div class="flex justify-between text-xs mb-1">
-                <span>Gaming</span>
-                <span class="font-mono">$142</span>
-              </div>
-              <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-                <div class="h-full bg-blue-500 rounded-full" style="width: 41%"></div>
-              </div>
-            </div>
-            <div>
-              <div class="flex justify-between text-xs mb-1">
-                <span>Food & Dining</span>
-                <span class="font-mono">$98</span>
-              </div>
-              <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-                <div class="h-full bg-blue-400 rounded-full" style="width: 28%"></div>
-              </div>
-            </div>
-            <div>
-              <div class="flex justify-between text-xs mb-1">
-                <span>Entertainment</span>
-                <span class="font-mono">$62</span>
-              </div>
-              <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-                <div class="h-full bg-blue-300 rounded-full" style="width: 18%"></div>
-              </div>
-            </div>
-            <div>
-              <div class="flex justify-between text-xs mb-1">
-                <span>Shopping</span>
-                <span class="font-mono">$45</span>
-              </div>
-              <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-                <div class="h-full bg-blue-200 rounded-full" style="width: 13%"></div>
-              </div>
-            </div>
+  <section class="hero">
+    <div class="card pad-lg reveal">
+      <div class="hero-main">
+        <div class="kid-title">
+          <span class="kav jake lg">J</span>
+          <div>
+            <div class="k">Jake&rsquo;s Spending</div>
+            <div class="sub mono">June 2026</div>
           </div>
         </div>
+        <div class="hero-total">
+          <div class="big cu" data-to="347" data-pre="$">$0</div>
+          <div class="delta up">Over monthly limit (<span class="mono">$300</span>) by <span class="mono">$47</span></div>
+        </div>
+      </div>
 
-        <!-- Threshold Settings -->
-        <div class="bg-card border border-border rounded-xl p-5 mt-4">
-          <h2 class="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Limits</h2>
-          <div class="space-y-3">
-            <div class="flex justify-between items-center">
-              <span class="text-xs">Daily</span>
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-mono">$30</span>
-                <button class="text-xs text-muted hover:text-white">✏️</button>
-              </div>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-xs">Weekly</span>
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-mono text-red-300">$100</span>
-                <button class="text-xs text-muted hover:text-white">✏️</button>
-              </div>
-            </div>
-            <div class="flex justify-between items-center">
-              <span class="text-xs">Monthly</span>
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-mono text-red-300">$300</span>
-                <button class="text-xs text-muted hover:text-white">✏️</button>
-              </div>
-            </div>
+      <div class="periods">
+        <div class="period">
+          <div class="label">Today</div>
+          <div class="value mono">$14.32</div>
+          <div class="note ok">Under <span class="mono">$30</span> daily limit</div>
+        </div>
+        <div class="period">
+          <div class="label">This Week</div>
+          <div class="value mono up">$112</div>
+          <div class="note up">Over <span class="mono">$100</span> weekly limit</div>
+        </div>
+        <div class="period">
+          <div class="label">This Month</div>
+          <div class="value mono up">$347</div>
+          <div class="note up">Over <span class="mono">$300</span> monthly limit</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card reveal">
+      <div class="sectitle">Limits</div>
+      <div class="barrow">
+        <div class="top"><span class="who"><span class="kav jake">J</span>Daily</span><span class="amt"><span class="mono" style="color:var(--parchment)">$14.32</span> / $30</span></div>
+        <div class="track"><span data-w="48%" style="background:var(--jake)"></span></div>
+        <div class="flag ok">Under <span class="mono">$30</span> daily limit. The realm survives breakfast.</div>
+      </div>
+      <div class="barrow">
+        <div class="top"><span class="who"><span class="kav jake">J</span>Weekly</span><span class="amt"><span class="mono" style="color:var(--parchment)">$112</span> / $100</span></div>
+        <div class="track"><span data-w="100%" style="background:var(--error)"></span></div>
+        <div class="flag up">Over <span class="mono">$100</span> weekly limit by <span class="mono">$12</span> &mdash; a modest rebellion, with receipts.</div>
+      </div>
+      <div class="barrow">
+        <div class="top"><span class="who"><span class="kav jake">J</span>Monthly</span><span class="amt"><span class="mono" style="color:var(--parchment)">$347</span> / $300</span></div>
+        <div class="track"><span data-w="100%" style="background:var(--error)"></span></div>
+        <div class="flag up">Over monthly limit (<span class="mono">$300</span>) by <span class="mono">$47</span> &mdash; the treasury has noticed.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="detail-grid">
+    <div class="stack">
+      <div class="card reveal">
+        <div class="sectitle">By Category</div>
+        <div class="category-list">
+          <div class="barrow">
+            <div class="cat-top"><span class="cat-name"><span class="cat-dot" style="background:var(--jake)"></span>Gaming</span><span class="amt">$142</span></div>
+            <div class="track"><span data-w="41%" style="background:var(--jake)"></span></div>
+          </div>
+          <div class="barrow">
+            <div class="cat-top"><span class="cat-name"><span class="cat-dot" style="background:var(--cat-dining)"></span>Food &amp; Dining</span><span class="amt">$98</span></div>
+            <div class="track"><span data-w="28%" style="background:var(--cat-dining)"></span></div>
+          </div>
+          <div class="barrow">
+            <div class="cat-top"><span class="cat-name"><span class="cat-dot" style="background:var(--emma)"></span>Entertainment</span><span class="amt">$62</span></div>
+            <div class="track"><span data-w="18%" style="background:var(--emma)"></span></div>
+          </div>
+          <div class="barrow">
+            <div class="cat-top"><span class="cat-name"><span class="cat-dot" style="background:var(--cat-shopping)"></span>Shopping</span><span class="amt">$45</span></div>
+            <div class="track"><span data-w="13%" style="background:var(--cat-shopping)"></span></div>
           </div>
         </div>
       </div>
 
-      <!-- Right: Transaction List -->
-      <div class="col-span-2">
-        <div class="bg-card border border-border rounded-xl p-5">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-sm font-semibold uppercase tracking-wider text-muted">Jake's Transactions</h2>
-            <select class="bg-zinc-800 border border-border rounded-md text-xs px-2 py-1 text-muted">
-              <option>This Month</option>
-              <option>Last Month</option>
-              <option>Last 90 Days</option>
-            </select>
-          </div>
+      <div class="card reveal">
+        <div class="sectitle">Threshold Settings</div>
+        <div class="limit-list">
+          <div class="limit-row"><span class="label">Daily</span><span class="limit-actions"><span class="mono">$30</span><button class="icon-btn" aria-label="Edit daily limit">&#9999;&#65039;</button></span></div>
+          <div class="limit-row"><span class="label">Weekly</span><span class="limit-actions"><span class="mono up">$100</span><button class="icon-btn" aria-label="Edit weekly limit">&#9999;&#65039;</button></span></div>
+          <div class="limit-row"><span class="label">Monthly</span><span class="limit-actions"><span class="mono up">$300</span><button class="icon-btn" aria-label="Edit monthly limit">&#9999;&#65039;</button></span></div>
+        </div>
+      </div>
+    </div>
 
-          <div class="space-y-1">
-            <!-- Today Section -->
-            <p class="text-xs text-muted font-medium pt-2 pb-1">Today — Jun 20</p>
+    <div class="card reveal">
+      <div class="txn-toolbar">
+        <div class="sectitle" style="margin-bottom:0">Jake&rsquo;s Transactions</div>
+        <select class="input" style="width:auto;min-width:136px;padding:7px 10px">
+          <option>This Month</option>
+          <option>Last Month</option>
+          <option>Last 90 Days</option>
+        </select>
+      </div>
 
-            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-orange-900/30 flex items-center justify-center text-xs">🍗</div>
-                <div>
-                  <p class="text-sm font-medium">Chick-fil-A #02341</p>
-                  <p class="text-xs text-muted">Chase ...9876 • Food & Dining</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-mono">-$14.32</p>
-                <p class="text-xs text-blue-400">auto: merchant rule</p>
-              </div>
-            </div>
+      <div class="date-label">Today &mdash; Jun 20</div>
+      <div class="txn-row">
+        <div class="txn-left"><div class="txn-ico">&#127831;</div><div class="txn-meta"><div class="n">Chick-fil-A #02341</div><div class="d">Chase ...9876 &middot; Food &amp; Dining</div></div></div>
+        <div class="txn-amt"><div class="mono">-$14.32</div><div class="src info">auto: merchant rule</div></div>
+      </div>
 
-            <!-- This Week Section -->
-            <p class="text-xs text-muted font-medium pt-4 pb-1">Jun 18</p>
+      <div class="date-label">Jun 18</div>
+      <div class="txn-row">
+        <div class="txn-left"><div class="txn-ico">&#127918;</div><div class="txn-meta"><div class="n">Steam Purchase</div><div class="d">Amex ...1234 &middot; Gaming</div></div></div>
+        <div class="txn-amt"><div class="mono">-$59.99</div><div class="src warn">manual assignment</div></div>
+      </div>
+      <div class="txn-row">
+        <div class="txn-left"><div class="txn-ico">&#127828;</div><div class="txn-meta"><div class="n">McDonald&rsquo;s #38291</div><div class="d">Chase ...9876 &middot; Food &amp; Dining</div></div></div>
+        <div class="txn-amt"><div class="mono">-$12.48</div><div class="src info">auto: merchant rule</div></div>
+      </div>
 
-            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-xs">🎮</div>
-                <div>
-                  <p class="text-sm font-medium">Steam Purchase</p>
-                  <p class="text-xs text-muted">Amex ...1234 • Gaming</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-mono">-$59.99</p>
-                <p class="text-xs text-yellow-400">manual assignment</p>
-              </div>
-            </div>
+      <div class="date-label">Jun 16</div>
+      <div class="txn-row">
+        <div class="txn-left"><div class="txn-ico">&#127918;</div><div class="txn-meta"><div class="n">Roblox Premium</div><div class="d">Jake&rsquo;s Debit ...4521 &middot; Gaming</div></div></div>
+        <div class="txn-amt"><div class="mono">-$12.99</div><div class="src ok">auto: card rule</div></div>
+      </div>
+      <div class="txn-row">
+        <div class="txn-left"><div class="txn-ico">&#128722;</div><div class="txn-meta"><div class="n">Five Below</div><div class="d">Chase ...9876 &middot; Shopping</div></div></div>
+        <div class="txn-amt"><div class="mono">-$24.50</div><div class="src info">auto: merchant rule</div></div>
+      </div>
 
-            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-green-900/30 flex items-center justify-center text-xs">🍔</div>
-                <div>
-                  <p class="text-sm font-medium">McDonald's #38291</p>
-                  <p class="text-xs text-muted">Chase ...9876 • Food & Dining</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-mono">-$12.48</p>
-                <p class="text-xs text-blue-400">auto: merchant rule</p>
-              </div>
-            </div>
+      <div class="date-label">Jun 14</div>
+      <div class="txn-row">
+        <div class="txn-left"><div class="txn-ico">&#127916;</div><div class="txn-meta"><div class="n">AMC Theatres</div><div class="d">Jake&rsquo;s Debit ...4521 &middot; Entertainment</div></div></div>
+        <div class="txn-amt"><div class="mono">-$18.50</div><div class="src ok">auto: card rule</div></div>
+      </div>
+      <div class="txn-row">
+        <div class="txn-left"><div class="txn-ico">&#127918;</div><div class="txn-meta"><div class="n">Epic Games Store</div><div class="d">Amex ...1234 &middot; Gaming</div></div></div>
+        <div class="txn-amt"><div class="mono">-$39.99</div><div class="src info">auto: merchant rule</div></div>
+      </div>
 
-            <p class="text-xs text-muted font-medium pt-4 pb-1">Jun 16</p>
-
-            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-xs">🎮</div>
-                <div>
-                  <p class="text-sm font-medium">Roblox Premium</p>
-                  <p class="text-xs text-muted">Jake's Debit ...4521 • Gaming</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-mono">-$12.99</p>
-                <p class="text-xs text-green-400">auto: card rule</p>
-              </div>
-            </div>
-
-            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-blue-900/30 flex items-center justify-center text-xs">🛒</div>
-                <div>
-                  <p class="text-sm font-medium">Five Below</p>
-                  <p class="text-xs text-muted">Chase ...9876 • Shopping</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-mono">-$24.50</p>
-                <p class="text-xs text-blue-400">auto: merchant rule</p>
-              </div>
-            </div>
-
-            <p class="text-xs text-muted font-medium pt-4 pb-1">Jun 14</p>
-
-            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-xs">🎬</div>
-                <div>
-                  <p class="text-sm font-medium">AMC Theatres</p>
-                  <p class="text-xs text-muted">Jake's Debit ...4521 • Entertainment</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-mono">-$18.50</p>
-                <p class="text-xs text-green-400">auto: card rule</p>
-              </div>
-            </div>
-
-            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-zinc-800/50">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-xs">🎮</div>
-                <div>
-                  <p class="text-sm font-medium">Epic Games Store</p>
-                  <p class="text-xs text-muted">Amex ...1234 • Gaming</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-mono">-$39.99</p>
-                <p class="text-xs text-blue-400">auto: merchant rule</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Discussion Items -->
-          <div class="mt-6 pt-4 border-t border-border">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-yellow-400 mb-3">🚩 Discussion Items</h3>
-            <div class="space-y-2">
-              <div class="flex items-center justify-between p-3 rounded-lg bg-yellow-950/20 border border-yellow-900/30">
-                <div>
-                  <p class="text-sm font-medium">Steam Purchase — $59.99</p>
-                  <p class="text-xs text-muted">Pushed him over weekly gaming limit. Talk about game purchasing habits?</p>
-                </div>
-                <div class="flex gap-2">
-                  <button class="px-2.5 py-1 text-xs rounded-md bg-yellow-900/50 text-yellow-300">Create Task</button>
-                  <button class="px-2.5 py-1 text-xs rounded-md text-muted border border-border">Dismiss</button>
-                </div>
-              </div>
-            </div>
+      <hr class="hair" />
+      <div class="sectitle">&#128681; Discussion Items</div>
+      <div class="alert a-warn">
+        <div class="badge">&#9888;</div>
+        <div>
+          <div class="src">Tyrion</div>
+          <div class="ttl">Steam Purchase &mdash; <span class="mono">$59.99</span></div>
+          <div class="bd">Pushed him over weekly gaming limit. Talk about game purchasing habits?</div>
+          <div class="discussion-actions">
+            <button class="btn btn-secondary btn-sm">Create Task</button>
+            <button class="btn btn-ghost btn-sm">Dismiss</button>
           </div>
         </div>
       </div>
     </div>
-  </main>
+  </section>
+
+  <div class="motionnote mono">Motion demo &middot; production uses NumberFlow (figures) + Motion / motion.dev (reveals &amp; bars)</div>
+</main>
+
+<script>
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function countUp(el){
+    const to=parseFloat(el.dataset.to), pre=el.dataset.pre||'', suf=el.dataset.suf||'';
+    if(reduce){el.textContent=pre+to.toLocaleString('en-US')+suf;return;}
+    const dur=1000, t0=performance.now();
+    function step(now){
+      const p=Math.min((now-t0)/dur,1), e=1-Math.pow(1-p,3);
+      el.textContent=pre+Math.round(to*e).toLocaleString('en-US')+suf;
+      if(p<1)requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function play(){
+    document.querySelectorAll('.reveal').forEach((c,i)=>{
+      c.classList.remove('in');
+      if(reduce){c.classList.add('in');return;}
+      setTimeout(()=>c.classList.add('in'), 80*i);
+    });
+    document.querySelectorAll('.cu').forEach((el,i)=>{
+      el.textContent=(el.dataset.pre||'')+'0';
+      setTimeout(()=>countUp(el), reduce?0:200+60*i);
+    });
+    document.querySelectorAll('.track > span').forEach((s,i)=>{
+      const frac=parseFloat(s.dataset.w)/100;
+      s.style.transform='scaleX(0)';
+      setTimeout(()=>{ s.style.transform='scaleX('+frac+')'; }, reduce?0:250+50*i);
+    });
+  }
+
+  document.getElementById('replay').addEventListener('click', play);
+  window.addEventListener('load', play);
+</script>
 </body>
 </html>
