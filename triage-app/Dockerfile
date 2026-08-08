@@ -14,12 +14,14 @@ RUN npm run build
 FROM base AS dependencies
 COPY --from=domain-builder /workspace/kid-engine/package.json /workspace/kid-engine/package.json
 COPY --from=domain-builder /workspace/kid-engine/dist /workspace/kid-engine/dist
+COPY --from=domain-builder /workspace/kid-engine/node_modules /workspace/kid-engine/node_modules
 WORKDIR /workspace/triage-app
 COPY triage-app/package.json triage-app/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 FROM base AS builder
 WORKDIR /workspace/triage-app
+COPY --from=dependencies /workspace/kid-engine /workspace/kid-engine
 COPY --from=dependencies /workspace/triage-app/node_modules ./node_modules
 COPY triage-app .
 RUN npm run build

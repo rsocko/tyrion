@@ -97,6 +97,15 @@ def test_ui_image_is_standalone_non_root_and_contains_no_runtime_secret():
     assert "EXPOSE 3000" in dockerfile
     assert "http://127.0.0.1:3000/api/health" in dockerfile
     assert 'CMD ["node", "server.js"]' in dockerfile
+    assert (
+        "COPY --from=dependencies /workspace/kid-engine /workspace/kid-engine"
+        in dockerfile
+    )
+    assert (
+        "COPY --from=domain-builder /workspace/kid-engine/node_modules "
+        "/workspace/kid-engine/node_modules"
+        in dockerfile
+    )
     assert "BRIDGE_API_TOKEN" not in dockerfile
     for excluded in (".env", ".env.*", "node_modules", ".next", "test"):
         assert excluded in dockerignore
