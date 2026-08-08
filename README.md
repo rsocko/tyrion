@@ -2,6 +2,15 @@
 
 Smart assistance to manage, track, and revise personal finances — integrated into Mission Control.
 
+## Origin and Provenance
+
+TYRION was extracted from the private
+[`rsocko/ideation/experiments/personal-automation/finance-management`](https://github.com/rsocko/ideation/tree/27147420c236f0c50582ee39fee02a4a446bd218/experiments/personal-automation/finance-management)
+experiment at source cut `27147420c236f0c50582ee39fee02a4a446bd218`. The extracted baseline also
+includes the branding work merged in [`rsocko/ideation#1117`](https://github.com/rsocko/ideation/pull/1117).
+
+The canonical migration/graduation issue and Ideation pointer PR will be linked here after they are created.
+
 ## Overview
 
 A layered system combining:
