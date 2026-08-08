@@ -9,7 +9,10 @@ TYRION was extracted from the private
 experiment at source cut `27147420c236f0c50582ee39fee02a4a446bd218`. The extracted baseline also
 includes the branding work merged in [`rsocko/ideation#1117`](https://github.com/rsocko/ideation/pull/1117).
 
-The canonical migration/graduation issue and Ideation pointer PR will be linked here after they are created.
+The canonical migration is tracked in [`rsocko/ideation#1119`](https://github.com/rsocko/ideation/issues/1119).
+The source graduation/pointer PR is [`rsocko/ideation#1120`](https://github.com/rsocko/ideation/pull/1120)
+and remains pending merge. The extracted baseline was stabilized in the merged
+[`rsocko/tyrion#5`](https://github.com/rsocko/tyrion/pull/5).
 
 ## Overview
 
