@@ -130,10 +130,10 @@ export function login(email: string, password: string, mfaCode?: string) {
   });
 }
 
-export function loginWithCookies(cookies: string) {
+export function loginWithCookies(sessionId: string, csrfToken: string) {
   return bridgeFetch<AuthAction>("/auth/login-with-cookies", {
     method: "POST",
-    body: JSON.stringify({ cookies }),
+    body: JSON.stringify({ sessionId, csrfToken }),
   });
 }
 

@@ -440,13 +440,15 @@ class LoginRequest(BaseModel):
 
 
 class CookieLoginRequest(BaseModel):
-    cookies: str = Field(min_length=3, max_length=12000)
+    sessionId: str = Field(min_length=1, max_length=6000)
+    csrfToken: str = Field(min_length=1, max_length=6000)
 
-    @field_validator("cookies")
+    @field_validator("sessionId", "csrfToken")
     @classmethod
-    def cookies_must_be_header_pairs(cls, value: str) -> str:
-        if "=" not in value or "\r" in value or "\n" in value:
-            raise ValueError("cookies must be a single cookie header value")
+    def cookie_value_must_be_safe(cls, value: str) -> str:
+        value = value.strip()
+        if not value or any(character in value for character in (";", "\r", "\n")):
+            raise ValueError("cookie value contains invalid characters")
         return value
 
 
@@ -562,7 +564,10 @@ async def auth_login_cookies(request: CookieLoginRequest):
 
     try:
         client = create_monarch_client()
-        await client.login_with_cookies(request.cookies, save_session=False)
+        cookie_header = (
+            f"session_id={request.sessionId}; csrftoken={request.csrfToken}"
+        )
+        await client.login_with_cookies(cookie_header, save_session=False)
         session_manager.establish(client)
         logger.info("Cookie-based login successful")
         return AuthActionResponse(status="success", message="Authenticated via browser cookies")

@@ -116,12 +116,13 @@ async def test_z_live_authentication_flow_and_logout(live_bridge):
         }
         authenticated = await live_bridge.post("/auth/login", json=payload)
     else:
-        cookies = os.getenv("MONARCH_TEST_COOKIE")
-        if not cookies:
+        session_id = os.getenv("MONARCH_TEST_SESSION_ID")
+        csrf_token = os.getenv("MONARCH_TEST_CSRF_TOKEN")
+        if not session_id or not csrf_token:
             pytest.skip("Cookie authentication environment is incomplete")
         authenticated = await live_bridge.post(
             "/auth/login-with-cookies",
-            json={"cookies": cookies},
+            json={"sessionId": session_id, "csrfToken": csrf_token},
         )
 
     assert_success(authenticated)

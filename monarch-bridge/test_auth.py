@@ -93,22 +93,25 @@ async def test_cookie_login_success_uses_same_session_store(live_client, monkeyp
 
     response = await live_client.post(
         "/auth/login-with-cookies",
-        json={"cookies": "opaque-cookie=synthetic-value"},
+        json={
+            "sessionId": "synthetic-session",
+            "csrfToken": "synthetic-csrf",
+        },
     )
 
     assert response.status_code == 200
     provider.login_with_cookies.assert_awaited_once_with(
-        "opaque-cookie=synthetic-value",
+        "session_id=synthetic-session; csrftoken=synthetic-csrf",
         save_session=False,
     )
     assert main_module.session_manager.path.exists()
 
 
 @pytest.mark.anyio
-async def test_cookie_login_rejects_incomplete_header(live_client):
+async def test_cookie_login_requires_both_values(live_client):
     response = await live_client.post(
         "/auth/login-with-cookies",
-        json={"cookies": "not-a-cookie-header"},
+        json={"sessionId": "synthetic-session"},
     )
 
     assert response.status_code == 422
@@ -166,7 +169,10 @@ async def test_cookie_failure_never_returns_cookie_or_upstream_error(
 
     response = await live_client.post(
         "/auth/login-with-cookies",
-        json={"cookies": f"{session_cookie_name}=input-value; {csrf_cookie_name}=input-value"},
+        json={
+            "sessionId": "input-value",
+            "csrfToken": "input-value",
+        },
     )
 
     assert response.status_code == 401
@@ -429,7 +435,10 @@ async def test_auth_payload_size_is_bounded(live_client, monkeypatch):
 
     response = await live_client.post(
         "/auth/login-with-cookies",
-        json={"cookies": f"opaque={'x' * 2000}"},
+        json={
+            "sessionId": "x" * 2000,
+            "csrfToken": "x" * 2000,
+        },
     )
 
     assert response.status_code == 413

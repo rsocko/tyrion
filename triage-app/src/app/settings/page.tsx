@@ -18,6 +18,8 @@ export default function SettingsPage() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [csrfToken, setCsrfToken] = useState("");
 
   // Sync controls
   const [syncInterval, setSyncInterval] = useState("4h");
@@ -51,20 +53,19 @@ export default function SettingsPage() {
     checkStatus();
   }, [checkStatus]);
 
-  const [cookieString, setCookieString] = useState("");
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
     setLoginLoading(true);
     const res = loginMethod === "password"
       ? await login(loginEmail, loginPassword, mfaCode || undefined)
-      : await loginWithCookies(cookieString);
+      : await loginWithCookies(sessionId, csrfToken);
     if (res.data) {
       showToast("Connected to Monarch Money");
       setLoginPassword("");
       setMfaCode("");
-      setCookieString("");
+      setSessionId("");
+      setCsrfToken("");
       checkStatus();
     } else {
       setLoginError(res.error || "Authentication failed.");
@@ -224,11 +225,8 @@ export default function SettingsPage() {
                       cookies named <code>session_id</code> and <code>csrftoken</code>.
                     </li>
                     <li>
-                      Copy each cookie&apos;s <strong>Value</strong> and paste them below
-                      in this exact format:
-                      <code className="mt-1 block break-all rounded bg-elevated p-2">
-                        session_id=&lt;value&gt;; csrftoken=&lt;value&gt;
-                      </code>
+                      Copy each cookie&apos;s <strong>Value</strong> into its matching
+                      field below. Tyrion constructs the cookie header in memory.
                     </li>
                   </ol>
                   <p className="mt-3 text-warning">
@@ -236,15 +234,28 @@ export default function SettingsPage() {
                     page. Do not send, save, screenshot, or commit them.
                   </p>
                 </details>
-                <label htmlFor="monarch-cookie-header" className="block text-xs text-muted">
-                  Monarch cookie values
+                <label htmlFor="monarch-session-id" className="block text-xs text-muted">
+                  <code>session_id</code> value
                 </label>
-                <textarea
-                  id="monarch-cookie-header"
-                  value={cookieString}
-                  onChange={(e) => setCookieString(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 h-20 font-mono"
-                  placeholder="session_id=<value>; csrftoken=<value>"
+                <input
+                  id="monarch-session-id"
+                  type="password"
+                  value={sessionId}
+                  onChange={(e) => setSessionId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 font-mono"
+                  placeholder="Paste the session_id value"
+                  spellCheck={false}
+                />
+                <label htmlFor="monarch-csrf-token" className="block text-xs text-muted">
+                  <code>csrftoken</code> value
+                </label>
+                <input
+                  id="monarch-csrf-token"
+                  type="password"
+                  value={csrfToken}
+                  onChange={(e) => setCsrfToken(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 font-mono"
+                  placeholder="Paste the csrftoken value"
                   spellCheck={false}
                 />
               </>
@@ -260,7 +271,7 @@ export default function SettingsPage() {
                 loginLoading ||
                 (loginMethod === "password"
                   ? !loginEmail.trim() || !loginPassword
-                  : !cookieString.trim())
+                  : !sessionId.trim() || !csrfToken.trim())
               }
               className="w-full py-2 rounded-md bg-success hover:bg-success text-white text-sm font-medium transition-colors disabled:opacity-50"
             >
