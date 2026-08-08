@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!requirements-runtime.txt
+!bridge_runtime.py
+!contract.py
+!main.py

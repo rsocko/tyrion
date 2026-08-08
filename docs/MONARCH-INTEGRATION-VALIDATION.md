@@ -34,6 +34,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
+| Production container | Non-root runtime, default `main.py` startup, `0.0.0.0:8100`, public `/health`, and external `/var/lib/tyrion/monarch-session.json` state | Build and health smoke test before trusted registry publication |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
 ## Safe live procedure
@@ -80,3 +81,21 @@ When upgrading `monarchmoneycommunity`, pin the exact version, verify method
 signatures, update synthetic normalizer inputs, run deterministic tests, then perform
 the controlled live matrix. Never capture a real response as a fixture. Reconstruct
 only the minimum structural shape with invented identifiers and values.
+
+## Container release validation
+
+Pull requests run deterministic bridge tests, compile checks, a production image
+build, and an internal Docker health smoke test without registry credentials or push
+permissions. After the same workflow succeeds on `main`, the trusted private runner
+publishes `registry.socko.us/tyrion:sha-<40 lowercase commit hex>` and advances
+`registry.socko.us/tyrion:main` and `registry.socko.us/tyrion:latest`. Manual releases
+publish the immutable SHA tag and advance the moving tags only when dispatched from
+`main`. The publisher checks the registry first and fails rather than overwriting an
+existing immutable SHA tag.
+
+The release image must retain Python for its `/health` probe, start `main.py` without a
+stack command override, bind internally to `0.0.0.0:8100`, and use only the external
+`/var/lib/tyrion/monarch-session.json` session file. Runtime configuration must supply
+a server-only `BRIDGE_API_TOKEN` of at least 32 characters and preserve:
+`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, `BRIDGE_REMOTE_TLS=true`,
+`BRIDGE_LOAD_DOTENV=false`, and `DEFAULT_TRANSACTION_DAYS=90`.

@@ -73,6 +73,45 @@ non-loopback clients still fail closed, but that is not a supported TLS deployme
 The supported `main.py` entrypoint disables Uvicorn access logs because endpoint paths
 can contain private transaction identifiers.
 
+### Production container contract
+
+`monarch-bridge/Dockerfile` is the only production image in this repository.
+`triage-app/` remains a debug and contract-validation UI and is excluded from the
+container build context.
+
+| Setting | Production value |
+| --- | --- |
+| Image | `registry.socko.us/tyrion` |
+| Immutable tag | `sha-<40 lowercase commit hex>` |
+| Moving tags | `main` and `latest`, updated only from `main` |
+| Entrypoint | Image default: `python main.py`; the stack sets no command |
+| Internal listener | `0.0.0.0:8100` |
+| Health probe | `GET /health` |
+| External state mount | `/var/lib/tyrion` |
+| Session file | `/var/lib/tyrion/monarch-session.json` |
+
+The image runs as an unprivileged numeric user and includes only the runtime Python
+dependencies and bridge source. The external state directory is writable only by that
+user inside the image; the host bind mount must grant the same least privilege.
+`BRIDGE_API_TOKEN` has no image default and must be supplied at runtime with at least
+32 characters. The remaining image defaults match the homelab contract:
+
+```dotenv
+BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us
+BRIDGE_REMOTE_TLS=true
+BRIDGE_LOAD_DOTENV=false
+DEFAULT_TRANSACTION_DAYS=90
+```
+
+Traefik routing, TLS termination, the host volume, and runtime secrets are managed by
+`homelab-config`, not this repository. The private registry is reachable only from the
+trusted build runner under the same no-login convention used by Mission Control and
+Ohm, so the publishing workflow injects no registry credentials. Pull requests build
+and smoke-test on GitHub-hosted runners without a registry push path. A successful
+`main` CI run publishes the immutable tag plus `main` and `latest`; a manual run always
+publishes the immutable tag and updates moving tags only when dispatched from `main`.
+Publication fails closed if that commit's immutable tag already exists.
+
 ## Session lifecycle
 
 | State | Meaning | Operator action |

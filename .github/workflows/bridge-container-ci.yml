@@ -1,0 +1,80 @@
+name: Bridge container CI
+
+on:
+  pull_request:
+    paths:
+      - "monarch-bridge/**"
+      - ".github/workflows/bridge-container-ci.yml"
+      - ".github/workflows/publish-bridge-image.yml"
+  push:
+    branches: [main]
+    paths:
+      - "monarch-bridge/**"
+      - ".github/workflows/bridge-container-ci.yml"
+      - ".github/workflows/publish-bridge-image.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bridge-container-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            monarch-bridge/requirements.txt
+            monarch-bridge/requirements-runtime.txt
+
+      - name: Install test dependencies
+        working-directory: monarch-bridge
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Test bridge
+        working-directory: monarch-bridge
+        run: python -m pytest test_auth.py test_bridge.py
+
+      - name: Check bridge syntax
+        run: python -m compileall -q monarch-bridge
+
+      - name: Build production image without publishing
+        run: docker build --tag "tyrion:ci-${GITHUB_SHA}" monarch-bridge
+
+      - name: Smoke production startup and health
+        shell: bash
+        run: |
+          set -euo pipefail
+          container="tyrion-bridge-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm --force "$container" >/dev/null 2>&1 || true' EXIT
+          export BRIDGE_API_TOKEN
+          BRIDGE_API_TOKEN="$(printf 'x%.0s' {1..32})"
+          docker run --detach --name "$container" \
+            --health-interval 2s \
+            --health-start-period 1s \
+            --env BRIDGE_API_TOKEN \
+            "tyrion:ci-${GITHUB_SHA}" >/dev/null
+          for attempt in {1..30}; do
+            status="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              docker logs "$container"
+              exit 1
+            fi
+            sleep 1
+          done
+          docker logs "$container"
+          echo "Container did not become healthy in time" >&2
+          exit 1
