@@ -1,16 +1,44 @@
 {
-  "name": "@ideation/kid-attribution-engine",
-  "version": "0.1.0",
-  "description": "Kid attribution engine for personal finance management — assigns transactions to children based on card, merchant, and pattern rules",
+  "name": "@rsocko/tyrion-kid-engine",
+  "version": "1.0.0",
+  "description": "Versioned Tyrion household policy and kid attribution domain package",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts/v1": {
+      "types": "./dist/contracts/v1.d.ts",
+      "import": "./dist/contracts/v1.js"
+    },
+    "./policy": {
+      "types": "./dist/policy/index.d.ts",
+      "import": "./dist/policy/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "proper-lockfile": "4.1.2"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:consumer": "npm run build && node tests/package-consumer.mjs",
+    "test:watch": "vitest",
+    "prepack": "npm run build"
   },
   "devDependencies": {
+    "@types/node": "^20.16.1",
+    "@types/proper-lockfile": "^4.1.4",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }

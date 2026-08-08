@@ -17,15 +17,15 @@ automation, and reconciliation. Prototype completeness is not product completion
 - Ship exception-oriented workflows before broad summaries or optional automation.
 - Write changes back to Monarch rather than creating a competing local truth.
 - Deep-link to Monarch and document systems instead of duplicating their full UIs.
-- Use `triage-app/` only for diagnostics, contract validation, and focused UX
-  experiments.
+- Use `triage-app/` for bounded Tyrion-owned domain configuration, connector
+  operations, diagnostics, contract validation, and focused UX experiments.
 
 ## Current baseline
 
 | Area | Available baseline | Product gap |
 | --- | --- | --- |
 | Connector | FastAPI bridge, read endpoints, category write-back, demo/live modes | Contract hardening, incremental sync, retries, health, and write-back auditability |
-| Domain logic | Kid profiles, attribution rules, suggestions, and thresholds | Mission Control domain APIs and native exception workflows |
+| Domain logic | Versioned kid policy, attribution, review, re-attribution, authorization, persistence ports, and a secure file adapter | Production persistence/API adapter and Mission Control-native exception workflows |
 | Automation | Alert concepts and weekly-summary logic | Durable scheduling, idempotency, notification delivery, and task lifecycle |
 | Reconciliation | Bill and document matching designs | Stable cross-system identities, match lifecycle, evidence links, and audit trail |
 | UI reference | Mockups and standalone Next.js prototype | Bounded debug mode and migration of useful patterns into Mission Control |
@@ -70,8 +70,10 @@ without reproducing Monarch's workspace.
   reconciliation issues, sync health, and compact summaries.
 - [ ] Build exception-only review for ambiguous attribution, anomalies,
   reconciliation mismatches, and failed write-backs.
-- [ ] Add kid profiles, card and merchant rules, limits, attribution explanations,
-  correction, and unassignment.
+- [ ] Build the bounded Tyrion configuration UI for kid profiles, card and merchant
+  rules, limits, policy versions, and controlled re-attribution.
+- [ ] Add Mission Control attribution explanations, correction, unassignment, and
+  exception actions against Tyrion's versioned domain contract.
 - [ ] Repair finance notification actions and deep-link ordinary workflows to
   Monarch.
 - [ ] Apply Mission Control auth, accessibility, responsive layout, and shared
