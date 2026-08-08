@@ -6,20 +6,51 @@ Run with --demo flag to use mock data (no Monarch credentials needed).
 """
 
 import asyncio
+import base64
+import binascii
 import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from contract import (
+    CONTRACT_VERSION,
+    AccountsResponse,
+    AuthActionResponse,
+    AuthStatusResponse,
+    BudgetsResponse,
+    CashflowResponse,
+    CategoriesResponse,
+    CategoryUpdateResponse,
+    ContractInfoResponse,
+    ErrorDetail,
+    ErrorResponse,
+    HealthResponse,
+    PageInfo,
+    RecurringResponse,
+    SyncResponse,
+    TransactionResponse,
+    TransactionsResponse,
+    normalize_accounts,
+    normalize_budgets,
+    normalize_cashflow,
+    normalize_categories,
+    normalize_recurring,
+    normalize_transaction,
+    normalize_transactions,
+    provenance,
+)
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -31,6 +62,17 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("monarch_bridge")
+
+
+def upstream_error(resource: str, exc: Exception) -> HTTPException:
+    logger.error("Monarch %s request failed: %s", resource, exc, exc_info=True)
+    return HTTPException(
+        502,
+        detail={
+            "error": "upstream_error",
+            "message": f"Monarch {resource} request failed",
+        },
+    )
 
 # ---------------------------------------------------------------------------
 # Demo mode detection (set via --demo flag or DEMO_MODE env var)
@@ -227,7 +269,7 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="Monarch Bridge",
-    version="0.3.0",
+    version=CONTRACT_VERSION,
     description="Bridge service between Mission Control and Monarch Money. "
                 "Run with --demo flag for development without credentials.",
     lifespan=lifespan,
@@ -243,44 +285,70 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def add_contract_version_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Monarch-Contract-Version"] = CONTRACT_VERSION
+    return response
+
+
+def error_response(status_code: int, code: str, message: str) -> JSONResponse:
+    payload = ErrorResponse(error=ErrorDetail(code=code, message=message))
+    return JSONResponse(
+        status_code=status_code,
+        content=payload.model_dump(mode="json", by_alias=True),
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    if isinstance(detail, dict):
+        code = str(detail.get("error", "request_failed"))
+        message = str(detail.get("message", code.replace("_", " ").capitalize()))
+    else:
+        code = "not_found" if exc.status_code == 404 else "request_failed"
+        message = str(detail)
+    return error_response(exc.status_code, code, message)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    first = exc.errors()[0]
+    location = ".".join(str(part) for part in first["loc"] if part != "query")
+    message = f"{location}: {first['msg']}" if location else first["msg"]
+    return error_response(422, "invalid_request", message)
+
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
-    return JSONResponse(status_code=500, content={"error": str(exc), "path": request.url.path})
+    return error_response(500, "internal_error", "The bridge could not complete the request")
 
 
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
 class CategoryUpdate(BaseModel):
-    category_id: str
+    categoryId: str
 
-
-class SyncResponse(BaseModel):
-    status: str
-    mode: str
-    transactions_fetched: int
-    accounts_synced: int
-    sync_timestamp: str
-    date_range: dict
+    @field_validator("categoryId")
+    @classmethod
+    def category_id_must_not_be_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("categoryId must not be empty")
+        return value
 
 
 class LoginRequest(BaseModel):
     email: str
     password: str
-    mfa_code: Optional[str] = None
+    mfaCode: Optional[str] = None
 
 
 class CookieLoginRequest(BaseModel):
     cookies: str  # Raw cookie header string from browser
-
-
-class AuthStatusResponse(BaseModel):
-    authenticated: bool
-    email: Optional[str] = None
-    session_file: Optional[str] = None
-    mode: str
 
 
 # ---------------------------------------------------------------------------
@@ -289,16 +357,20 @@ class AuthStatusResponse(BaseModel):
 SESSION_FILE = Path(os.getenv("SESSION_FILE", "~/.monarch_session")).expanduser()
 
 
-@app.post("/auth/login")
+@app.post("/auth/login", response_model=AuthActionResponse)
 async def auth_login(request: LoginRequest):
     """Authenticate with Monarch Money using email/password + optional email OTP code.
 
     Flow:
     1. First call with email/password returns mfa_required when Monarch requests a code.
-    2. Second call with email/password/mfa_code completes authentication.
+    2. Second call with email/password/mfaCode completes authentication.
     """
     if DEMO_MODE:
-        return {"status": "success", "message": "Demo mode - no real auth needed", "email": request.email}
+        return AuthActionResponse(
+            status="success",
+            message="Demo mode - no real auth needed",
+            email=request.email,
+        )
 
     try:
         from monarchmoney import MonarchMoney
@@ -306,12 +378,16 @@ async def auth_login(request: LoginRequest):
         global mm
         client = MonarchMoney()
 
-        if request.mfa_code:
-            await client.multi_factor_authenticate(request.email, request.password, request.mfa_code)
+        if request.mfaCode:
+            await client.multi_factor_authenticate(request.email, request.password, request.mfaCode)
             client.save_session(str(SESSION_FILE))
             mm = client
             logger.info("MFA login successful for %s", request.email)
-            return {"status": "success", "message": "Authenticated successfully", "email": request.email}
+            return AuthActionResponse(
+                status="success",
+                message="Authenticated successfully",
+                email=request.email,
+            )
 
         await client.login(
             request.email,
@@ -322,7 +398,11 @@ async def auth_login(request: LoginRequest):
         client.save_session(str(SESSION_FILE))
         mm = client
         logger.info("Login successful for %s", request.email)
-        return {"status": "success", "message": "Authenticated successfully", "email": request.email}
+        return AuthActionResponse(
+            status="success",
+            message="Authenticated successfully",
+            email=request.email,
+        )
 
     except HTTPException:
         raise
@@ -354,7 +434,7 @@ async def auth_login(request: LoginRequest):
             raise HTTPException(500, detail={"error": "login_failed", "message": str(e)})
 
 
-@app.post("/auth/login-with-cookies")
+@app.post("/auth/login-with-cookies", response_model=AuthActionResponse)
 async def auth_login_cookies(request: CookieLoginRequest):
     """Authenticate using browser cookies (bypasses CAPTCHA).
 
@@ -364,7 +444,7 @@ async def auth_login_cookies(request: CookieLoginRequest):
     3. Submit the cookie string to this endpoint.
     """
     if DEMO_MODE:
-        return {"status": "success", "message": "Demo mode - no real auth needed"}
+        return AuthActionResponse(status="success", message="Demo mode - no real auth needed")
 
     try:
         from monarchmoney import MonarchMoney
@@ -375,14 +455,14 @@ async def auth_login_cookies(request: CookieLoginRequest):
         client.save_session(str(SESSION_FILE))
         mm = client
         logger.info("Cookie-based login successful")
-        return {"status": "success", "message": "Authenticated via browser cookies"}
+        return AuthActionResponse(status="success", message="Authenticated via browser cookies")
 
     except Exception as e:
         logger.error("Cookie login failed: %s", e)
         raise HTTPException(401, detail={"error": "cookie_login_failed", "message": f"Cookie auth failed: {e}"})
 
 
-@app.get("/auth/status")
+@app.get("/auth/status", response_model=AuthStatusResponse)
 async def auth_status():
     """Check whether the current session is active."""
     if DEMO_MODE:
@@ -401,7 +481,6 @@ async def auth_status():
             return AuthStatusResponse(
                 authenticated=True,
                 email=os.getenv("MONARCH_EMAIL", "authenticated"),
-                session_file=str(SESSION_FILE),
                 mode="live",
             )
         except Exception as e:
@@ -411,7 +490,7 @@ async def auth_status():
         return AuthStatusResponse(authenticated=False, mode="live")
 
 
-@app.post("/auth/logout")
+@app.post("/auth/logout", response_model=AuthActionResponse)
 async def auth_logout():
     """Clear cached session and log out."""
     global mm
@@ -421,26 +500,32 @@ async def auth_logout():
         SESSION_FILE.unlink()
         logger.info("Session file removed: %s", SESSION_FILE)
 
-    return {"status": "logged_out", "message": "Session cleared"}
+    return AuthActionResponse(status="logged_out", message="Session cleared")
 
 
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-@app.get("/health")
+@app.get("/contract", response_model=ContractInfoResponse)
+async def contract_info():
+    """Return the stable API contract version implemented by this service."""
+    return ContractInfoResponse()
+
+
+@app.get("/health", response_model=HealthResponse)
 async def health():
     """Health check and session status."""
     if DEMO_MODE:
-        return {"status": "ok", "mode": "demo", "authenticated": True}
+        return HealthResponse(status="ok", mode="demo", authenticated=True)
     try:
         await get_client()
-        return {"status": "ok", "mode": "live", "authenticated": True}
+        return HealthResponse(status="ok", mode="live", authenticated=True)
     except Exception as e:
         logger.warning("Health check failed: %s", e)
-        return {"status": "error", "mode": "live", "authenticated": False, "error": str(e)}
+        return HealthResponse(status="error", mode="live", authenticated=False)
 
 
-@app.post("/sync")
+@app.post("/sync", response_model=SyncResponse)
 async def sync_transactions(
     days: int = Query(90, ge=1, le=365, description="Number of days to sync"),
 ):
@@ -458,174 +543,325 @@ async def sync_transactions(
         accounts = DemoProvider.get_accounts()
         return SyncResponse(
             status="complete",
-            mode="demo",
+            provenance=provenance("demo"),
             transactions_fetched=data["total"],
             accounts_synced=len(accounts["accounts"]),
-            sync_timestamp=datetime.now().isoformat(),
+            synced_at=datetime.now(timezone.utc),
             date_range={"start": start_date, "end": end_date},
         )
 
+    client = await get_client()
     try:
-        client = await get_client()
-        transactions = await client.get_transactions(start_date=start_date, end_date=end_date)
-        results = transactions.get("allTransactions", {}).get("results", [])
+        transactions_fetched = 0
+        offset = 0
+        while True:
+            transactions = await client.get_transactions(
+                limit=5000,
+                offset=offset,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            all_transactions = transactions.get("allTransactions", {})
+            results = all_transactions.get("results", [])
+            transactions_fetched += len(results)
+            total = int(all_transactions.get("totalCount", transactions_fetched))
+            if not results or transactions_fetched >= total:
+                break
+            offset += len(results)
+
         accounts = await client.get_accounts()
         account_list = accounts.get("accounts", []) if isinstance(accounts, dict) else []
 
-        logger.info("Sync complete: %d transactions, %d accounts", len(results), len(account_list))
+        logger.info(
+            "Sync complete: %d transactions, %d accounts",
+            transactions_fetched,
+            len(account_list),
+        )
         return SyncResponse(
             status="complete",
-            mode="live",
-            transactions_fetched=len(results),
+            provenance=provenance("live"),
+            transactions_fetched=transactions_fetched,
             accounts_synced=len(account_list),
-            sync_timestamp=datetime.now().isoformat(),
+            synced_at=datetime.now(timezone.utc),
             date_range={"start": start_date, "end": end_date},
         )
     except Exception as e:
-        logger.error("Sync failed: %s", e, exc_info=True)
-        raise HTTPException(500, f"Sync failed: {e}")
+        raise upstream_error("sync", e)
 
 
-@app.get("/transactions")
+def encode_cursor(offset: int) -> str:
+    return base64.urlsafe_b64encode(str(offset).encode()).decode().rstrip("=")
+
+
+def decode_cursor(cursor: Optional[str]) -> int:
+    if cursor is None:
+        return 0
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        offset = int(base64.urlsafe_b64decode(padded).decode())
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        raise HTTPException(400, detail={"error": "invalid_cursor", "message": "Cursor is invalid"})
+    if offset < 0:
+        raise HTTPException(400, detail={"error": "invalid_cursor", "message": "Cursor is invalid"})
+    return offset
+
+
+@app.get("/transactions", response_model=TransactionsResponse)
 async def get_transactions(
-    start_date: Optional[str] = Query(None, description="ISO date string (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="ISO date string (YYYY-MM-DD)"),
+    start_date: Optional[date] = Query(None, description="Inclusive start date"),
+    end_date: Optional[date] = Query(None, description="Inclusive end date"),
     account_id: Optional[str] = Query(None),
     category_id: Optional[str] = Query(None),
     limit: int = Query(500, ge=1, le=5000),
+    cursor: Optional[str] = Query(None, description="Opaque cursor returned by the previous page"),
 ):
     """Fetch transactions with optional filters."""
     if not start_date:
         days = int(os.getenv("DEFAULT_TRANSACTION_DAYS", "90"))
-        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=days)).date()
+    if not end_date:
+        end_date = datetime.now().date()
+    if end_date and end_date < start_date:
+        raise HTTPException(
+            400,
+            detail={"error": "invalid_date_range", "message": "end_date must be on or after start_date"},
+        )
+    start_text = start_date.isoformat()
+    end_text = end_date.isoformat()
+    offset = decode_cursor(cursor)
 
     if DEMO_MODE:
-        return DemoProvider.get_transactions(start_date, end_date, limit, account_id, category_id)
+        raw = DemoProvider.get_transactions(start_text, end_text, 5000, account_id, category_id)
+        provider = "demo"
+        results = normalize_transactions(raw)
+        total = len(results)
+        page = results[offset:offset + limit]
+    else:
+        client = await get_client()
+        try:
+            raw = await client.get_transactions(
+                limit=limit,
+                offset=offset,
+                start_date=start_text,
+                end_date=end_text,
+                account_ids=[account_id] if account_id else [],
+                category_ids=[category_id] if category_id else [],
+            )
+        except Exception as e:
+            raise upstream_error("transaction", e)
+        provider = "live"
+        page = normalize_transactions(raw)
+        all_transactions = raw.get("allTransactions", {}) if isinstance(raw, dict) else {}
+        total = int(all_transactions.get("totalCount", len(page)))
+    next_offset = offset + len(page)
+    return TransactionsResponse(
+        provenance=provenance(provider),
+        transactions=page,
+        total=total,
+        page=PageInfo(
+            limit=limit,
+            next_cursor=encode_cursor(next_offset) if next_offset < total else None,
+        ),
+    )
 
-    client = await get_client()
-    try:
-        transactions = await client.get_transactions(start_date=start_date, end_date=end_date)
-        results = transactions.get("allTransactions", {}).get("results", [])
 
-        if account_id:
-            results = [t for t in results if t.get("account", {}).get("id") == account_id]
-        if category_id:
-            results = [t for t in results if t.get("category", {}).get("id") == category_id]
-
-        return {"transactions": results[:limit], "total": len(results)}
-    except Exception as e:
-        logger.error("Failed to fetch transactions: %s", e)
-        raise HTTPException(500, f"Failed to fetch transactions: {e}")
-
-
-@app.get("/transactions/{transaction_id}")
+@app.get("/transactions/{transaction_id}", response_model=TransactionResponse)
 async def get_transaction(transaction_id: str):
     """Get a single transaction's details."""
     if DEMO_MODE:
         tx = DemoProvider.get_transaction_detail(transaction_id)
         if tx is None:
-            raise HTTPException(404, f"Transaction {transaction_id} not found")
-        return tx
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "transaction_not_found",
+                    "message": f"Transaction {transaction_id} was not found",
+                },
+            )
+        return TransactionResponse(
+            provenance=provenance("demo"),
+            transaction=normalize_transaction(tx),
+        )
 
     client = await get_client()
     try:
         result = await client.get_transaction_details(transaction_id)
-        return result
+        raw = result.get("getTransaction") if isinstance(result, dict) else None
+        if raw is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "transaction_not_found",
+                    "message": f"Transaction {transaction_id} was not found",
+                },
+            )
+        raw = dict(raw)
+        category = raw.get("category")
+        if isinstance(category, dict) and category.get("id") and not category.get("name"):
+            categories = normalize_categories(await client.get_transaction_categories())
+            category_name = next(
+                (item.name for item in categories if item.id == category["id"]),
+                "Uncategorized",
+            )
+            raw["category"] = {**category, "name": category_name}
+        return TransactionResponse(
+            provenance=provenance("live"),
+            transaction=normalize_transaction(raw),
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(404, f"Transaction not found: {e}")
+        raise upstream_error("transaction detail", e)
 
 
-@app.patch("/transactions/{transaction_id}/category")
+@app.patch("/transactions/{transaction_id}/category", response_model=CategoryUpdateResponse)
 async def update_transaction_category(transaction_id: str, update: CategoryUpdate):
     """Update a transaction's category in Monarch."""
     if DEMO_MODE:
-        logger.info("Demo: category update for %s -> %s", transaction_id, update.category_id)
-        return {"status": "updated", "transaction_id": transaction_id, "category_id": update.category_id}
+        logger.info("Demo: category update for %s -> %s", transaction_id, update.categoryId)
+        return CategoryUpdateResponse(
+            status="updated",
+            transaction_id=transaction_id,
+            category_id=update.categoryId,
+        )
 
     client = await get_client()
     try:
-        await client.update_transaction_category(transaction_id, update.category_id)
-        return {"status": "updated", "transaction_id": transaction_id, "category_id": update.category_id}
+        result = await client.update_transaction(
+            transaction_id,
+            category_id=update.categoryId,
+        )
+        mutation = result.get("updateTransaction", {}) if isinstance(result, dict) else {}
+        errors = mutation.get("errors") or []
+        transaction = mutation.get("transaction") or {}
+        category = transaction.get("category") or {}
+        if errors or category.get("id") != update.categoryId:
+            raise RuntimeError("Monarch rejected the category update")
+        return CategoryUpdateResponse(
+            status="updated",
+            transaction_id=transaction_id,
+            category_id=update.categoryId,
+        )
     except Exception as e:
-        raise HTTPException(500, f"Failed to update category: {e}")
+        raise upstream_error("category update", e)
 
 
-@app.get("/categories")
+@app.get("/categories", response_model=CategoriesResponse)
 async def get_categories():
     """List all transaction categories."""
     if DEMO_MODE:
-        return DemoProvider.get_categories()
+        return CategoriesResponse(
+            provenance=provenance("demo"),
+            categories=normalize_categories(DemoProvider.get_categories()),
+        )
 
     client = await get_client()
     try:
         categories = await client.get_transaction_categories()
-        return categories
+        return CategoriesResponse(
+            provenance=provenance("live"),
+            categories=normalize_categories(categories),
+        )
     except Exception as e:
-        raise HTTPException(500, f"Failed to fetch categories: {e}")
+        raise upstream_error("category", e)
 
 
-@app.get("/accounts")
+@app.get("/accounts", response_model=AccountsResponse)
 async def get_accounts():
     """List all connected accounts."""
     if DEMO_MODE:
-        return DemoProvider.get_accounts()
+        return AccountsResponse(
+            provenance=provenance("demo"),
+            accounts=normalize_accounts(DemoProvider.get_accounts()),
+        )
 
     client = await get_client()
     try:
         accounts = await client.get_accounts()
-        return accounts
+        return AccountsResponse(
+            provenance=provenance("live"),
+            accounts=normalize_accounts(accounts),
+        )
     except Exception as e:
-        raise HTTPException(500, f"Failed to fetch accounts: {e}")
+        raise upstream_error("account", e)
 
 
-@app.get("/recurring")
+@app.get("/recurring", response_model=RecurringResponse)
 async def get_recurring():
     """List recurring/subscription transactions."""
     if DEMO_MODE:
-        return DemoProvider.get_recurring()
+        return RecurringResponse(
+            provenance=provenance("demo"),
+            recurring=normalize_recurring(DemoProvider.get_recurring()),
+        )
 
     client = await get_client()
     try:
         recurring = await client.get_recurring_transactions()
-        return recurring
+        return RecurringResponse(
+            provenance=provenance("live"),
+            recurring=normalize_recurring(recurring),
+        )
     except Exception as e:
-        raise HTTPException(500, f"Failed to fetch recurring: {e}")
+        raise upstream_error("recurring transaction", e)
 
 
-@app.get("/cashflow")
+@app.get("/cashflow", response_model=CashflowResponse)
 async def get_cashflow(
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
 ):
     """Get cash flow summary (income vs expenses)."""
     if not start_date:
-        start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+        start_date = datetime.now().replace(day=1).date()
     if not end_date:
-        end_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = datetime.now().date()
+    if end_date < start_date:
+        raise HTTPException(
+            400,
+            detail={"error": "invalid_date_range", "message": "end_date must be on or after start_date"},
+        )
+    start_text = start_date.isoformat()
+    end_text = end_date.isoformat()
 
     if DEMO_MODE:
-        return DemoProvider.get_cashflow(start_date, end_date)
+        return normalize_cashflow(
+            DemoProvider.get_cashflow(start_text, end_text),
+            start_text,
+            end_text,
+            "demo",
+        )
 
     client = await get_client()
     try:
-        cashflow = await client.get_cashflow(start_date=start_date, end_date=end_date)
-        return cashflow
+        cashflow = await client.get_cashflow(start_date=start_text, end_date=end_text)
+        return normalize_cashflow(cashflow, start_text, end_text, "live")
     except Exception as e:
-        raise HTTPException(500, f"Failed to fetch cashflow: {e}")
+        raise upstream_error("cash flow", e)
 
 
-@app.get("/budgets")
+@app.get("/budgets", response_model=BudgetsResponse)
 async def get_budgets():
     """Get budget status per category."""
     if DEMO_MODE:
-        return DemoProvider.get_budgets()
+        return BudgetsResponse(
+            provenance=provenance("demo"),
+            budgets=normalize_budgets(DemoProvider.get_budgets()),
+        )
 
     client = await get_client()
     try:
-        budgets = await client.get_budgets()
-        return budgets
+        today = datetime.now().date()
+        budgets = await client.get_budgets(
+            start_date=today.replace(day=1).isoformat(),
+            end_date=today.isoformat(),
+        )
+        return BudgetsResponse(
+            provenance=provenance("live"),
+            budgets=normalize_budgets(budgets),
+        )
     except Exception as e:
-        raise HTTPException(500, f"Failed to fetch budgets: {e}")
+        raise upstream_error("budget", e)
 
 
 # ---------------------------------------------------------------------------
