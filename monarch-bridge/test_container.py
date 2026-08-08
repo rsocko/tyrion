@@ -94,6 +94,7 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
 def test_homelab_parity_copies_are_safe_and_deployable():
     compose = read_repository_file("deploy/homelab/compose.yaml")
     example = read_repository_file("deploy/homelab/.env.example")
+    bridge_readme = read_repository_file("monarch-bridge/README.md")
 
     assert "registry.socko.us/tyrion:${TYRION_IMAGE_TAG:-latest}" in compose
     assert "SESSION_FILE: /var/lib/tyrion/monarch-session.json" in compose
@@ -107,3 +108,8 @@ def test_homelab_parity_copies_are_safe_and_deployable():
     assert "BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us" in example
     assert "\nBRIDGE_API_TOKEN=\n" in f"\n{example}"
     assert not (REPOSITORY_ROOT / "deploy/homelab/deploy.sh").exists()
+    assert (
+        "`rsocko/homelab-config` remains the deployment\n"
+        "authority."
+        in bridge_readme
+    )

@@ -114,8 +114,9 @@ in repository environment files.
 
 Safe parity copies of the current homelab Compose contract and blank environment
 example live in `deploy/homelab/`. They are references for review and local
-validation, not image inputs. Application deployment is handled by Dockhand, so
-Tyrion intentionally does not include an application `deploy.sh`.
+validation, not image inputs. `rsocko/homelab-config` remains the deployment
+authority. Application deployment is handled by Dockhand, so Tyrion intentionally
+does not include an application `deploy.sh`.
 
 ## Session lifecycle
 
