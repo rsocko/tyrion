@@ -70,6 +70,8 @@ service authentication in a remote deployment. Put rate limits and request loggi
 redaction at the reverse proxy, and never log request bodies or authorization headers.
 Start the service through `main.py`; if a raw ASGI server overrides the bind address,
 non-loopback clients still fail closed, but that is not a supported TLS deployment.
+The supported `main.py` entrypoint disables Uvicorn access logs because endpoint paths
+can contain private transaction identifiers.
 
 ## Session lifecycle
 

@@ -1020,4 +1020,4 @@ if __name__ == "__main__":
         host = SETTINGS.host
         port = args.port or SETTINGS.port
         logger.info("Starting Monarch Bridge on %s:%d (demo=%s)", host, port, DEMO_MODE)
-        uvicorn.run(app, host=host, port=port)
+        uvicorn.run(app, host=host, port=port, access_log=False)
