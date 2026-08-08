@@ -48,3 +48,9 @@ monarch-bridge/live-artifacts/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Obsidian per-user and disposable state (keep plugins and shared settings)
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache/
+.obsidian/.trash/
