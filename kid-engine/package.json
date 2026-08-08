@@ -41,7 +41,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "test:consumer": "npm run build && node tests/package-consumer.mjs",
+    "test:consumer": "npm run build && node tests/package-consumer.mjs && node tests/clean-package-consumer.mjs",
     "test:watch": "vitest",
     "prepack": "npm run build"
   },

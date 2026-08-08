@@ -30,6 +30,15 @@ The supported production distribution is the restricted GitHub Packages npm pack
 lives below the repository root. Copying generated declarations or source files into
 a consumer is also unsupported.
 
+**Release status:** version `1.0.0` is not installable from GitHub Packages until the
+foundation PR is merged and the gated release tag below is pushed. Mission Control
+must not add the production dependency before that package version exists. The
+package consumer check builds a tarball, creates a clean temporary application with
+the exact `"@rsocko/tyrion-kid-engine": "1.0.0"` declaration, installs the tarball
+without changing that declaration, and imports all three public entry points. This
+verifies package contents and Node resolution without pretending the registry
+artifact has already been released.
+
 After a version change is merged to `main`, an authorized maintainer creates and
 pushes the exact tag `kid-engine-v<package version>`, such as
 `kid-engine-v1.0.0`. `.github/workflows/publish-kid-engine.yml` verifies that the tag
