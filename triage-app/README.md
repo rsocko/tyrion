@@ -1,4 +1,13 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tyrion Debug UI
+
+This Next.js application is a bounded connector-debugging, contract-validation,
+and UX-reference surface. It is not Tyrion's primary product shell or an
+independent deployment target. Mission Control owns the user-facing Finance domain
+and Houston assistant; Monarch remains the financial system of record.
+
+Do not expand this app with duplicate dashboards, generic transaction review,
+bills management, or a separate finance chat. See
+[`../docs/PRODUCT-BOUNDARY.md`](../docs/PRODUCT-BOUNDARY.md).
 
 ## Getting Started
 

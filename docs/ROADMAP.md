@@ -1,154 +1,186 @@
-# Personal Finance Manager — Phased Roadmap
+# Tyrion Delivery Roadmap
 
-**Last Updated:** 2026-07-10  
-**Overall Status:** ~42% Complete (Early Prototype)  
-**Target:** Homelab Beta by end of Phase 3
+**Last updated:** 2026-08-08
 
----
+**Product boundary:** [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md)
 
-## Current State Summary
+**Delivery target:** Mission Control's household-finance domain
 
-| Layer | Component | Status | Completion |
-|-------|-----------|--------|------------|
-| Design | Docs + Mockups | ✅ Excellent | 100% |
-| Backend | Kid Engine (TypeScript) | ✅ Production-ready | 85% |
-| Backend | Monarch Bridge (Python) | ⚠️ Merge conflicts + untested live | 65% |
-| Frontend | Triage App (Next.js) | ⚠️ UI exists, no persistence | 50% |
-| Infrastructure | DB / Auth / Deploy | ❌ Not started | 0% |
-| Features | Alerts / Chat / Paperless | ❌ Design only | 0–10% |
+This is the authoritative Tyrion roadmap. It replaces the standalone finance-app
+roadmap and tracks four delivery streams: connector reliability, domain workflows,
+automation, and reconciliation. Prototype completeness is not product completion.
 
----
+## Delivery principles
 
-## Phase 1 — Stabilize Core (Weeks 1–2)
+- Monarch remains the financial system of record.
+- Mission Control remains the user-facing action, awareness, and assistant shell.
+- Ship exception-oriented workflows before broad summaries or optional automation.
+- Write changes back to Monarch rather than creating a competing local truth.
+- Deep-link to Monarch and document systems instead of duplicating their full UIs.
+- Use `triage-app/` only for diagnostics, contract validation, and focused UX
+  experiments.
 
-> **Goal:** Get all existing code compiling and connected end-to-end with persistence.
+## Current baseline
 
-| # | Task | Component | Priority | Effort |
-|---|------|-----------|----------|--------|
-| 1.1 | Resolve merge conflicts in `monarch-bridge/main.py` | Bridge | P0 | 1h |
-| 1.2 | Implement SQLite schema + Drizzle ORM (transactions, kids, rules, alerts) | Triage App | P0 | 3–4h |
-| 1.3 | Create `/api/bridge/[...path]` proxy route in Next.js | Triage App | P0 | 1h |
-| 1.4 | Wire Bridge `/sync` to Triage — trigger sync from UI | Integration | P0 | 2h |
-| 1.5 | Persist triage edits (kid assignment, category confirm) to DB | Triage App | P0 | 3h |
-| 1.6 | Build `/settings` page — kid profiles CRUD | Triage App | P1 | 3h |
-| 1.7 | Import Kid Engine into Triage as dependency | Integration | P1 | 1h |
-| 1.8 | Add error boundaries + loading states to all pages | Triage App | P1 | 2h |
+| Area | Available baseline | Product gap |
+| --- | --- | --- |
+| Connector | FastAPI bridge, read endpoints, category write-back, demo/live modes | Contract hardening, incremental sync, retries, health, and write-back auditability |
+| Domain logic | Kid profiles, attribution rules, suggestions, and thresholds | Mission Control domain APIs and native exception workflows |
+| Automation | Alert concepts and weekly-summary logic | Durable scheduling, idempotency, notification delivery, and task lifecycle |
+| Reconciliation | Bill and document matching designs | Stable cross-system identities, match lifecycle, evidence links, and audit trail |
+| UI reference | Mockups and standalone Next.js prototype | Bounded debug mode and migration of useful patterns into Mission Control |
 
-**Exit Criteria:** Triage edits persist across page reloads; Bridge ↔ Triage connected in demo mode; settings page renders kid profiles.
+## Milestone 1 — Boundary and connector contract
 
----
+**Outcome:** Mission Control can depend on a named, observable Monarch connector
+without inheriting a second product shell.
 
-## Phase 2 — Complete Data Flow & Live Mode (Weeks 3–4)
+**GitHub tracking:** [#11](https://github.com/rsocko/tyrion/issues/11),
+[#12](https://github.com/rsocko/tyrion/issues/12),
+[#14](https://github.com/rsocko/tyrion/issues/14),
+[#15](https://github.com/rsocko/tyrion/issues/15),
+[#16](https://github.com/rsocko/tyrion/issues/16), and
+[#19](https://github.com/rsocko/tyrion/issues/19).
 
-> **Goal:** Full live data integration with Monarch; kid attribution running in real-time.
+- [x] Adopt the Tyrion/Mission Control/Monarch product boundary.
+- [x] Preserve the standalone UI as a debug and validation surface.
+- [ ] Publish versioned bridge schemas for transactions, accounts, categories,
+  recurring items, budgets, health, and mutations.
+- [ ] Define stable source IDs, cursor semantics, timestamps, deletion behavior,
+  and provenance (`via Monarch`).
+- [ ] Add incremental and full-sync behavior with idempotent upserts.
+- [ ] Specify retryable versus terminal failures and surface connector health.
+- [ ] Record every mutation attempt and resulting Monarch state.
+- [ ] Normalize product copy while documenting compatibility identifiers.
 
-| # | Task | Component | Priority | Effort |
-|---|------|-----------|----------|--------|
-| 2.1 | Test Monarch Bridge in live mode with real credentials | Bridge | P0 | 2h |
-| 2.2 | Wire live data toggle through all pages (dashboard, triage, kids, bills) | Triage App | P0 | 3h |
-| 2.3 | Run Kid Engine attribution on incoming transactions (post-sync) | Integration | P0 | 2h |
-| 2.4 | Implement threshold alert engine (node-cron or Bridge cron) | Kid Engine / Bridge | P1 | 3h |
-| 2.5 | Build alert notification delivery (Mission Control integration or email) | Integration | P1 | 2h |
-| 2.6 | Add rule suggestion UI — accept/reject suggested kid rules | Triage App | P1 | 2h |
-| 2.7 | Implement re-sync trigger after triage edits | Integration | P2 | 1h |
-| 2.8 | Add structured logging (Pino for Node, structlog for Python) | All | P2 | 2h |
+**Exit criteria:** A fixture-backed connector contract is versioned and tested;
+repeated syncs are safe; failures and write-backs are observable; Mission Control
+can identify Tyrion data as Monarch-sourced.
 
-**Exit Criteria:** Live Monarch data flows through Bridge → Triage → DB → Kid Engine → Alerts. Threshold notifications fire on configured limits.
+## Milestone 2 — Native Tyrion domain
 
----
+**Outcome:** Mission Control presents household-finance exceptions and policy
+without reproducing Monarch's workspace.
 
-## Phase 3 — Homelab Beta Deployment (Weeks 5–6)
+**GitHub tracking:** [#13](https://github.com/rsocko/tyrion/issues/13) and
+[#18](https://github.com/rsocko/tyrion/issues/18).
 
-> **Goal:** Deploy to homelab infrastructure; usable daily by the family.
+- [ ] Register **Finance** navigation with Tyrion identity and `/finance` routes.
+- [ ] Build an attention overview for pending exceptions, kid-limit status,
+  reconciliation issues, sync health, and compact summaries.
+- [ ] Build exception-only review for ambiguous attribution, anomalies,
+  reconciliation mismatches, and failed write-backs.
+- [ ] Add kid profiles, card and merchant rules, limits, attribution explanations,
+  correction, and unassignment.
+- [ ] Repair finance notification actions and deep-link ordinary workflows to
+  Monarch.
+- [ ] Apply Mission Control auth, accessibility, responsive layout, and shared
+  master-detail patterns.
 
-| # | Task | Component | Priority | Effort |
-|---|------|-----------|----------|--------|
-| 3.1 | Create Dockerfiles — Bridge (Python) + Triage (Node) | Infra | P0 | 2h |
-| 3.2 | Docker Compose stack (Bridge + Triage + SQLite volume) | Infra | P0 | 1h |
-| 3.3 | Secrets management — encrypted `.env` or Docker secrets | Infra | P0 | 1h |
-| 3.4 | Add basic auth or Authentik SSO integration | Infra | P0 | 2–3h |
-| 3.5 | Implement CI pipeline (GitHub Actions — lint, test, build) | Infra | P1 | 2h |
-| 3.6 | Scheduled sync job (cron — sync Monarch every 4h) | Bridge | P1 | 1h |
-| 3.7 | Health check endpoint monitoring (Uptime Kuma or similar) | Infra | P2 | 1h |
-| 3.8 | Write setup guide + troubleshooting doc | Docs | P1 | 2h |
-| 3.9 | Add component tests (Vitest for React) + Bridge integration tests | Testing | P1 | 3h |
+**Exit criteria:** A user can resolve every supported Tyrion exception from Mission
+Control or follow an explicit deep link to its authoritative system. No generic
+ledger, budget manager, bills app, or separate chat is introduced.
 
-**Exit Criteria:** `docker compose up` brings up the full stack on homelab. Auth protects the UI. Monarch syncs on schedule. Family can triage transactions daily.
+## Milestone 3 — Durable automation
 
-### 🏠 Homelab Readiness Decision
+**Outcome:** Tyrion turns finance signals into trustworthy Mission Control
+awareness and action.
 
-**When to deploy to homelab: End of Phase 3 (~Week 6)**
+**GitHub tracking:** [#17](https://github.com/rsocko/tyrion/issues/17),
+[#20](https://github.com/rsocko/tyrion/issues/20),
+[#22](https://github.com/rsocko/tyrion/issues/22),
+[#23](https://github.com/rsocko/tyrion/issues/23), and
+[#24](https://github.com/rsocko/tyrion/issues/24).
 
-The system reaches beta when:
-- ✅ Live Monarch data syncs reliably
-- ✅ Triage edits persist and kid attribution runs
-- ✅ Alerts fire for threshold breaches
-- ✅ Docker Compose stack deploys cleanly
-- ✅ Basic auth or SSO protects the interface
-- ✅ Health monitoring is active
+- [ ] Run threshold, anomaly, duplicate, sync-health, and summary jobs on durable
+  schedules.
+- [ ] Detect unusual recurring-bill amounts using rolling and seasonally comparable
+  baselines, combined dollar/percentage thresholds, and available usage or
+  billing-period evidence ([#22](https://github.com/rsocko/tyrion/issues/22)).
+- [ ] Detect month-over-month category and merchant variance using equivalent
+  elapsed periods, minimum samples, material-dollar thresholds, and explainable
+  transaction contributors
+  ([#24](https://github.com/rsocko/tyrion/issues/24)).
+- [ ] Detect unusually large individual transactions against explicit household
+  rules and adaptive account, category, and merchant baselines while suppressing
+  expected transfers and obligations
+  ([#23](https://github.com/rsocko/tyrion/issues/23)).
+- [ ] Make generated notifications and tasks deterministic and idempotent.
+- [ ] Distinguish informational signals from work requiring follow-up.
+- [ ] Reconcile task state when Monarch or a source document resolves the issue.
+- [ ] Deliver a weekly decision summary focused on changes and required actions.
+- [ ] Add read-only Tyrion tools to Houston for summaries, transaction search,
+  kid totals, pending exceptions, and obligations.
+- [ ] Add confirmed category and kid-assignment mutations only after read tooling
+  and audit behavior are stable.
 
-**Not required for beta:**
-- AI Chat, Paperless integration, weekly summaries (Phase 4+)
-- Migration tooling, advanced ML attribution
-- Multi-user RBAC (single-family use case)
+**Exit criteria:** Re-running jobs creates no duplicates; source changes settle
+open work predictably; Houston reports provenance and asks for confirmation before
+mutations.
 
----
+## Milestone 4 — Cross-system reconciliation
 
-## Phase 4 — Advanced Features (Weeks 7–10)
+**Outcome:** Mission Control coordinates financial obligations across Monarch and
+OWL/Document Intelligence while each source retains authority.
 
-> **Goal:** Add the remaining designed features; polish for daily use.
+**GitHub tracking:** [#6](https://github.com/rsocko/tyrion/issues/6),
+[#9](https://github.com/rsocko/tyrion/issues/9), and
+[#21](https://github.com/rsocko/tyrion/issues/21).
 
-| # | Task | Component | Priority | Effort |
-|---|------|-----------|----------|--------|
-| 4.1 | AI Finance Chat — connect MCP server, implement chat UI | Triage App | P1 | 4h |
-| 4.2 | Weekly spending summaries — email or Mission Control digest | Integration | P1 | 3h |
-| 4.3 | Subscription audit — detect duplicate/forgotten recurring charges | Bridge + UI | P2 | 3h |
-| 4.4 | Cash flow forecasting — project future balance from patterns | Bridge + UI | P2 | 4h |
-| 4.5 | Paperless bill reconciliation — bill-to-transaction matching | Integration | P2 | 5h |
-| 4.6 | Bill reconciliation UI (from mockup) | Triage App | P2 | 3h |
-| 4.7 | E2E tests (Playwright) | Testing | P2 | 3h |
+- [ ] Define obligation, document, transaction, candidate-match, and resolution
+  identities.
+- [ ] Match bills, statements, EOBs, and receipts to Monarch transactions with
+  explainable confidence.
+- [ ] Reconcile OWL bills and credit-card statements with Monarch to detect high
+  bill or statement totals, amount mismatches, missing payments, and unusually
+  large statement contributors
+  ([#21](https://github.com/rsocko/tyrion/issues/21)).
+- [ ] Surface missing, duplicate, late, unmatched, and conflicting records as
+  exceptions.
+- [ ] Preserve deep links to Monarch transactions and original source documents.
+- [ ] Add manual confirm, reject, rematch, defer, and reopen actions with history.
+- [ ] Auto-resolve related notifications and tasks when authoritative evidence
+  confirms completion.
 
----
+**Exit criteria:** Every reconciliation decision is explainable and auditable;
+users can reach both source records; Tyrion does not become a document or
+transaction system of record.
 
-## Phase 5 — Production Hardening (Weeks 11+)
+## Milestone 5 — Operational hardening
 
-> **Goal:** Long-term stability, observability, and automation.
+**Outcome:** The connector and domain are safe for unattended household use.
 
-| # | Task | Component | Priority | Effort |
-|---|------|-----------|----------|--------|
-| 5.1 | Database backup automation (SQLite → S3/NAS) | Infra | P1 | 1h |
-| 5.2 | Log aggregation (Loki or similar) | Infra | P2 | 2h |
-| 5.3 | Rate limiting on Bridge API | Bridge | P2 | 1h |
-| 5.4 | Monarch API change detection / alerting | Bridge | P2 | 2h |
-| 5.5 | Mobile-responsive polish | Triage App | P2 | 3h |
-| 5.6 | Advanced kid attribution (ML patterns, location data) | Kid Engine | P3 | 5h |
-| 5.7 | Multi-account household support | All | P3 | 5h |
+**GitHub tracking:** [#11](https://github.com/rsocko/tyrion/issues/11),
+[#12](https://github.com/rsocko/tyrion/issues/12),
+[#19](https://github.com/rsocko/tyrion/issues/19), and
+[#25](https://github.com/rsocko/tyrion/issues/25).
 
----
+- [ ] Protect credentials and sensitive payloads at rest and in transit.
+- [ ] Add structured logs, metrics, traces, redaction, and retention policy.
+- [ ] Monitor sync freshness, job success, queue depth, mutation failures, and
+  contract drift.
+- [ ] Add backup and recovery for Tyrion-owned policy and audit data.
+- [ ] Exercise expired sessions, Monarch outages, partial syncs, conflicting
+  updates, and recovery procedures.
+- [ ] Document setup, diagnostics, incident response, and connector upgrade steps.
 
-## Known Technical Debt
+**Exit criteria:** Operators can detect, diagnose, and recover from connector and
+automation failures without using the product UI as a hidden source of truth.
 
-| Issue | Severity | Location |
-|-------|----------|----------|
-| Merge conflicts in `main.py` (lines 275–408) | 🔴 HIGH | `monarch-bridge/main.py` |
-| No persistence layer — triage edits lost on reload | 🔴 HIGH | `triage-app/` |
-| No error handling when Bridge is offline | 🟡 MEDIUM | `triage-app/src/lib/bridge-client.ts` |
-| No Python lock file (`poetry.lock` / `Pipfile.lock`) | 🟡 MEDIUM | `monarch-bridge/` |
-| Next.js 14 → 15 upgrade available | 🟢 LOW | `triage-app/package.json` |
-| No frontend tests | 🟡 MEDIUM | `triage-app/` |
-| `monarchmoneycommunity` pinned loosely (`>=0.3.0`) | 🟡 MEDIUM | `monarch-bridge/requirements.txt` |
+## Explicitly out of scope
 
----
+- Expanding the standalone app into a deployable product
+- Full account, transaction, budget, report, net-worth, investment, goal, or
+  forecasting experiences
+- Ordinary transaction review or receipt matching already handled by Monarch
+- A generic bills calendar
+- A Tyrion-specific chat shell separate from Houston
+- Cosmetic parity work on frozen prototype screens unless needed for a validated
+  Mission Control interaction
 
-## Feature Coverage Map
+## Roadmap governance
 
-| Feature (from README) | Designed | Engine | UI | Live Data | Status |
-|------------------------|----------|--------|----|-----------|--------|
-| Per-Kid Spending | ✅ | ✅ | ⚠️ Mock | ❌ | 70% |
-| Triage Inbox | ✅ | N/A | ⚠️ No persist | ❌ | 60% |
-| Threshold Alerts | ✅ | ✅ | ❌ | ❌ | 40% |
-| AI Finance Chat | ✅ | N/A | ❌ Stub | ❌ | 10% |
-| Weekly Summaries | ✅ | ❌ | ❌ | ❌ | 0% |
-| Subscription Audit | ✅ | ❌ | ❌ | ❌ | 0% |
-| Cash Flow Forecasting | ✅ | ❌ | ❌ | ❌ | 0% |
-| Paperless Integration | ✅ | ❌ | ❌ | ❌ | 0% |
+Roadmap items must name the owning system, preserve source provenance, and pass the
+change test in [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md). New work that
+duplicates Monarch or Mission Control requires an explicit revision to the product
+boundary before it can enter this roadmap.

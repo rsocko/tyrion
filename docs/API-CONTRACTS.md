@@ -4,6 +4,12 @@
 
 The current stable contract is **1.0**.
 
+These contracts support the Tyrion domain defined in
+[`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md). Monarch remains the system of
+record. Mission Control stores only the synchronized context, Tyrion policy, and
+audit data needed for exceptions and cross-domain action. The bridge does not
+define a standalone product surface.
+
 - `GET /contract` returns the implemented and supported contract versions.
 - Every JSON response contains `"contractVersion": "1.0"`.
 - Every response includes `X-Monarch-Contract-Version: 1.0`.

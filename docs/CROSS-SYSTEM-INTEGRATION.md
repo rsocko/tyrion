@@ -1,5 +1,12 @@
 # Cross-System Integration: Finance × Paperless × Mission Control
 
+> **Historical design reference — implementation plan superseded.** Use
+> [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md) for system ownership and
+> [`ROADMAP.md`](./ROADMAP.md) for active reconciliation delivery. The matching
+> concepts below remain useful, but any UI belongs in Mission Control, source
+> records remain in Monarch and OWL/Document Intelligence, and the standalone
+> prototype is only a debug and UX-reference surface.
+
 ## Overview
 
 This document describes how the **Personal Finance Management** system integrates with:
@@ -423,7 +430,10 @@ createTask({
 
 ---
 
-## Implementation Plan (Additions to Existing Phases)
+## Historical Implementation Plan (Superseded)
+
+> The phase mapping below is retained for provenance only. Use
+> [`ROADMAP.md`](./ROADMAP.md) for active sequencing and scope.
 
 ### Phase 2.5: Bill-to-Transaction Matching (after Monarch connector built)
 1. Build vendor name normalization library (PSE&G ↔ PSEG PAYMENT, etc.)
