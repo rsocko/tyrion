@@ -63,6 +63,17 @@ async def test_health(client):
 
 
 @pytest.mark.anyio
+async def test_root_returns_health(client):
+    resp = await client.get("/")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["mode"] == "demo"
+    assert data["authState"] == "connected"
+    assert_contract(resp)
+
+
+@pytest.mark.anyio
 async def test_sync(client):
     resp = await client.post("/sync?days=30")
     assert resp.status_code == 200

@@ -64,7 +64,8 @@ BRIDGE_REMOTE_TLS=true
 BRIDGE_ALLOWED_ORIGINS=https://mission-control.example
 ```
 
-Only `/health` and `/contract` are public. Public health reports reachability and a
+Only `/`, `/health`, and `/contract` are public. `/` aliases the health response.
+Public health reports reachability and a
 coarse auth state; all auth, read, sync, mutation, OpenAPI, and docs routes require
 service authentication in a remote deployment. Put rate limits and request logging
 redaction at the reverse proxy, and never log request bodies or authorization headers.
@@ -88,7 +89,8 @@ checks `GET /health` over loopback. It contains only the bridge runtime and runt
 dependencies; the debug UI, tests, documentation, local environment files, and
 session material are excluded from the build context and final image.
 Production exposes the service only through the private Traefik route at
-`https://tyrion.socko.us`; do not publish a host port.
+`https://tyrion.socko.us`; the ingress root returns the same sanitized status as
+`GET /health`. Do not publish a host port.
 
 Production must mount writable persistent storage at `/var/lib/tyrion`. The bridge
 stores the opaque session at `/var/lib/tyrion/monarch-session.json` and creates its

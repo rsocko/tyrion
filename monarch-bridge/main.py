@@ -354,7 +354,7 @@ async def secure_bridge_request(request: Request, call_next):
         if len(body) > SETTINGS.max_auth_body_bytes:
             return error_response(413, "payload_too_large", "Authentication payload is too large")
 
-    public_path = request.url.path in {"/health", "/contract"}
+    public_path = request.url.path in {"/", "/health", "/contract"}
     client_host = request.client.host if request.client else None
     service_auth_required = SETTINGS.request_requires_service_auth(client_host)
     if (
@@ -654,6 +654,12 @@ async def health():
         authenticated=state == AuthState.CONNECTED,
         auth_state=state.value,
     )
+
+
+@app.get("/", response_model=HealthResponse, include_in_schema=False)
+async def root():
+    """Expose bridge health at the production ingress root."""
+    return await health()
 
 
 @app.post("/sync", response_model=SyncResponse)
