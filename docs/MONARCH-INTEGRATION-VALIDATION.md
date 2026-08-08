@@ -57,6 +57,14 @@ merchant names, balances, transaction values, response bodies, cookies, or token
   rejection and use the browser-cookie recovery path.
 - MFA codes are short-lived and cannot be stored or replayed.
 - Session lifetime is controlled by Monarch and is not published.
+- The community client reports that saved sessions may last several months, but no
+  fixed TTL is guaranteed: https://pypi.org/project/monarchmoneycommunity/
+- Browser `Expires`/`Max-Age` metadata is visible manually in DevTools but is not
+  available through normal page JavaScript with the cookie values omitted:
+  https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie
+- `monarchmoneycommunity==1.5.2` replays its saved cookie dictionary and does not
+  capture rotated `Set-Cookie` responses. Tyrion therefore detects expiry from an
+  explicit upstream authentication rejection instead of predicting it.
 - Rate limits are not published; the bridge maps observed throttling to a stable
   `upstream_rate_limited` response.
 - Network timeouts and unknown upstream failures produce `degraded`; explicit

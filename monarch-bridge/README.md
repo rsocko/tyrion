@@ -90,7 +90,15 @@ Browser cookies cannot be refreshed automatically because Monarch does not provi
 bridge a refresh credential. When an upstream request explicitly rejects the session,
 the bridge removes it, preserves the `expired` health state, and requires the user to
 copy fresh browser cookie values. Transient network/upstream failures retain the
-session as `degraded` instead of forcing reauthentication.
+session as `degraded` instead of forcing reauthentication. The debug UI retries safe
+reads and sync at most twice with short backoff, never retries authentication or
+mutation, and displays a persistent recovery banner after retries are exhausted.
+
+Monarch does not publish a cookie TTL. The community client reports that saved
+sessions have sometimes lasted several months, but this is observational rather than
+a guarantee. The pinned client replays the original cookie values and does not capture
+rotated `Set-Cookie` responses, so Tyrion treats a real authentication rejection as the
+only reliable expiry signal rather than predicting a date.
 
 ## Revocation and incident recovery
 

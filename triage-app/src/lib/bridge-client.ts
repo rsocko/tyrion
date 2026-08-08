@@ -86,35 +86,109 @@ interface BridgeResponse<T> {
   status: number;
 }
 
+export const BRIDGE_CONNECTION_EVENT = "tyrion:bridge-connection";
+
+export type BridgeConnectionAlert = {
+  kind: "expired" | "unavailable";
+  message: string;
+} | null;
+
+type BridgeFetchBehavior = {
+  retryable?: boolean;
+  notifyConnection?: boolean;
+  clearAlertOnSuccess?: boolean;
+};
+
+const TRANSIENT_STATUSES = new Set([429, 502, 503, 504]);
+const RETRY_DELAYS_MS = [500, 1500];
+
+function publishConnectionAlert(alert: BridgeConnectionAlert) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent<BridgeConnectionAlert>(BRIDGE_CONNECTION_EVENT, {
+        detail: alert,
+      })
+    );
+  }
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function bridgeFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  behavior: BridgeFetchBehavior = {}
 ): Promise<BridgeResponse<T>> {
-  try {
-    const res = await fetch(`${BRIDGE_PROXY_BASE}${path}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-      ...options,
-    });
-    const data: unknown = await res.json();
+  const attempts = behavior.retryable ? RETRY_DELAYS_MS.length + 1 : 1;
 
-    if (!res.ok) {
-      const payload = data as {
-        error?: string | { message?: string };
-        message?: string;
-      };
-      const message = typeof payload.error === "object"
-        ? payload.error.message
-        : payload.error || payload.message;
-      return { error: message || `Request failed (${res.status})`, status: res.status };
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const res = await fetch(`${BRIDGE_PROXY_BASE}${path}`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...options.headers,
+        },
+        ...options,
+      });
+      const data: unknown = await res.json();
+
+      if (!res.ok) {
+        const payload = data as {
+          error?: string | { message?: string };
+          message?: string;
+        };
+        const message = typeof payload.error === "object"
+          ? payload.error.message
+          : payload.error || payload.message;
+        const retry = behavior.retryable
+          && TRANSIENT_STATUSES.has(res.status)
+          && attempt < attempts - 1;
+        if (retry) {
+          await wait(RETRY_DELAYS_MS[attempt]);
+          continue;
+        }
+        if (
+          behavior.notifyConnection
+          && (res.status === 401 || TRANSIENT_STATUSES.has(res.status))
+        ) {
+          publishConnectionAlert(
+            res.status === 401
+              ? {
+                  kind: "expired",
+                  message: "Monarch authentication expired. Reconnect with fresh browser cookies.",
+                }
+              : {
+                  kind: "unavailable",
+                  message: "Monarch is temporarily unavailable. Tyrion stopped after bounded retries.",
+                }
+          );
+        }
+        return { error: message || `Request failed (${res.status})`, status: res.status };
+      }
+
+      if (behavior.clearAlertOnSuccess) {
+        publishConnectionAlert(null);
+      }
+      return { data: data as T, status: res.status };
+    } catch {
+      const retry = behavior.retryable && attempt < attempts - 1;
+      if (retry) {
+        await wait(RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      if (behavior.notifyConnection) {
+        publishConnectionAlert({
+          kind: "unavailable",
+          message: "The Monarch bridge is unavailable. Tyrion stopped after bounded retries.",
+        });
+      }
+      return { error: "Bridge unavailable", status: 0 };
     }
-
-    return { data: data as T, status: res.status };
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Network error", status: 0 };
   }
+
+  return { error: "Bridge unavailable", status: 0 };
 }
 
 type AuthAction = ContractEnvelope & {
@@ -127,14 +201,14 @@ export function login(email: string, password: string, mfaCode?: string) {
   return bridgeFetch<AuthAction>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password, mfaCode: mfaCode || undefined }),
-  });
+  }, { clearAlertOnSuccess: true });
 }
 
 export function loginWithCookies(sessionId: string, csrfToken: string) {
   return bridgeFetch<AuthAction>("/auth/login-with-cookies", {
     method: "POST",
     body: JSON.stringify({ sessionId, csrfToken }),
-  });
+  }, { clearAlertOnSuccess: true });
 }
 
 export function getAuthStatus() {
@@ -167,23 +241,43 @@ export function getTransactions(params?: {
     transactions: Transaction[];
     total: number;
     page: { limit: number; nextCursor: string | null };
-  }>(`/transactions${query ? `?${query}` : ""}`);
+  }>(
+    `/transactions${query ? `?${query}` : ""}`,
+    {},
+    { retryable: true, notifyConnection: true }
+  );
 }
 
 export function getAccounts() {
-  return bridgeFetch<DataEnvelope & { accounts: Account[] }>("/accounts");
+  return bridgeFetch<DataEnvelope & { accounts: Account[] }>(
+    "/accounts",
+    {},
+    { retryable: true, notifyConnection: true }
+  );
 }
 
 export function getCategories() {
-  return bridgeFetch<DataEnvelope & { categories: Category[] }>("/categories");
+  return bridgeFetch<DataEnvelope & { categories: Category[] }>(
+    "/categories",
+    {},
+    { retryable: true, notifyConnection: true }
+  );
 }
 
 export function getRecurring() {
-  return bridgeFetch<DataEnvelope & { recurring: RecurringObligation[] }>("/recurring");
+  return bridgeFetch<DataEnvelope & { recurring: RecurringObligation[] }>(
+    "/recurring",
+    {},
+    { retryable: true, notifyConnection: true }
+  );
 }
 
 export function getBudgets() {
-  return bridgeFetch<DataEnvelope & { budgets: Budget[] }>("/budgets");
+  return bridgeFetch<DataEnvelope & { budgets: Budget[] }>(
+    "/budgets",
+    {},
+    { retryable: true, notifyConnection: true }
+  );
 }
 
 export function getCashflow(startDate?: string, endDate?: string) {
@@ -198,7 +292,11 @@ export function getCashflow(startDate?: string, endDate?: string) {
     expenses: number;
     net: number;
     byCategory: Array<{ category: string; amount: number }>;
-  }>(`/cashflow${query ? `?${query}` : ""}`);
+  }>(
+    `/cashflow${query ? `?${query}` : ""}`,
+    {},
+    { retryable: true, notifyConnection: true }
+  );
 }
 
 export function syncData(days = 90) {
@@ -208,7 +306,11 @@ export function syncData(days = 90) {
     accountsSynced: number;
     syncedAt: string;
     dateRange: { start: string; end: string };
-  }>(`/sync?days=${days}`, { method: "POST" });
+  }>(
+    `/sync?days=${days}`,
+    { method: "POST" },
+    { retryable: true, notifyConnection: true }
+  );
 }
 
 export function getHealth() {
