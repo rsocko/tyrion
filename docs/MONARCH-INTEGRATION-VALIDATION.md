@@ -78,7 +78,10 @@ The container contract is port `8100`, public `GET /health`, non-root UID/GID
 `SESSION_FILE=/var/lib/tyrion/session.json`. The session file and adjacent lease
 must survive container replacement and must never enter an image layer, CI
 artifact, log, or repository. Only one bridge process may mount and own a given
-session directory at a time.
+session directory at a time. The homelab stack selects the image with
+`TYRION_IMAGE_TAG`, sets `BRIDGE_LOAD_DOTENV=false` and
+`DEFAULT_TRANSACTION_DAYS=90`, and exposes no host port; private Traefik routing is
+the only production ingress.
 
 For a controlled homelab smoke test, inject `BRIDGE_API_TOKEN`,
 `BRIDGE_REMOTE_TLS=true`, and the intended HTTPS `BRIDGE_ALLOWED_ORIGINS` at

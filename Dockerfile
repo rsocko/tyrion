@@ -19,6 +19,8 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     BRIDGE_HOST=0.0.0.0 \
     BRIDGE_PORT=8100 \
+    BRIDGE_LOAD_DOTENV=false \
+    DEFAULT_TRANSACTION_DAYS=90 \
     SESSION_FILE=/var/lib/tyrion/session.json
 
 RUN groupadd --gid "${TYRION_GID}" tyrion \

@@ -77,11 +77,14 @@ The repository publishes the bridge-only private image as
 a GitHub-hosted runner but never publish it. The trusted homelab builder uses the
 same runner-level registry authentication as Mission Control and Ohm, so the
 workflow does not receive registry credentials as repository secrets.
+The homelab stack selects either tag with `TYRION_IMAGE_TAG`.
 
 The image runs `main.py` as UID/GID `10001`, listens on container port `8100`, and
 checks `GET /health` over loopback. It contains only the bridge runtime and runtime
 dependencies; the debug UI, tests, documentation, local environment files, and
 session material are excluded from the build context and final image.
+Production exposes the service only through its private Traefik route; do not
+publish a host port.
 
 Production must mount writable persistent storage at `/var/lib/tyrion`. The bridge
 stores the opaque session at `/var/lib/tyrion/session.json` and creates its
@@ -100,8 +103,10 @@ configuration injects all of the following:
 
 `BRIDGE_PORT` and `SESSION_FILE` default to `8100` and
 `/var/lib/tyrion/session.json`; keep those values aligned with the image health
-check and volume mount. Runtime secrets must be injected by the deployment
-platform, never baked into the image or placed in repository environment files.
+check and volume mount. The image also sets `BRIDGE_LOAD_DOTENV=false` and
+`DEFAULT_TRANSACTION_DAYS=90`; both are non-secret and may be repeated explicitly
+by the stack. Runtime secrets must be injected by the deployment platform, never
+baked into the image or placed in repository environment files.
 
 ## Session lifecycle
 

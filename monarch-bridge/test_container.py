@@ -34,6 +34,8 @@ def test_image_runs_non_root_with_external_session_storage():
     assert "SESSION_FILE=/var/lib/tyrion/session.json" in dockerfile
     assert 'VOLUME ["/var/lib/tyrion"]' in dockerfile
     assert "BRIDGE_HOST=0.0.0.0" in dockerfile
+    assert "BRIDGE_LOAD_DOTENV=false" in dockerfile
+    assert "DEFAULT_TRANSACTION_DAYS=90" in dockerfile
 
 
 def test_image_port_and_health_contract_are_stable():
