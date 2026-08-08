@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import net from "node:net";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { after, before, beforeEach, test } from "node:test";
 import {
@@ -10,16 +13,38 @@ import {
   resolveBridgeConfiguration,
 } from "../src/lib/bridge-proxy-policy.mjs";
 import { connectionPresentation } from "../src/lib/operational-state.mjs";
+import { policyStatePresentation } from "../src/lib/policy-ui-state.mjs";
 
 const appRoot = process.cwd();
 const serviceToken = "synthetic-test-service-token-value";
+const policyAuthSecret = "synthetic-policy-auth-secret-value-123456";
+const fingerprintKey = "synthetic-fingerprint-key-value-12345678";
+const reattributionToken = "synthetic-reattribution-token-value-1234";
+const policyActor = {
+  actorId: "actor-synthetic",
+  householdId: "household-synthetic",
+  permissions: [
+    "policy:read",
+    "policy:write",
+    "reattribution:preview",
+    "reattribution:apply",
+  ],
+};
 let fakeBridge;
 let fakeBridgeUrl;
+let fakeReattribution;
+let fakeReattributionUrl;
 let uiProcess;
 let uiUrl;
+let temporaryStateDirectory;
+let policyStorePath;
 let receivedRequests = [];
 let bridgeResponseMode = "normal";
 let authState = "connected";
+let previews = new Map();
+let expireNextPreview = false;
+let reattributionResponseMode = "normal";
+let activePolicy;
 
 function listen(server, port = 0) {
   return new Promise((resolve, reject) => {
@@ -108,6 +133,57 @@ before(async () => {
   const bridgeAddress = await listen(fakeBridge);
   fakeBridgeUrl = `http://127.0.0.1:${bridgeAddress.port}`;
 
+  fakeReattribution = createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      if (reattributionResponseMode === "unavailable") {
+        response.writeHead(503, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "synthetic private detail" }));
+        return;
+      }
+      if (request.headers.authorization !== `Bearer ${reattributionToken}`) {
+        response.writeHead(401, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      let payload;
+      if (request.url === "/v1/reattribution/records:resolve") {
+        payload = {
+          records: body.sourceRefs.map((sourceRef) =>
+            reattributionRecord(body.householdId, sourceRef)
+          ),
+        };
+      } else if (request.url === "/v1/reattribution/previews") {
+        const preview = structuredClone(body.preview);
+        if (expireNextPreview) {
+          preview.createdAt = "2019-01-01T00:00:00.000Z";
+          preview.expiresAt = "2020-01-01T00:00:00.000Z";
+          expireNextPreview = false;
+        }
+        previews.set(preview.previewId, preview);
+        payload = { stored: true };
+      } else if (request.url === "/v1/reattribution/previews:resolve") {
+        payload = { preview: previews.get(body.previewId) ?? null };
+      } else if (request.url === "/v1/reattribution/previews:apply") {
+        payload = { counts: impactCounts(body.preview) };
+      } else {
+        response.writeHead(404, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "not_found" }));
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(payload));
+    });
+  });
+  const reattributionAddress = await listen(fakeReattribution);
+  fakeReattributionUrl = `http://127.0.0.1:${reattributionAddress.port}/`;
+  temporaryStateDirectory = await mkdtemp(
+    resolve(tmpdir(), "tyrion-ui-policy-test-")
+  );
+  policyStorePath = resolve(temporaryStateDirectory, "policies.json");
+
   const port = await freePort();
   uiUrl = `http://127.0.0.1:${port}`;
   uiProcess = spawn(process.execPath, [standaloneServer], {
@@ -116,6 +192,12 @@ before(async () => {
       ...process.env,
       BRIDGE_URL: fakeBridgeUrl,
       BRIDGE_API_TOKEN: serviceToken,
+      TYRION_POLICY_AUTH_SECRET: policyAuthSecret,
+      TYRION_POLICY_STORE_PATH: policyStorePath,
+      TYRION_INSTRUMENT_FINGERPRINT_KEY: fingerprintKey,
+      TYRION_REATTRIBUTION_URL: fakeReattributionUrl,
+      TYRION_REATTRIBUTION_TOKEN: reattributionToken,
+      TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "true",
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
     },
@@ -131,12 +213,20 @@ after(async () => {
   if (fakeBridge?.listening) {
     await close(fakeBridge);
   }
+  if (fakeReattribution?.listening) {
+    await close(fakeReattribution);
+  }
+  if (temporaryStateDirectory) {
+    await rm(temporaryStateDirectory, { recursive: true, force: true });
+  }
 });
 
 beforeEach(() => {
   receivedRequests = [];
   bridgeResponseMode = "normal";
   authState = "connected";
+  expireNextPreview = false;
+  reattributionResponseMode = "normal";
 });
 
 test("policy exposes only the operational bridge contract", () => {
@@ -226,6 +316,27 @@ test("all required authentication states have operator guidance", () => {
   }
 });
 
+test("all policy workflow states have actionable presentation", () => {
+  const states = [
+    "loading",
+    "unavailable",
+    "unauthenticated",
+    "empty",
+    "ready",
+    "saving",
+    "previewing",
+    "applying",
+    "success",
+    "conflict",
+    "failure",
+  ];
+  for (const state of states) {
+    const presentation = policyStatePresentation(state);
+    assert.ok(presentation.label.length > 2);
+    assert.ok(presentation.description.length > 20);
+  }
+});
+
 test("production route tree contains no broad finance pages", async () => {
   const root = await fetch(`${uiUrl}/`);
   assert.equal(root.status, 200);
@@ -235,7 +346,11 @@ test("production route tree contains no broad finance pages", async () => {
   assert.match(rootHtml, /Monarch connector/);
   assert.doesNotMatch(rootHtml, /Finance Dashboard|Transactions|Budgets|Bills|Chat/);
 
-  for (const path of ["/settings", "/triage", "/kids", "/bills", "/chat"]) {
+  const configuration = await fetch(`${uiUrl}/configuration`);
+  assert.equal(configuration.status, 200);
+  assert.match(await configuration.text(), /Household policy|Loading policy configuration/);
+
+  for (const path of ["/settings", "/triage", "/kids", "/bills", "/chat", "/transactions"]) {
     const response = await fetch(`${uiUrl}${path}`);
     assert.equal(response.status, 404);
   }
@@ -353,3 +468,562 @@ test("proxy converts invalid upstream responses to a stable sanitized error", as
   assert.match(text, /invalid_bridge_response/);
   assert.doesNotMatch(text, /synthetic upstream detail/);
 });
+
+test("policy API fails closed without a valid trusted assertion", async () => {
+  const missing = await fetch(`${uiUrl}/api/policy`);
+  assert.equal(missing.status, 401);
+  assert.equal((await missing.json()).error.code, "policy_auth_required");
+
+  const invalidHeaders = policyAssertionHeaders(
+    "GET",
+    "/api/policy",
+    policyActor,
+    "invalid-policy-auth-secret-value-123456"
+  );
+  const invalid = await fetch(`${uiUrl}/api/policy`, {
+    headers: invalidHeaders,
+  });
+  assert.equal(invalid.status, 401);
+  assert.equal((await invalid.json()).error.code, "policy_auth_invalid");
+
+  const expiredHeaders = policyAssertionHeaders(
+    "GET",
+    "/api/policy",
+    policyActor,
+    policyAuthSecret,
+    Date.now() - 120_000
+  );
+  const expired = await fetch(`${uiUrl}/api/policy`, {
+    headers: expiredHeaders,
+  });
+  assert.equal(expired.status, 401);
+  assert.equal((await expired.json()).error.code, "policy_auth_invalid");
+});
+
+test("policy API reports missing deployment authentication configuration", async () => {
+  const standaloneServer = join(appRoot, ".next", "standalone", "server.js");
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const processWithoutPolicyAuth = spawn(process.execPath, [standaloneServer], {
+    cwd: join(appRoot, ".next", "standalone"),
+    env: {
+      ...process.env,
+      BRIDGE_URL: fakeBridgeUrl,
+      BRIDGE_API_TOKEN: serviceToken,
+      TYRION_POLICY_AUTH_SECRET: "",
+      HOSTNAME: "127.0.0.1",
+      PORT: String(port),
+    },
+    stdio: "ignore",
+  });
+  try {
+    await waitForServer(url, processWithoutPolicyAuth);
+    const response = await fetch(`${url}/api/policy`);
+    assert.equal(response.status, 503);
+    assert.equal(
+      (await response.json()).error.code,
+      "policy_auth_not_configured"
+    );
+  } finally {
+    if (processWithoutPolicyAuth.exitCode === null) processWithoutPolicyAuth.kill();
+  }
+});
+
+test("policy API creates a strict household-scoped policy and rejects stale writes", async () => {
+  const initial = await policyFetch("/api/policy");
+  assert.equal(initial.status, 200);
+  const initialPayload = await initial.json();
+  assert.equal(initialPayload.policy, null);
+  assert.deepEqual(initialPayload.draft.exceptionPolicy.notificationSignals, [
+    "limit-warning",
+    "limit-exceeded",
+    "attribution-review",
+    "connector-degraded",
+  ]);
+
+  const draft = {
+    ...initialPayload.draft,
+    timezone: "America/New_York",
+    kids: [
+      {
+        id: "kid-synthetic",
+        displayName: "Synthetic Kid",
+        color: null,
+        active: true,
+      },
+    ],
+    merchantRules: [
+      {
+        id: "rule-merchant-synthetic",
+        kidId: "kid-synthetic",
+        pattern: "SYNTHETIC STORE",
+        confidence: "definite",
+        enabled: true,
+      },
+    ],
+    limits: [
+      {
+        kidId: "kid-synthetic",
+        period: "daily",
+        amount: 25,
+        currency: "USD",
+      },
+      {
+        kidId: "kid-synthetic",
+        period: "weekly",
+        amount: 100,
+        currency: "USD",
+      },
+      {
+        kidId: "kid-synthetic",
+        period: "monthly",
+        amount: 300,
+        currency: "USD",
+      },
+    ],
+  };
+  const created = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: null,
+    policy: draft,
+  });
+  assert.equal(created.status, 200);
+  activePolicy = (await created.json()).policy;
+  assert.equal(activePolicy.policyVersion, 1);
+  assert.equal(activePolicy.householdId, policyActor.householdId);
+
+  const stale = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: null,
+    policy: draft,
+  });
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).error.code, "policy_version_conflict");
+});
+
+test("policy mutations reject cross-site requests and client-supplied permissions", async () => {
+  const crossSite = await policyFetch(
+    "/api/policy",
+    "PUT",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      policy: policyDraft(activePolicy),
+    },
+    policyActor,
+    "https://untrusted.example"
+  );
+  assert.equal(crossSite.status, 403);
+  assert.equal((await crossSite.json()).error.code, "cross_site_request_rejected");
+
+  const reader = { ...policyActor, permissions: ["policy:read"] };
+  const forbidden = await policyFetch(
+    "/api/policy",
+    "PUT",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      policy: policyDraft(activePolicy),
+      permissions: ["policy:write"],
+    },
+    reader
+  );
+  assert.equal(forbidden.status, 400);
+  assert.equal((await forbidden.json()).error.code, "invalid_request");
+
+  const actualForbidden = await policyFetch(
+    "/api/policy",
+    "PUT",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      policy: policyDraft(activePolicy),
+    },
+    reader
+  );
+  assert.equal(actualForbidden.status, 403);
+  assert.equal((await actualForbidden.json()).error.code, "policy_forbidden");
+});
+
+test("instrument references are fingerprinted server-side and never persisted raw", async () => {
+  const instrumentReference = "opaque-integration-reference-synthetic";
+  const bypass = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: {
+      ...policyDraft(activePolicy),
+      cardRules: [
+        {
+          id: "rule-card-bypass",
+          kidId: "kid-synthetic",
+          instrumentFingerprint: instrumentReference,
+          confidence: "definite",
+          enabled: true,
+        },
+      ],
+    },
+  });
+  assert.equal(bypass.status, 422);
+  assert.equal((await bypass.json()).error.code, "invalid_domain_contract");
+
+  const fingerprintResponse = await policyFetch(
+    "/api/policy/instruments/fingerprint",
+    "POST",
+    { instrumentReference }
+  );
+  assert.equal(fingerprintResponse.status, 200);
+  const fingerprintText = await fingerprintResponse.text();
+  assert.doesNotMatch(fingerprintText, new RegExp(instrumentReference));
+  const fingerprint = JSON.parse(fingerprintText).instrumentFingerprint;
+  assert.match(fingerprint, /^instrument-v1:[A-Za-z0-9_-]{43}$/);
+
+  const updatedDraft = policyDraft(activePolicy);
+  updatedDraft.cardRules = [
+    {
+      id: "rule-card-synthetic",
+      kidId: "kid-synthetic",
+      instrumentFingerprint: fingerprint,
+      confidence: "definite",
+      enabled: true,
+    },
+  ];
+  const updated = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: updatedDraft,
+  });
+  assert.equal(updated.status, 200);
+  activePolicy = (await updated.json()).policy;
+  assert.equal(activePolicy.policyVersion, 2);
+  const stored = await readFile(policyStorePath, "utf8");
+  assert.doesNotMatch(stored, new RegExp(instrumentReference));
+  assert.doesNotMatch(stored, /password|cookie|authorization|sessionPath/i);
+});
+
+test("container and homelab contracts wire policy storage and trusted auth", async () => {
+  const dockerfile = await readFile(join(appRoot, "Dockerfile"), "utf8");
+  assert.match(
+    dockerfile,
+    /install -d -m 0700 -o tyrion -g tyrion \/var\/lib\/tyrion-policy/
+  );
+  assert.ok(
+    dockerfile.indexOf("/var/lib/tyrion-policy") <
+      dockerfile.indexOf("USER tyrion")
+  );
+  const compose = await readFile(
+    resolve(appRoot, "..", "deploy", "homelab", "compose.yaml"),
+    "utf8"
+  );
+  assert.match(compose, /PathPrefix\(`\/api\/policy`\)/);
+  assert.match(compose, /tyrion-policy-auth\.forwardauth\.address/);
+  assert.match(compose, /TYRION_POLICY_STORE_PATH: \/var\/lib\/tyrion-policy/);
+});
+
+test("re-attribution preview is bounded, aggregate-only, and requires separate permissions", async () => {
+  const tooMany = await policyFetch(
+    "/api/policy/reattribution/preview",
+    "POST",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      sourceRefs: Array.from({ length: 101 }, (_, index) => `record-${index}`),
+    }
+  );
+  assert.equal(tooMany.status, 422);
+  assert.equal(
+    (await tooMany.json()).error.code,
+    "invalid_reattribution_selection"
+  );
+
+  const writerOnly = {
+    ...policyActor,
+    permissions: ["policy:read", "policy:write"],
+  };
+  const forbidden = await policyFetch(
+    "/api/policy/reattribution/preview",
+    "POST",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      sourceRefs: ["record-synthetic"],
+    },
+    writerOnly
+  );
+  assert.equal(forbidden.status, 403);
+  assert.equal((await forbidden.json()).error.code, "policy_forbidden");
+
+  const response = await policyFetch(
+    "/api/policy/reattribution/preview",
+    "POST",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      sourceRefs: ["record-synthetic", "record-manual"],
+    }
+  );
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert.doesNotMatch(text, /record-synthetic|SYNTHETIC STORE|sourceRef|previous|proposed/);
+  const preview = JSON.parse(text).preview;
+  assert.equal(preview.policyVersion, activePolicy.policyVersion);
+  assert.equal(preview.selectedCount, 2);
+  assert.equal(preview.summary["would-update"], 1);
+  assert.equal(preview.summary["manual-preserved"], 1);
+
+  const previewOnly = {
+    ...policyActor,
+    permissions: ["policy:read", "reattribution:preview"],
+  };
+  const applyForbidden = await policyFetch(
+    "/api/policy/reattribution/apply",
+    "POST",
+    {
+      previewId: preview.previewId,
+      expectedPolicyVersion: preview.policyVersion,
+      confirm: true,
+    },
+    previewOnly
+  );
+  assert.equal(applyForbidden.status, 403);
+  assert.equal((await applyForbidden.json()).error.code, "policy_forbidden");
+
+  const applied = await policyFetch(
+    "/api/policy/reattribution/apply",
+    "POST",
+    {
+      previewId: preview.previewId,
+      expectedPolicyVersion: preview.policyVersion,
+      confirm: true,
+    }
+  );
+  assert.equal(applied.status, 200);
+  const result = (await applied.json()).result;
+  assert.equal(result.applied, 1);
+  assert.equal(result.manualPreserved, 1);
+});
+
+test("re-attribution integration failures are stable and sanitized", async () => {
+  reattributionResponseMode = "unavailable";
+  const response = await policyFetch(
+    "/api/policy/reattribution/preview",
+    "POST",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      sourceRefs: ["record-unavailable"],
+    }
+  );
+  assert.equal(response.status, 503);
+  const text = await response.text();
+  assert.match(text, /reattribution_integration_unavailable/);
+  assert.doesNotMatch(text, /synthetic private detail/);
+});
+
+test("re-attribution apply rejects missing confirmation, expired previews, and policy conflicts", async () => {
+  expireNextPreview = true;
+  const expiredPreviewResponse = await policyFetch(
+    "/api/policy/reattribution/preview",
+    "POST",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      sourceRefs: ["record-expired"],
+    }
+  );
+  assert.equal(expiredPreviewResponse.status, 200);
+  const expiredPreview = (await expiredPreviewResponse.json()).preview;
+  const missingConfirmation = await policyFetch(
+    "/api/policy/reattribution/apply",
+    "POST",
+    {
+      previewId: expiredPreview.previewId,
+      expectedPolicyVersion: expiredPreview.policyVersion,
+      confirm: false,
+    }
+  );
+  assert.equal(missingConfirmation.status, 422);
+  assert.equal(
+    (await missingConfirmation.json()).error.code,
+    "invalid_reattribution_apply"
+  );
+
+  const expired = await policyFetch(
+    "/api/policy/reattribution/apply",
+    "POST",
+    {
+      previewId: expiredPreview.previewId,
+      expectedPolicyVersion: expiredPreview.policyVersion,
+      confirm: true,
+    }
+  );
+  assert.equal(expired.status, 410);
+  assert.equal((await expired.json()).error.code, "reattribution_preview_expired");
+
+  const conflictPreviewResponse = await policyFetch(
+    "/api/policy/reattribution/preview",
+    "POST",
+    {
+      expectedPolicyVersion: activePolicy.policyVersion,
+      sourceRefs: ["record-conflict"],
+    }
+  );
+  assert.equal(conflictPreviewResponse.status, 200);
+  const conflictPreview = (await conflictPreviewResponse.json()).preview;
+  const policyUpdate = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: {
+      ...policyDraft(activePolicy),
+      exceptionPolicy: {
+        ...activePolicy.exceptionPolicy,
+        limitWarningPercent: 75,
+      },
+    },
+  });
+  activePolicy = (await policyUpdate.json()).policy;
+
+  const conflict = await policyFetch(
+    "/api/policy/reattribution/apply",
+    "POST",
+    {
+      previewId: conflictPreview.previewId,
+      expectedPolicyVersion: conflictPreview.policyVersion,
+      confirm: true,
+    }
+  );
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).error.code, "policy_version_conflict");
+});
+
+function policyFetch(
+  path,
+  method = "GET",
+  body,
+  actor = policyActor,
+  origin = uiUrl
+) {
+  const headers = policyAssertionHeaders(method, path, actor, policyAuthSecret);
+  if (body !== undefined) {
+    headers.set("Content-Type", "application/json");
+    headers.set("Origin", origin);
+  }
+  return fetch(`${uiUrl}${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+function policyAssertionHeaders(
+  method,
+  pathname,
+  actor,
+  secret,
+  timestampMilliseconds = Date.now()
+) {
+  const timestamp = String(Math.floor(timestampMilliseconds / 1_000));
+  const permissions = actor.permissions.join(",");
+  const signature = createHmac("sha256", secret)
+    .update(
+      [
+        method,
+        pathname,
+        actor.actorId,
+        actor.householdId,
+        permissions,
+        timestamp,
+      ].join("\n")
+    )
+    .digest("hex");
+  return new Headers({
+    "x-tyrion-actor": actor.actorId,
+    "x-tyrion-household": actor.householdId,
+    "x-tyrion-permissions": permissions,
+    "x-tyrion-auth-timestamp": timestamp,
+    "x-tyrion-auth-signature": signature,
+  });
+}
+
+function policyDraft(policy) {
+  return {
+    timezone: policy.timezone,
+    currency: policy.currency,
+    kids: policy.kids,
+    cardRules: policy.cardRules,
+    merchantRules: policy.merchantRules,
+    limits: policy.limits,
+    exceptionPolicy: policy.exceptionPolicy,
+  };
+}
+
+function reattributionRecord(householdId, sourceRef) {
+  const manual = sourceRef === "record-manual";
+  const evaluatedAt = "2026-01-01T00:00:00.000Z";
+  return {
+    input: {
+      contractVersion: "1.0",
+      householdId,
+      source: {
+        system: "monarch-bridge",
+        recordRef: sourceRef,
+        observedAt: evaluatedAt,
+      },
+      transaction: {
+        merchantName: "Synthetic Store",
+        instrumentFingerprint: null,
+        occurredOn: "2026-01-01",
+      },
+      historicalAttributions: [],
+      existingManualDecision: manual
+        ? {
+            action: "assign-kid",
+            kidId: "kid-synthetic",
+            actorId: "actor-synthetic",
+            decidedAt: evaluatedAt,
+            explanation: "Synthetic manual decision.",
+          }
+        : null,
+    },
+    current: {
+      contractVersion: "1.0",
+      sourceRef,
+      status: manual ? "attributed" : "unassigned",
+      kidId: manual ? "kid-synthetic" : null,
+      confidence: manual ? "definite" : "none",
+      method: manual ? "manual" : "unassigned",
+      explanation: manual
+        ? "An existing manual decision is preserved."
+        : "No deterministic attribution was available.",
+      review: {
+        status: manual ? "resolved" : "pending",
+        reasons: manual ? [] : ["no-match"],
+      },
+      provenance: {
+        decisionSource: manual ? "manual" : "fallback",
+        policyVersion: null,
+        engineVersion: "1.0.0",
+        ruleIds: [],
+        evaluatedAt,
+      },
+    },
+  };
+}
+
+function impactCounts(preview) {
+  const counts = {
+    applied: 0,
+    unchanged: 0,
+    manualPreserved: 0,
+    pendingReview: 0,
+  };
+  for (const item of preview.items) {
+    if (item.disposition === "would-update") counts.applied += 1;
+    if (item.disposition === "unchanged") counts.unchanged += 1;
+    if (item.disposition === "manual-preserved") counts.manualPreserved += 1;
+    if (item.disposition === "pending-review") counts.pendingReview += 1;
+  }
+  return counts;
+}
+
+async function waitForServer(url, process) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (process.exitCode !== null) {
+      throw new Error("The policy test server exited before becoming ready");
+    }
+    try {
+      const response = await fetch(`${url}/api/health`);
+      if (response.ok) return;
+    } catch {
+      // Startup is still in progress.
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
+  throw new Error("The policy test server did not become ready");
+}

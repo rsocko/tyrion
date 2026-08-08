@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Tyrion | Monarch connector operations",
-  description: "Operational setup and maintenance for Tyrion's Monarch connector",
+  title: "Tyrion | Money-domain configuration",
+  description: "Tyrion household policy and Monarch connector operations",
 };
 
 export default function RootLayout({

@@ -7,6 +7,11 @@ export type TyrionDomainContractVersion = typeof TYRION_DOMAIN_CONTRACT_VERSION;
 export type KidAttributionEngineVersion = typeof KID_ATTRIBUTION_ENGINE_VERSION;
 export type AttributionConfidenceV1 = 'definite' | 'likely' | 'none';
 export type LimitPeriodV1 = 'daily' | 'weekly' | 'monthly';
+export type ExceptionSignalV1 =
+  | 'limit-warning'
+  | 'limit-exceeded'
+  | 'attribution-review'
+  | 'connector-degraded';
 export type PolicyPermissionV1 =
   | 'policy:read'
   | 'policy:write'
@@ -43,6 +48,12 @@ export interface SpendingLimitV1 {
   currency: string;
 }
 
+export interface ExceptionPolicyV1 {
+  limitWarningPercent: number;
+  requireReviewForLikelyAttribution: boolean;
+  notificationSignals: ExceptionSignalV1[];
+}
+
 export interface PolicyDraftV1 {
   timezone: string;
   currency: string;
@@ -50,6 +61,7 @@ export interface PolicyDraftV1 {
   cardRules: CardAttributionRuleV1[];
   merchantRules: MerchantAttributionRuleV1[];
   limits: SpendingLimitV1[];
+  exceptionPolicy: ExceptionPolicyV1;
 }
 
 export interface PolicySnapshotV1 extends PolicyDraftV1 {
@@ -58,6 +70,42 @@ export interface PolicySnapshotV1 extends PolicyDraftV1 {
   householdId: string;
   policyVersion: number;
   updatedAt: string;
+}
+
+export function createDefaultPolicyDraftV1(): PolicyDraftV1 {
+  return {
+    timezone: 'UTC',
+    currency: 'USD',
+    kids: [],
+    cardRules: [],
+    merchantRules: [],
+    limits: [],
+    exceptionPolicy: {
+      limitWarningPercent: 80,
+      requireReviewForLikelyAttribution: true,
+      notificationSignals: [
+        'limit-warning',
+        'limit-exceeded',
+        'attribution-review',
+        'connector-degraded',
+      ],
+    },
+  };
+}
+
+export function policyDraftFromSnapshotV1(
+  value: PolicySnapshotV1
+): PolicyDraftV1 {
+  const snapshot = parsePolicySnapshotV1(value);
+  return {
+    timezone: snapshot.timezone,
+    currency: snapshot.currency,
+    kids: snapshot.kids,
+    cardRules: snapshot.cardRules,
+    merchantRules: snapshot.merchantRules,
+    limits: snapshot.limits,
+    exceptionPolicy: snapshot.exceptionPolicy,
+  };
 }
 
 export interface AttributionSourceV1 {
@@ -522,6 +570,7 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
     'cardRules',
     'merchantRules',
     'limits',
+    'exceptionPolicy',
   ]);
   literal(snapshot.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
   literal(snapshot.engineVersion, KID_ATTRIBUTION_ENGINE_VERSION, 'engineVersion');
@@ -535,6 +584,7 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
     cardRules: snapshot.cardRules,
     merchantRules: snapshot.merchantRules,
     limits: snapshot.limits,
+    exceptionPolicy: snapshot.exceptionPolicy,
   });
   return {
     contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
@@ -555,6 +605,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     'cardRules',
     'merchantRules',
     'limits',
+    'exceptionPolicy',
   ]);
   const timezone = ianaTimezone(draft.timezone, 'timezone');
   const currency = isoCurrency(draft.currency, 'currency');
@@ -587,11 +638,9 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     return {
       id: identifier(rule.id, `cardRules[${index}].id`),
       kidId,
-      instrumentFingerprint: boundedString(
+      instrumentFingerprint: instrumentFingerprint(
         rule.instrumentFingerprint,
-        `cardRules[${index}].instrumentFingerprint`,
-        8,
-        256
+        `cardRules[${index}].instrumentFingerprint`
       ),
       confidence: confidence(rule.confidence, `cardRules[${index}].confidence`),
       enabled: boolean(rule.enabled, `cardRules[${index}].enabled`),
@@ -651,7 +700,52 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     limits.map((limit) => `${limit.kidId}:${limit.period}`),
     'kid limit periods'
   );
-  return { timezone, currency, kids, cardRules, merchantRules, limits };
+  const exceptionPolicyValue = object(draft.exceptionPolicy, 'exceptionPolicy');
+  exactKeys(exceptionPolicyValue, [
+    'limitWarningPercent',
+    'requireReviewForLikelyAttribution',
+    'notificationSignals',
+  ]);
+  const limitWarningPercent = finiteNumber(
+    exceptionPolicyValue.limitWarningPercent,
+    'exceptionPolicy.limitWarningPercent'
+  );
+  if (limitWarningPercent < 1 || limitWarningPercent > 100) {
+    invalid('exceptionPolicy.limitWarningPercent must be between 1 and 100');
+  }
+  const notificationSignals = array(
+    exceptionPolicyValue.notificationSignals,
+    'exceptionPolicy.notificationSignals'
+  ).map((signal, index) =>
+    enumeration(
+      signal,
+      [
+        'limit-warning',
+        'limit-exceeded',
+        'attribution-review',
+        'connector-degraded',
+      ] as const,
+      `exceptionPolicy.notificationSignals[${index}]`
+    )
+  );
+  unique(notificationSignals, 'exception policy notification signals');
+  const exceptionPolicy: ExceptionPolicyV1 = {
+    limitWarningPercent,
+    requireReviewForLikelyAttribution: boolean(
+      exceptionPolicyValue.requireReviewForLikelyAttribution,
+      'exceptionPolicy.requireReviewForLikelyAttribution'
+    ),
+    notificationSignals,
+  };
+  return {
+    timezone,
+    currency,
+    kids,
+    cardRules,
+    merchantRules,
+    limits,
+    exceptionPolicy,
+  };
 }
 
 export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
@@ -757,11 +851,9 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
       instrumentFingerprint:
         transaction.instrumentFingerprint === null
           ? null
-          : boundedString(
+          : instrumentFingerprint(
               transaction.instrumentFingerprint,
-              'transaction.instrumentFingerprint',
-              8,
-              256
+              'transaction.instrumentFingerprint'
             ),
       occurredOn: calendarDate(transaction.occurredOn, 'transaction.occurredOn'),
     },
@@ -819,8 +911,17 @@ function identifier(value: unknown, field: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(result)) {
     invalid(`${field} contains unsupported characters`);
   }
+
   if (['__proto__', 'constructor', 'prototype'].includes(result)) {
     invalid(`${field} contains a reserved value`);
+  }
+  return result;
+}
+
+function instrumentFingerprint(value: unknown, field: string): string {
+  const result = boundedString(value, field, 57, 57);
+  if (!/^instrument-v1:[A-Za-z0-9_-]{43}$/.test(result)) {
+    invalid(`${field} must be a server-generated household instrument fingerprint`);
   }
   return result;
 }

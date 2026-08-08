@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   AuthState,
   getAuthStatus,
@@ -128,6 +129,14 @@ export default function OperationsPage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+      <nav aria-label="Tyrion operations" className="mb-6 flex gap-4 text-sm">
+        <Link aria-current="page" className="text-gold-hi underline" href="/">
+          Monarch connector
+        </Link>
+        <Link className="text-muted underline hover:text-parchment" href="/configuration">
+          Household policy
+        </Link>
+      </nav>
       <header className="mb-8 border-b border-hair pb-6">
         <p className="eyebrow mb-2">Tyrion operations</p>
         <h1 className="font-serif text-3xl font-bold text-parchment sm:text-4xl">

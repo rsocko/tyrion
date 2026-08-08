@@ -191,10 +191,15 @@ export class ReattributionService {
         'Re-attribution preview expired; create a new preview'
       );
     }
-    const counts = await this.reattributionRepository.applyPreviewIfPolicyVersion(
-      preview,
-      appliedAt,
-      request.expectedPolicyVersion
+    const counts = await this.policyRepository.withPolicyVersionFence(
+      request.householdId,
+      request.expectedPolicyVersion,
+      () =>
+        this.reattributionRepository.applyPreviewIfPolicyVersion(
+          preview,
+          appliedAt,
+          request.expectedPolicyVersion
+        )
     );
     if (!counts) {
       throw new ReattributionError(

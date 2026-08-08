@@ -30,9 +30,11 @@ jobs:
         include:
           - component: bridge
             context: .
+            file: Dockerfile
             repository: registry.socko.us/tyrion-bridge
           - component: operations-ui
-            context: triage-app
+            context: .
+            file: triage-app/Dockerfile
             repository: registry.socko.us/tyrion-ui
     steps:
       - name: Checkout
@@ -76,6 +78,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           push: true
           tags: ${{ matrix.repository }}:${{ steps.image.outputs.tag }}
           cache-from: type=registry,ref=${{ matrix.repository }}:buildcache

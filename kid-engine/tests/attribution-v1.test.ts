@@ -11,6 +11,8 @@ import type {
 import { inputFixture, policyFixture } from './fixtures.js';
 
 const evaluatedAt = '2026-08-08T12:03:00Z';
+const instrumentFingerprint =
+  'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 describe('v1 deterministic attribution', () => {
   it('preserves a manual correction ahead of every automated rule', () => {
@@ -18,7 +20,7 @@ describe('v1 deterministic attribution', () => {
       ...inputFixture,
       transaction: {
         ...inputFixture.transaction,
-        instrumentFingerprint: 'fingerprint-alpha',
+        instrumentFingerprint,
       },
       existingManualDecision: {
         action: 'assign-kid',
@@ -45,7 +47,7 @@ describe('v1 deterministic attribution', () => {
         ...inputFixture,
         transaction: {
           ...inputFixture.transaction,
-          instrumentFingerprint: 'fingerprint-alpha',
+          instrumentFingerprint,
         },
       },
       policyFixture,
@@ -67,7 +69,7 @@ describe('v1 deterministic attribution', () => {
         {
           id: 'rule-card-beta',
           kidId: 'kid-beta',
-          instrumentFingerprint: 'fingerprint-alpha',
+          instrumentFingerprint,
           confidence: 'definite',
           enabled: true,
         },
@@ -79,7 +81,7 @@ describe('v1 deterministic attribution', () => {
         ...inputFixture,
         transaction: {
           ...inputFixture.transaction,
-          instrumentFingerprint: 'fingerprint-alpha',
+          instrumentFingerprint,
         },
       },
       conflictingPolicy,
@@ -99,12 +101,33 @@ describe('v1 deterministic attribution', () => {
     const result = attributeTransactionV1(inputFixture, policyFixture, {
       evaluatedAt,
     });
+
     expect(result).toMatchObject({
       status: 'pending',
       kidId: 'kid-beta',
       confidence: 'likely',
       method: 'merchant-rule',
       review: { reasons: ['low-confidence'] },
+    });
+  });
+
+  it('accepts likely attribution when policy does not require review', () => {
+    const result = attributeTransactionV1(
+      inputFixture,
+      {
+        ...policyFixture,
+        exceptionPolicy: {
+          ...policyFixture.exceptionPolicy,
+          requireReviewForLikelyAttribution: false,
+        },
+      },
+      { evaluatedAt }
+    );
+    expect(result).toMatchObject({
+      status: 'attributed',
+      kidId: 'kid-beta',
+      confidence: 'likely',
+      review: { status: 'not-required', reasons: [] },
     });
   });
 

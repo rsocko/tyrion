@@ -2,19 +2,31 @@ import { describe, expect, it } from 'vitest';
 import {
   ContractValidationError,
   TYRION_DOMAIN_CONTRACT_VERSION,
+  createDefaultPolicyDraftV1,
   parseAttributionInputV1,
   parsePolicyActorV1,
   parsePolicySnapshotV1,
   parseReattributionApplyRequestV1,
   parseReattributionPreviewV1,
   parseReattributionPreviewRequestV1,
+  policyDraftFromSnapshotV1,
 } from '../src/contracts/v1.js';
-import { inputFixture, policyFixture } from './fixtures.js';
+import { inputFixture, policyDraftFixture, policyFixture } from './fixtures.js';
 
 describe('v1 domain contract validation', () => {
   it('normalizes and accepts a complete policy snapshot', () => {
     const parsed = parsePolicySnapshotV1(policyFixture);
     expect(parsed).toEqual(policyFixture);
+  });
+
+  it('provides a strict empty draft and snapshot projection for configuration hosts', () => {
+    expect(createDefaultPolicyDraftV1()).toMatchObject({
+      timezone: 'UTC',
+      currency: 'USD',
+      kids: [],
+      exceptionPolicy: { limitWarningPercent: 80 },
+    });
+    expect(policyDraftFromSnapshotV1(policyFixture)).toEqual(policyDraftFixture);
   });
 
   it('rejects unknown fields instead of accepting contract drift', () => {
@@ -34,6 +46,21 @@ describe('v1 domain contract validation', () => {
     ).toThrow('references an unknown kid');
   });
 
+  it('rejects instrument values that were not fingerprinted by the server boundary', () => {
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        cardRules: [
+          {
+            ...policyFixture.cardRules[0],
+            instrumentFingerprint:
+              'instrument-v1:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
+          },
+        ],
+      })
+    ).toThrow('server-generated household instrument fingerprint');
+  });
+
   it('rejects duplicate limit periods and mismatched currencies', () => {
     expect(() =>
       parsePolicySnapshotV1({
@@ -50,6 +77,36 @@ describe('v1 domain contract validation', () => {
         limits: [{ ...policyFixture.limits[0], currency: 'EUR' }],
       })
     ).toThrow('must match policy currency');
+  });
+
+  it('strictly validates exception and notification policy', () => {
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        exceptionPolicy: {
+          ...policyFixture.exceptionPolicy,
+          limitWarningPercent: 0,
+        },
+      })
+    ).toThrow('between 1 and 100');
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        exceptionPolicy: {
+          ...policyFixture.exceptionPolicy,
+          notificationSignals: ['limit-warning', 'limit-warning'],
+        },
+      })
+    ).toThrow('must be unique');
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        exceptionPolicy: {
+          ...policyFixture.exceptionPolicy,
+          notificationSignals: ['unsupported-signal'],
+        },
+      })
+    ).toThrow('unsupported value');
   });
 
   it('rejects invalid timezone, currency, and timestamp values', () => {

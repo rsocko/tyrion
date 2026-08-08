@@ -1,0 +1,16 @@
+.git
+.github
+**/.env
+**/.env.*
+**/*.env
+**/node_modules
+**/.next
+**/dist
+**/.venv
+**/__pycache__
+**/.pytest_cache
+monarch-bridge
+docs
+brand
+deploy
+mockups

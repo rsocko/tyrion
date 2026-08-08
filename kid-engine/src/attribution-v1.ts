@@ -124,7 +124,9 @@ export function attributeTransactionV1(
       'historical-pattern',
       [],
       'Historical decisions suggest this kid.',
-      ['low-confidence']
+      policy.exceptionPolicy.requireReviewForLikelyAttribution
+        ? ['low-confidence']
+        : []
     );
   }
 
@@ -242,7 +244,10 @@ function evaluateCandidates(
     ? 'definite'
     : 'likely';
   const reviewReasons: AttributionReviewReasonV1[] =
-    confidence === 'likely' ? ['low-confidence'] : [];
+    confidence === 'likely' &&
+    policy.exceptionPolicy.requireReviewForLikelyAttribution
+      ? ['low-confidence']
+      : [];
   return automatedResult(
     input,
     policy,

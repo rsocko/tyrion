@@ -1,14 +1,14 @@
-# Tyrion Monarch connector operations UI
+# Tyrion operations and configuration UI
 
-This Next.js application is the narrowly scoped operational surface for Tyrion's
-Monarch bridge. Production exposes bridge reachability, authentication status,
-browser-cookie setup, email/password/MFA fallback, logout, and a bounded 30-day
-sync/recheck action. Mission Control remains the finance shell, and Monarch remains
-the financial system of record.
+This Next.js application is Tyrion's bounded money-domain administration surface.
+`/` owns Monarch connector setup and operations. `/configuration` owns household kid
+profiles, attribution rules, limits, exception policy, policy versioning, and
+controlled re-attribution. Mission Control remains the daily finance shell, and
+Monarch remains the financial system of record.
 
 The production route tree must not expose transactions, accounts, categories,
-budgets, bills, kid views, generic triage, chat, or other finance product pages. The
-server proxy independently enforces the same boundary. See
+budgets, bills, dashboards, generic triage, chat, or reporting pages. The bridge
+proxy independently enforces the same boundary. See
 [`../docs/PRODUCT-BOUNDARY.md`](../docs/PRODUCT-BOUNDARY.md).
 
 ## Local development
@@ -39,10 +39,69 @@ npm run dev -- --hostname 127.0.0.1 --port 3098
 All other bridge paths, methods, and query expansion are rejected before an upstream
 call. Proxy failures use stable sanitized JSON and never return connection exceptions.
 
+## Policy security and persistence
+
+Browser requests never supply a trusted household, actor, or permission. A trusted
+ingress/auth service must remove any inbound `x-tyrion-*` assertion headers and add:
+
+| Header | Value |
+| --- | --- |
+| `x-tyrion-actor` | Authenticated bounded actor ID |
+| `x-tyrion-household` | Authorized household ID |
+| `x-tyrion-permissions` | Ordered comma-separated v1 permissions |
+| `x-tyrion-auth-timestamp` | Current Unix timestamp in seconds |
+| `x-tyrion-auth-signature` | Lowercase HMAC-SHA256 signature |
+
+The signature key is `TYRION_POLICY_AUTH_SECRET` and the signed UTF-8 payload is the
+newline-joined request method, pathname, actor ID, household ID, permissions string,
+and timestamp. Assertions expire after 60 seconds and are bound to the route and
+method. Missing deployment configuration returns `503`; missing, stale, malformed,
+or invalid assertions return `401`. Mutations also require same-origin browser
+metadata. `PolicyService` independently enforces household equality and each v1
+permission.
+
+`TYRION_POLICY_STORE_PATH` must be an absolute access-restricted path outside the
+application checkout. The file adapter provides atomic replacement, a cross-process
+lease, metadata-only audit events, and compare-and-swap policy versions.
+`TYRION_INSTRUMENT_FINGERPRINT_KEY` must contain at least 32 characters. Raw
+integration references are accepted only by the protected fingerprint endpoint,
+HMAC-fingerprinted with household scope, discarded, and never returned or persisted.
+
+Policy browser endpoints are:
+
+| Method | Path | Permission |
+| --- | --- | --- |
+| `GET` | `/api/policy` | `policy:read` |
+| `PUT` | `/api/policy` | `policy:write` |
+| `POST` | `/api/policy/instruments/fingerprint` | `policy:write` |
+| `POST` | `/api/policy/reattribution/preview` | `reattribution:preview` |
+| `POST` | `/api/policy/reattribution/apply` | `reattribution:apply` |
+
+Policy writes require `expectedPolicyVersion`. Preview accepts 1-100 explicit opaque
+record references and returns only policy/version/expiry metadata plus deterministic
+impact counts. Apply requires a separately authorized request with `confirm: true`,
+an unexpired persisted preview, and the same policy version.
+
+Production re-attribution uses the server-only
+`TYRION_REATTRIBUTION_URL`/`TYRION_REATTRIBUTION_TOKEN` adapter. It calls fixed
+internal `POST` operations under `/v1/reattribution/` to resolve records, persist and
+resolve previews, and atomically apply a preview. That implementation must preserve
+newer manual decisions and compare the active policy version in its transaction.
+HTTPS is required unless
+`TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL=true` explicitly authorizes private
+network HTTP. Re-attribution fails closed when this optional adapter is absent;
+policy CRUD and connector operations remain available.
+
+For deterministic local development only, set `TYRION_POLICY_DEMO_MODE=true` while
+`NODE_ENV` is not `production`. Demo mode uses invented in-memory policy and record
+state, never contacts Monarch, and never loads developer auth state. Production
+rejects demo mode.
+
 ## Build and test
 
 ```powershell
 npm ci
+npm --prefix ../kid-engine run build
 npm run build
 npm test
 ```
@@ -54,3 +113,8 @@ as UID/GID `10001`, and reports liveness at `GET /api/health`. Runtime configura
 | --- | --- |
 | `BRIDGE_URL` | Private bridge URL, normally `http://tyrion-monarch-bridge:8100` |
 | `BRIDGE_API_TOKEN` | Shared server-only bridge token; required for protected operations |
+| `TYRION_POLICY_STORE_PATH` | External absolute policy/audit store path |
+| `TYRION_POLICY_AUTH_SECRET` | Shared HMAC key used only by trusted auth integration and Tyrion |
+| `TYRION_INSTRUMENT_FINGERPRINT_KEY` | Server-only household fingerprint HMAC key |
+| `TYRION_REATTRIBUTION_URL` | Optional protected internal re-attribution repository service |
+| `TYRION_REATTRIBUTION_TOKEN` | Optional server-only integration token |

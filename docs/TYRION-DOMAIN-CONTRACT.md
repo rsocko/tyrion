@@ -141,6 +141,8 @@ duplicate rule IDs or limit periods, and currency mismatches.
 - Enabled card rules keyed by opaque instrument fingerprint
 - Enabled merchant rules
 - Daily, weekly, and monthly limits
+- Limit-warning threshold, likely-attribution review policy, and the bounded exception
+  signals eligible for Mission Control notification
 - Last-update timestamp
 
 `PolicyService` receives authenticated `PolicyActorV1` context from the hosting
@@ -152,6 +154,9 @@ are enforced before repository access. Replacements use compare-and-swap through
 `PolicyRepository` is the production persistence port. A database-backed Tyrion
 deployment must implement its `load`, atomic `save`, and `listAudit` methods using
 household-scoped authorization and transactional version checks.
+`withPolicyVersionFence` must hold the same mutation fence while a bounded
+re-attribution apply runs, so a policy replacement cannot commit between the final
+version comparison and application.
 `FilePolicyRepository` is the smallest durable single-deployment adapter. It:
 
 - Requires an absolute state path outside the application checkout
@@ -209,5 +214,7 @@ Rule or policy changes use a two-step server flow:
 transaction-store port. Its implementation must atomically compare the active policy
 version, apply the persisted preview, remain idempotent, and recheck that no newer
 manual decision is overwritten. A false version comparison returns `null` and forces
-a new preview. Mission Control may initiate and present this workflow, but Tyrion
-owns the policy and evaluation semantics.
+a new preview. `ReattributionService` also executes this call inside the
+`PolicyRepository` version fence, making policy replacement and apply mutually
+exclusive. Mission Control may initiate and present this workflow, but Tyrion owns
+the policy and evaluation semantics.
