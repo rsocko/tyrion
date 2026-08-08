@@ -51,25 +51,25 @@ def test_image_runs_non_root_with_external_session_storage():
         for index, instruction in enumerate(instructions)
         if shlex.split(instruction)[0].upper() == "FROM"
     )
-    session_values = []
+    runtime_env = {}
     for instruction in instructions[final_stage_start + 1:]:
         tokens = shlex.split(instruction)
         if tokens[0].upper() != "ENV":
             continue
         for assignment in tokens[1:]:
             name, separator, value = assignment.partition("=")
-            if separator and name == "SESSION_FILE":
-                session_values.append(value)
+            if separator:
+                runtime_env[name] = value
 
     assert "USER tyrion" in dockerfile
     assert "TYRION_UID=10001" in dockerfile
-    assert session_values == ["/var/lib/tyrion/monarch-session.json"]
+    assert runtime_env["SESSION_FILE"] == "/var/lib/tyrion/monarch-session.json"
     assert 'VOLUME ["/var/lib/tyrion"]' in dockerfile
-    assert "BRIDGE_HOST=0.0.0.0" in dockerfile
-    assert "BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us" in dockerfile
-    assert "BRIDGE_REMOTE_TLS=" not in dockerfile
-    assert "BRIDGE_LOAD_DOTENV=false" in dockerfile
-    assert "DEFAULT_TRANSACTION_DAYS=90" in dockerfile
+    assert runtime_env["BRIDGE_HOST"] == "0.0.0.0"
+    assert runtime_env["BRIDGE_ALLOWED_ORIGINS"] == "https://mc.socko.us"
+    assert runtime_env["BRIDGE_REMOTE_TLS"] == "true"
+    assert runtime_env["BRIDGE_LOAD_DOTENV"] == "false"
+    assert runtime_env["DEFAULT_TRANSACTION_DAYS"] == "90"
 
 
 def test_image_port_and_health_contract_are_stable():
@@ -192,6 +192,8 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
         "`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`"
         in normalized_validation
     )
+    assert "`BRIDGE_REMOTE_TLS=true`" in normalized_readme
+    assert "`BRIDGE_REMOTE_TLS=true`" in normalized_validation
     assert (
         "`https://tyrion.socko.us` is the only production ingress"
         in normalized_validation

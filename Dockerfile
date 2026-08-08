@@ -20,6 +20,7 @@ ENV PATH=/opt/venv/bin:$PATH \
     BRIDGE_HOST=0.0.0.0 \
     BRIDGE_PORT=8100 \
     BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us \
+    BRIDGE_REMOTE_TLS=true \
     BRIDGE_LOAD_DOTENV=false \
     DEFAULT_TRANSACTION_DAYS=90 \
     SESSION_FILE=/var/lib/tyrion/monarch-session.json
