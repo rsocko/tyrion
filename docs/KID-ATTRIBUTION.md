@@ -53,8 +53,10 @@ Any transaction that doesn't match rules or patterns:
 
 ## Setting Up Kid Profiles
 
-### In Mission Control: Settings → Finance → Kids
+### In Tyrion configuration: Kids and policy
 
+Tyrion owns the durable profile, rule, limit, and policy version. Mission Control
+shows resulting status and review actions, and links to this configuration surface.
 For each child, configure:
 
 ```yaml

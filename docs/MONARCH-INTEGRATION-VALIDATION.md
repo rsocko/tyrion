@@ -37,6 +37,22 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Production images | Separate non-root bridge/UI runtimes, route allowlist, loopback health checks, external session mount, no auth state in build contexts | Pull immutable images, mount restricted state, and smoke test private bridge plus TLS UI ingress |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
+## Tyrion domain integration boundary
+
+`@rsocko/tyrion-kid-engine` contract version `1.0` consumes only normalized,
+consumer-mapped attribution inputs. It does not import `monarchmoneycommunity`, load
+a bridge session, call Monarch, or accept raw upstream response objects. The
+integration consumer maps a bridge transaction DTO to an opaque source reference,
+normalized merchant name, household-scoped payment-instrument fingerprint, and
+calendar date before invoking the engine.
+
+Attribution failure does not change bridge sync success. The consumer persists
+`createUnavailableAttributionResultV1(...)` with a pending review reason and
+continues the transaction generation. Existing manual decisions are supplied on the
+input and remain authoritative even when policy or engine evaluation is unavailable.
+No controlled live Monarch validation is required for changes confined to this
+domain package; its deterministic tests use invented structures only.
+
 ## Safe live procedure
 
 1. Use a dedicated controlled account and transaction where possible.

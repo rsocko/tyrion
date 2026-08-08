@@ -5,6 +5,8 @@
 > tracked in [`ROADMAP.md`](./ROADMAP.md). The routes, schemas, and flows below
 > preserve the original design context; they do not authorize a standalone product,
 > generic transaction review, duplicate Monarch dashboards, or a second assistant.
+> They also do not assign kid, attribution-rule, limit, policy, or connector
+> configuration to Mission Control; that configuration is Tyrion-owned.
 
 ## 1. Integration Architecture: Hybrid Approach
 

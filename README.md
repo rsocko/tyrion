@@ -31,15 +31,17 @@ matching. Those workflows should deep-link to Monarch.
 | Path | Role |
 | --- | --- |
 | `monarch-bridge/` | Monarch authentication, normalized API access, synchronization, and write-back |
-| `kid-engine/` | Household attribution, policy, and suggestion logic |
+| `kid-engine/` | Versioned household policy, attribution, review, and re-attribution contracts and logic |
 | `docs/` | Active boundary, roadmap, contracts, and historical design references |
-| `triage-app/` | Bounded Monarch connector operations and contract-validation console |
+| `triage-app/` | Bounded Tyrion domain configuration, Monarch connector operations, and contract-validation console |
 | `mockups/` | UX and visual references; not deployment architecture |
 | `brand/` | Tyrion identity assets adapted within Mission Control's design system |
 
-Production deploys only the connector reachability, authentication, logout, and
-bounded sync/recheck surface from `triage-app/`. It must not grow into an independent
-dashboard, generic transaction review product, bills application, or assistant shell.
+Production may deploy Tyrion-owned kid, rule, limit, policy, and connector
+configuration alongside connector reachability, authentication, logout, and bounded
+sync/recheck in `triage-app/`. It must not grow into an independent ledger,
+dashboard, generic transaction review product, reporting suite, bills application,
+or assistant shell.
 
 ## Terminology
 
