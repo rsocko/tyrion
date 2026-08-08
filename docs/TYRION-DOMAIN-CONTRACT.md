@@ -23,6 +23,73 @@ Public entry points:
 Consumers must import these entry points rather than package internals. Removing a
 field or changing its meaning requires a new major contract version.
 
+## Distribution and consumption
+
+The supported production distribution is the restricted GitHub Packages npm package
+`@rsocko/tyrion-kid-engine`. A git dependency is not supported because the package
+lives below the repository root. Copying generated declarations or source files into
+a consumer is also unsupported.
+
+After a version change is merged to `main`, an authorized maintainer creates and
+pushes the exact tag `kid-engine-v<package version>`, such as
+`kid-engine-v1.0.0`. `.github/workflows/publish-kid-engine.yml` verifies that the tag
+matches `kid-engine/package.json`, verifies the tagged commit is contained in
+`origin/main`, reruns package tests and the built-package consumer check, then
+publishes with the repository-scoped `GITHUB_TOKEN`. The workflow has only
+`contents: read` and `packages: write` permissions.
+
+The package owner must grant the `rsocko/mission-control` repository Actions access
+to the GitHub Package once. Mission Control then uses its own repository-scoped
+`GITHUB_TOKEN` with `packages: read`; no long-lived package token is required in CI:
+
+```yaml
+permissions:
+  contents: read
+  packages: read
+
+steps:
+  - uses: actions/setup-node@v4
+    with:
+      node-version: "20"
+      registry-url: https://npm.pkg.github.com
+      scope: "@rsocko"
+  - run: npm ci
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Mission Control declares the exact version without a range and commits its updated
+lockfile:
+
+```json
+{
+  "dependencies": {
+    "@rsocko/tyrion-kid-engine": "1.0.0"
+  }
+}
+```
+
+Application imports use the public entry points:
+
+```typescript
+import {
+  attributeTransactionV1,
+  createAttributionInputsFromBridgePageV1,
+} from '@rsocko/tyrion-kid-engine';
+import type {
+  AttributionInputV1,
+  AttributionResultV1,
+  PolicySnapshotV1,
+} from '@rsocko/tyrion-kid-engine/contracts/v1';
+```
+
+For local development, an operator may set `NODE_AUTH_TOKEN` in the current process
+to a GitHub token with `read:packages` and configure
+`@rsocko:registry=https://npm.pkg.github.com`. Tokens must never be placed in a
+tracked `.npmrc`, dependency URL, image layer, build argument, log, or lockfile.
+Production container builds pass package authentication as an ephemeral BuildKit or
+CI secret and omit it from the final image.
+
 ## Normalized ingestion mapping
 
 The package exports

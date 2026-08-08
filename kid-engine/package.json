@@ -2,6 +2,11 @@
   "name": "@rsocko/tyrion-kid-engine",
   "version": "1.0.0",
   "description": "Versioned Tyrion household policy and kid attribution domain package",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rsocko/tyrion.git",
+    "directory": "kid-engine"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -25,6 +30,10 @@
   "sideEffects": false,
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
   },
   "dependencies": {
     "proper-lockfile": "4.1.2"
