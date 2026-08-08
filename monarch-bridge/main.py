@@ -667,7 +667,7 @@ async def sync_transactions(
     """
     start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     end_date = datetime.now().strftime("%Y-%m-%d")
-    logger.info("Sync triggered: %s to %s (%d days)", start_date, end_date, days)
+    logger.info("Sync triggered")
 
     if DEMO_MODE:
         data = DemoProvider.get_transactions(start_date, end_date, 5000)
@@ -703,11 +703,7 @@ async def sync_transactions(
         accounts = await client.get_accounts()
         account_list = accounts.get("accounts", []) if isinstance(accounts, dict) else []
 
-        logger.info(
-            "Sync complete: %d transactions, %d accounts",
-            transactions_fetched,
-            len(account_list),
-        )
+        logger.info("Sync complete")
         return SyncResponse(
             status="complete",
             provenance=provenance("live"),
