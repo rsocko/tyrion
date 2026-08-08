@@ -359,6 +359,9 @@ async def test_remote_bridge_requires_service_auth(monkeypatch, tmp_path):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         denied = [
             await client.get("/accounts"),
+            await client.get(
+                "/transactions?start_date=2026-08-01&end_date=2026-08-01&limit=1"
+            ),
             await client.post("/sync"),
             await client.patch(
                 "/transactions/tx-test/category",
@@ -366,7 +369,12 @@ async def test_remote_bridge_requires_service_auth(monkeypatch, tmp_path):
             ),
         ]
         allowed = await client.get(
-            "/accounts",
+            "/transactions?start_date=2026-08-01&end_date=2026-08-01&limit=1",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        allowed_update = await client.patch(
+            "/transactions/tx-test/category",
+            json={"categoryId": "cat-test"},
             headers={"Authorization": f"Bearer {token}"},
         )
         health = await client.get("/health")
@@ -376,7 +384,15 @@ async def test_remote_bridge_requires_service_auth(monkeypatch, tmp_path):
         response.json()["error"]["code"] == "bridge_auth_required"
         for response in denied
     )
+    assert all(
+        response.json()["contractVersion"] == "1.0"
+        and response.headers["x-monarch-contract-version"] == "1.0"
+        for response in denied
+    )
     assert allowed.status_code == 200
+    assert allowed.headers["x-monarch-contract-version"] == "1.0"
+    assert allowed_update.status_code == 200
+    assert allowed_update.headers["x-monarch-contract-version"] == "1.0"
     assert health.status_code == 200
 
 

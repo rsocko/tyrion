@@ -16,11 +16,11 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Path as PathParam, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from bridge_runtime import (
@@ -415,14 +415,16 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Models
 # ---------------------------------------------------------------------------
 class CategoryUpdate(BaseModel):
-    categoryId: str
+    model_config = ConfigDict(extra="forbid")
+
+    categoryId: str = Field(min_length=1, max_length=512)
 
     @field_validator("categoryId")
     @classmethod
     def category_id_must_not_be_empty(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("categoryId must not be empty")
-        return value
+        return value.strip()
 
 
 class LoginRequest(BaseModel):
@@ -729,12 +731,14 @@ def encode_cursor(offset: int) -> str:
 def decode_cursor(cursor: Optional[str]) -> int:
     if cursor is None:
         return 0
+    if len(cursor) > 128:
+        raise HTTPException(400, detail={"error": "invalid_cursor", "message": "Cursor is invalid"})
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
-        offset = int(base64.urlsafe_b64decode(padded).decode())
+        offset = int(base64.b64decode(padded, altchars=b"-_", validate=True).decode())
     except (ValueError, UnicodeDecodeError, binascii.Error):
         raise HTTPException(400, detail={"error": "invalid_cursor", "message": "Cursor is invalid"})
-    if offset < 0:
+    if offset < 0 or offset > 2_147_483_647:
         raise HTTPException(400, detail={"error": "invalid_cursor", "message": "Cursor is invalid"})
     return offset
 
@@ -743,9 +747,9 @@ def decode_cursor(cursor: Optional[str]) -> int:
 async def get_transactions(
     start_date: Optional[date] = Query(None, description="Inclusive start date"),
     end_date: Optional[date] = Query(None, description="Inclusive end date"),
-    account_id: Optional[str] = Query(None),
-    category_id: Optional[str] = Query(None),
-    limit: int = Query(500, ge=1, le=5000),
+    account_id: Optional[str] = Query(None, min_length=1, max_length=512),
+    category_id: Optional[str] = Query(None, min_length=1, max_length=512),
+    limit: int = Query(500, ge=1, le=500),
     cursor: Optional[str] = Query(None, description="Opaque cursor returned by the previous page"),
 ):
     """Fetch transactions with optional filters."""
@@ -780,12 +784,16 @@ async def get_transactions(
                 account_ids=[account_id] if account_id else [],
                 category_ids=[category_id] if category_id else [],
             )
+            page = normalize_transactions(raw)
+            if len(page) > limit:
+                raise ValueError("Upstream transaction page exceeded the requested limit")
+            all_transactions = raw.get("allTransactions", {}) if isinstance(raw, dict) else {}
+            total = int(all_transactions.get("totalCount", len(page)))
+            if total < 0:
+                raise ValueError("Upstream transaction total was invalid")
         except Exception as e:
             raise upstream_error("transaction", e)
         provider = "live"
-        page = normalize_transactions(raw)
-        all_transactions = raw.get("allTransactions", {}) if isinstance(raw, dict) else {}
-        total = int(all_transactions.get("totalCount", len(page)))
     next_offset = offset + len(page)
     return TransactionsResponse(
         provenance=provenance(provider),
@@ -799,7 +807,9 @@ async def get_transactions(
 
 
 @app.get("/transactions/{transaction_id}", response_model=TransactionResponse)
-async def get_transaction(transaction_id: str):
+async def get_transaction(
+    transaction_id: str = PathParam(..., min_length=1, max_length=512),
+):
     """Get a single transaction's details."""
     if DEMO_MODE:
         tx = DemoProvider.get_transaction_detail(transaction_id)
@@ -848,7 +858,10 @@ async def get_transaction(transaction_id: str):
 
 
 @app.patch("/transactions/{transaction_id}/category", response_model=CategoryUpdateResponse)
-async def update_transaction_category(transaction_id: str, update: CategoryUpdate):
+async def update_transaction_category(
+    update: CategoryUpdate,
+    transaction_id: str = PathParam(..., min_length=1, max_length=512),
+):
     """Update a transaction's category in Monarch."""
     if DEMO_MODE:
         logger.info("Demo: category update for %s -> %s", transaction_id, update.categoryId)

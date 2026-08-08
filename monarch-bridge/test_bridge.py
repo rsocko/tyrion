@@ -18,6 +18,7 @@ from contract import (
     normalize_budgets,
     normalize_cashflow,
     normalize_recurring,
+    normalize_transaction,
     normalize_transactions,
 )
 import main as main_module
@@ -93,6 +94,11 @@ async def test_transactions(client):
     resp = await client.get("/transactions?limit=10")
     assert resp.status_code == 200
     data = resp.json()
+    assert set(data) == {
+        "contractVersion", "provenance", "transactions", "total", "page",
+    }
+    assert set(data["provenance"]) == {"provider", "fetchedAt"}
+    assert set(data["page"]) == {"limit", "nextCursor"}
     assert "transactions" in data
     assert "total" in data
     assert len(data["transactions"]) <= 10
@@ -110,6 +116,22 @@ async def test_transactions(client):
             "id", "date", "amount", "merchant", "category", "account",
             "isPending", "isRecurring", "notes", "tags",
         }
+        assert set(tx["merchant"]) == {"name", "logoUrl"}
+        assert set(tx["account"]) == {"id", "displayName", "mask"}
+    assert_contract(resp)
+
+
+@pytest.mark.anyio
+async def test_transactions_enforce_mission_control_page_limit(client):
+    accepted = await client.get("/transactions?limit=500")
+    rejected = await client.get("/transactions?limit=501")
+
+    assert accepted.status_code == 200
+    assert accepted.json()["page"]["limit"] == 500
+    assert_contract(accepted)
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "invalid_request"
+    assert_contract(rejected)
 
 
 @pytest.mark.anyio
@@ -164,6 +186,11 @@ async def test_transaction_cursor_and_invalid_cursor(client):
     assert invalid.status_code == 400
     assert invalid.json()["error"]["code"] == "invalid_cursor"
 
+    oversized = await client.get(f"/transactions?cursor={'A' * 129}")
+    assert oversized.status_code == 400
+    assert oversized.json()["error"]["code"] == "invalid_cursor"
+    assert_contract(oversized)
+
 
 @pytest.mark.anyio
 async def test_invalid_query_error_contract(client):
@@ -192,6 +219,22 @@ async def test_update_category(client):
     assert data["status"] == "updated"
     assert data["transactionId"] == "tx-1000"
     assert data["categoryId"] == "cat-restaurants"
+    assert set(data) == {
+        "contractVersion", "status", "transactionId", "categoryId",
+    }
+    assert_contract(resp)
+
+
+@pytest.mark.anyio
+async def test_update_category_rejects_extra_fields(client):
+    resp = await client.patch(
+        "/transactions/tx-1000/category",
+        json={"categoryId": "cat-restaurants", "unexpected": True},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "invalid_request"
+    assert_contract(resp)
 
 
 @pytest.mark.anyio
@@ -329,6 +372,23 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
     assert normalize_accounts(demo_accounts) == normalize_accounts(live_accounts)
 
 
+def test_transaction_normalizer_matches_nullable_consumer_fields():
+    transaction = normalize_transaction({
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -12.5,
+        "merchant": {"name": "Store", "logoUrl": "http://["},
+        "category": None,
+        "account": {"id": "acc-1", "displayName": "Checking", "last4": 1234},
+        "notes": None,
+    })
+
+    assert transaction.merchant.logo_url is None
+    assert transaction.category is None
+    assert transaction.account.mask == "1234"
+    assert transaction.notes is None
+
+
 def test_normalizes_real_live_recurring_shape():
     payload = {
         "recurringTransactionItems": [{
@@ -433,6 +493,39 @@ async def test_live_transactions_use_provider_pagination_and_defaults(client, mo
     assert kwargs["offset"] == 100
     assert kwargs["start_date"]
     assert kwargs["end_date"]
+
+
+@pytest.mark.anyio
+async def test_live_transactions_map_malformed_upstream_page_to_stable_error(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.get_transactions.return_value = {
+        "allTransactions": {
+            "totalCount": 1,
+            "results": [{
+                "date": "2026-08-01",
+                "amount": -10,
+                "merchant": {"name": "Store"},
+                "account": {"id": "acc-1", "displayName": "Checking"},
+            }],
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    resp = await client.get("/transactions?limit=1")
+
+    assert resp.status_code == 502
+    assert resp.json() == {
+        "contractVersion": CONTRACT_VERSION,
+        "error": {
+            "code": "upstream_error",
+            "message": "Monarch transaction request failed",
+        },
+    }
+    assert_contract(resp)
 
 
 @pytest.mark.anyio
