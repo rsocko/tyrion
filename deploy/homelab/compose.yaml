@@ -49,7 +49,6 @@ services:
 
 volumes:
   tyrion-session:
-    external: true
     name: ${TYRION_SESSION_VOLUME:-tyrion-session}
 
 networks:
