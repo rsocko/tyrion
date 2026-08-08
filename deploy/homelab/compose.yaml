@@ -1,0 +1,57 @@
+services:
+  tyrion-monarch-bridge:
+    image: registry.socko.us/tyrion:${TYRION_IMAGE_TAG:-latest}
+    container_name: tyrion-monarch-bridge
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cpus: "${TYRION_CPUS:-1.0}"
+    mem_limit: "${TYRION_MEMORY:-512m}"
+    memswap_limit: "${TYRION_MEMORY:-512m}"
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    networks:
+      - traefik
+    volumes:
+      - tyrion-session:/var/lib/tyrion
+    environment:
+      BRIDGE_HOST: 0.0.0.0
+      BRIDGE_PORT: "8100"
+      BRIDGE_ALLOWED_ORIGINS: ${BRIDGE_ALLOWED_ORIGINS:-https://mc.socko.us}
+      BRIDGE_REMOTE_TLS: "true"
+      BRIDGE_LOAD_DOTENV: "false"
+      DEFAULT_TRANSACTION_DAYS: "${DEFAULT_TRANSACTION_DAYS:-90}"
+      SESSION_FILE: /var/lib/tyrion/monarch-session.json
+      BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a Dockhand secret}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tyrion.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`)"
+      - "traefik.http.routers.tyrion.entrypoints=web"
+      - "traefik.http.routers.tyrion.middlewares=trusted-private-networks@file,https-redirect@file"
+      - "traefik.http.routers.tyrion-secure.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`)"
+      - "traefik.http.routers.tyrion-secure.entrypoints=websecure"
+      - "traefik.http.routers.tyrion-secure.tls=true"
+      - "traefik.http.routers.tyrion-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.tyrion-secure.middlewares=trusted-private-networks@file,compression@file,security-headers@file"
+      - "traefik.http.services.tyrion.loadbalancer.server.port=8100"
+      - "traefik.docker.network=traefik"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  tyrion-session:
+    external: true
+    name: ${TYRION_SESSION_VOLUME:-tyrion-session}
+
+networks:
+  traefik:
+    external: true

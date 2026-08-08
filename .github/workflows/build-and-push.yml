@@ -1,0 +1,114 @@
+name: Build and Push Image
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-and-push-tyrion
+  cancel-in-progress: false
+
+env:
+  REGISTRY_REPOSITORY: registry.socko.us/tyrion
+
+jobs:
+  build:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref_name == github.event.repository.default_branch) ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: [self-hosted, linux, docker, build, homelab, dockhand]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 1
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve immutable image tag
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_SHA="$(git rev-parse HEAD)"
+          echo "sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved image: ${{ env.REGISTRY_REPOSITORY }}:sha-$IMAGE_SHA"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Preserve existing immutable image
+        id: immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}"
+          if INSPECT_ERROR="$(docker buildx imagetools inspect "$IMAGE" 2>&1)"; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Immutable image already exists; it will not be overwritten."
+          elif printf '%s' "$INSPECT_ERROR" | grep -Eqi 'manifest unknown|not found'; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unable to verify immutable image availability." >&2
+            exit 1
+          fi
+
+      - name: Build and push image
+        if: steps.immutable.outputs.publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.REGISTRY_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY_REPOSITORY }}:buildcache,mode=max
+
+      - name: Check whether image is current main
+        id: current
+        shell: bash
+        env:
+          IMAGE_SHA: ${{ steps.image.outputs.sha }}
+        run: |
+          set -euo pipefail
+          CURRENT_MAIN="$(git ls-remote origin "refs/heads/${{ github.event.repository.default_branch }}" | cut -f1)"
+          if [ "$CURRENT_MAIN" = "$IMAGE_SHA" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "A newer main commit exists; preserving its latest tag."
+          fi
+
+      - name: Update latest tag
+        if: steps.current.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "${{ env.REGISTRY_REPOSITORY }}:main" \
+            --tag "${{ env.REGISTRY_REPOSITORY }}:latest" \
+            "${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}"
+
+      - name: Publish image summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '## Tyrion Image Build'
+            echo
+            echo "Immutable image: \`${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}\`"
+            if [ "${{ steps.current.outputs.publish }}" = "true" ]; then
+              echo
+              echo "Mutable tag updates: \`${{ env.REGISTRY_REPOSITORY }}:main\`, \`${{ env.REGISTRY_REPOSITORY }}:latest\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

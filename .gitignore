@@ -23,6 +23,7 @@ __pycache__/
 .mm/
 .monarch_session
 **/session.json
+**/monarch-session.json
 **/.session-*.tmp
 monarch-bridge/.live/
 monarch-bridge/live-artifacts/

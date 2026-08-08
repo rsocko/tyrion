@@ -306,7 +306,6 @@ class _SessionLease:
         finally:
             self.handle.close()
             self.handle = None
-            self.path.unlink(missing_ok=True)
 
 
 class SessionManager:

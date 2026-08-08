@@ -286,6 +286,7 @@ def test_second_process_cannot_load_or_delete_owned_session(tmp_path):
     assert path.exists()
 
     owner.clear()
+    assert path.with_suffix(".lock").exists()
     contender.clear()
     assert not path.exists()
 
