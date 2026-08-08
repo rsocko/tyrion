@@ -95,6 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           docker buildx imagetools create \
+            --tag "${{ env.REGISTRY_REPOSITORY }}:main" \
             --tag "${{ env.REGISTRY_REPOSITORY }}:latest" \
             "${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}"
 
@@ -108,6 +109,6 @@ jobs:
             echo "Immutable image: \`${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}\`"
             if [ "${{ steps.current.outputs.publish }}" = "true" ]; then
               echo
-              echo "Mutable tag update: \`${{ env.REGISTRY_REPOSITORY }}:latest\`"
+              echo "Mutable tag updates: \`${{ env.REGISTRY_REPOSITORY }}:main\`, \`${{ env.REGISTRY_REPOSITORY }}:latest\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

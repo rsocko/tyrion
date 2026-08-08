@@ -73,18 +73,18 @@ non-loopback clients still fail closed, but that is not a supported TLS deployme
 
 The repository publishes the bridge-only private image as
 `registry.socko.us/tyrion`. A successful `CI` run on `main` publishes an immutable
-`sha-<full-commit>` tag and moves `latest`; pull requests build the image on
-a GitHub-hosted runner but never publish it. The trusted homelab builder uses the
-same runner-level registry authentication as Mission Control and Ohm, so the
-workflow does not receive registry credentials as repository secrets.
+`sha-<full-commit>` tag and moves both `main` and `latest`; pull requests build the
+image on a GitHub-hosted runner but never publish it. The trusted homelab builder
+uses the same runner-level registry authentication as Mission Control and Ohm, so
+the workflow does not receive registry credentials as repository secrets.
 The homelab stack selects either tag with `TYRION_IMAGE_TAG`.
 
 The image runs `main.py` as UID/GID `10001`, listens on container port `8100`, and
 checks `GET /health` over loopback. It contains only the bridge runtime and runtime
 dependencies; the debug UI, tests, documentation, local environment files, and
 session material are excluded from the build context and final image.
-Production exposes the service only through its private Traefik route; do not
-publish a host port.
+Production exposes the service only through the private Traefik route at
+`https://tyrion.socko.us`; do not publish a host port.
 
 Production must mount writable persistent storage at `/var/lib/tyrion`. The bridge
 stores the opaque session at `/var/lib/tyrion/monarch-session.json` and creates its

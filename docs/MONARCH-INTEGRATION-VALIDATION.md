@@ -69,9 +69,9 @@ only the minimum structural shape with invented identifiers and values.
 
 The production image is `registry.socko.us/tyrion`. CI builds it without
 credentials for pull requests; a successful `main` CI run publishes
-`sha-<full-commit>` and `latest` from the trusted homelab builder. Existing SHA
-tags are never overwritten, and `latest` promotion is serialized and rechecks the
-current `main` revision.
+`sha-<full-commit>`, `main`, and `latest` from the trusted homelab builder.
+Existing SHA tags are never overwritten, and moving-tag promotion is serialized
+and rechecks the current `main` revision.
 
 The container contract is port `8100`, public `GET /health`, non-root UID/GID
 `10001`, and a writable external mount at `/var/lib/tyrion` with
@@ -81,8 +81,9 @@ artifact, log, or repository. Only one bridge process may mount and own a given
 session directory at a time. The homelab stack selects the image with
 `TYRION_IMAGE_TAG`, uses `BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, sets
 `BRIDGE_LOAD_DOTENV=false` and `DEFAULT_TRANSACTION_DAYS=90`, and exposes no host
-port; private Traefik routing is the only production ingress. The image's default
-command starts `main.py`; the stack does not override it.
+port; private Traefik routing at `https://tyrion.socko.us` is the only production
+ingress. The image's default command starts `main.py`; the stack does not
+override it.
 
 For a controlled homelab smoke test, inject `BRIDGE_API_TOKEN`,
 `BRIDGE_REMOTE_TLS=true`, and the intended HTTPS `BRIDGE_ALLOWED_ORIGINS` at

@@ -85,4 +85,5 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
     assert "registry.socko.us/tyrion" in publisher
     assert "tag=sha-$IMAGE_SHA" in publisher
     assert "Immutable image already exists; it will not be overwritten." in publisher
+    assert "${{ env.REGISTRY_REPOSITORY }}:main" in publisher
     assert "${{ env.REGISTRY_REPOSITORY }}:latest" in publisher
