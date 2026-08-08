@@ -75,13 +75,14 @@ current `main` revision.
 
 The container contract is port `8100`, public `GET /health`, non-root UID/GID
 `10001`, and a writable external mount at `/var/lib/tyrion` with
-`SESSION_FILE=/var/lib/tyrion/session.json`. The session file and adjacent lease
-must survive container replacement and must never enter an image layer, CI
+`SESSION_FILE=/var/lib/tyrion/monarch-session.json`. The session file and adjacent
+lease must survive container replacement and must never enter an image layer, CI
 artifact, log, or repository. Only one bridge process may mount and own a given
 session directory at a time. The homelab stack selects the image with
-`TYRION_IMAGE_TAG`, sets `BRIDGE_LOAD_DOTENV=false` and
-`DEFAULT_TRANSACTION_DAYS=90`, and exposes no host port; private Traefik routing is
-the only production ingress.
+`TYRION_IMAGE_TAG`, uses `BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, sets
+`BRIDGE_LOAD_DOTENV=false` and `DEFAULT_TRANSACTION_DAYS=90`, and exposes no host
+port; private Traefik routing is the only production ingress. The image's default
+command starts `main.py`; the stack does not override it.
 
 For a controlled homelab smoke test, inject `BRIDGE_API_TOKEN`,
 `BRIDGE_REMOTE_TLS=true`, and the intended HTTPS `BRIDGE_ALLOWED_ORIGINS` at

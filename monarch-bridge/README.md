@@ -87,26 +87,29 @@ Production exposes the service only through its private Traefik route; do not
 publish a host port.
 
 Production must mount writable persistent storage at `/var/lib/tyrion`. The bridge
-stores the opaque session at `/var/lib/tyrion/session.json` and creates its
+stores the opaque session at `/var/lib/tyrion/monarch-session.json` and creates its
 cross-process lease alongside that file. Ensure the mounted directory is owned by
 UID/GID `10001` and is accessible only to the bridge operator. Do not copy, back up,
 or inspect the session through CI or deployment automation.
 
 The image sets `BRIDGE_HOST=0.0.0.0`, so startup deliberately fails unless runtime
-configuration injects all of the following:
+configuration injects the service token and TLS acknowledgement. The complete
+production setting contract is:
 
 | Variable | Production value |
 | --- | --- |
 | `BRIDGE_API_TOKEN` | Random server-only value with at least 32 characters |
 | `BRIDGE_REMOTE_TLS` | `true`, acknowledging trusted reverse-proxy TLS termination |
-| `BRIDGE_ALLOWED_ORIGINS` | Comma-separated intended HTTPS browser origins only |
+| `BRIDGE_ALLOWED_ORIGINS` | `https://mc.socko.us` for the private Mission Control route |
 
 `BRIDGE_PORT` and `SESSION_FILE` default to `8100` and
-`/var/lib/tyrion/session.json`; keep those values aligned with the image health
-check and volume mount. The image also sets `BRIDGE_LOAD_DOTENV=false` and
-`DEFAULT_TRANSACTION_DAYS=90`; both are non-secret and may be repeated explicitly
-by the stack. Runtime secrets must be injected by the deployment platform, never
-baked into the image or placed in repository environment files.
+`/var/lib/tyrion/monarch-session.json`; keep those values aligned with the image
+health check and volume mount. The image also defaults
+`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, sets
+`BRIDGE_LOAD_DOTENV=false`, and sets `DEFAULT_TRANSACTION_DAYS=90`; these are
+non-secret and may be repeated explicitly by the stack. Runtime secrets must be
+injected by the deployment platform, never baked into the image or placed in
+repository environment files.
 
 ## Session lifecycle
 
