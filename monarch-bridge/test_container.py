@@ -180,3 +180,19 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
         "moving-tag promotion is serialized"
         in normalized_validation
     )
+    assert (
+        "private Traefik route at `https://tyrion.socko.us`"
+        in normalized_readme
+    )
+    assert (
+        "`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`"
+        in normalized_readme
+    )
+    assert (
+        "`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`"
+        in normalized_validation
+    )
+    assert (
+        "`https://tyrion.socko.us` is the only production ingress"
+        in normalized_validation
+    )
