@@ -7,7 +7,6 @@
 **/.mm
 **/.monarch_session
 **/session.json
-**/monarch-session.json
 **/.session-*.tmp
 **/*.har
 **/*.pickle

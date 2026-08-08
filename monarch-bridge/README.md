@@ -87,7 +87,7 @@ Production exposes the service only through the private Traefik route at
 `https://tyrion.socko.us`; do not publish a host port.
 
 Production must mount writable persistent storage at `/var/lib/tyrion`. The bridge
-stores the opaque session at `/var/lib/tyrion/monarch-session.json` and creates its
+stores the opaque session at `/var/lib/tyrion/session.json` and creates its
 cross-process lease alongside that file. Ensure the mounted directory is owned by
 UID/GID `10001` and is accessible only to the bridge operator. Do not copy, back up,
 or inspect the session through CI or deployment automation.
@@ -104,8 +104,8 @@ production setting contract is:
 | `BRIDGE_ALLOWED_ORIGINS` | `https://mc.socko.us` for the private Mission Control route |
 
 `BRIDGE_PORT` and `SESSION_FILE` default to `8100` and
-`/var/lib/tyrion/monarch-session.json`; keep those values aligned with the image
-health check and volume mount. The image also defaults
+`/var/lib/tyrion/session.json`; keep those values aligned with the image health
+check and volume mount. The image also defaults
 `BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, `BRIDGE_REMOTE_TLS=true`,
 `BRIDGE_LOAD_DOTENV=false`, and `DEFAULT_TRANSACTION_DAYS=90`; these are
 non-secret and may be repeated explicitly by the stack. Runtime secrets must
