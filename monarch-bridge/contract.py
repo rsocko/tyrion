@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timezone
 from typing import Any, Literal, Mapping, Optional
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,6 +20,7 @@ class ApiModel(BaseModel):
         populate_by_name=True,
         serialize_by_alias=True,
         extra="forbid",
+        allow_inf_nan=False,
     )
 
 
@@ -228,6 +230,30 @@ def _money(value: Any) -> float:
     return round(float(value or 0), 2)
 
 
+def _identifier(value: Any) -> str:
+    identifier = str(value).strip() if value is not None else ""
+    if not identifier:
+        raise ValueError("Required upstream identifier is missing")
+    return identifier
+
+
+def _optional_text(value: Any) -> Optional[str]:
+    if value is None or isinstance(value, (Mapping, list, tuple, set)):
+        return None
+    return str(value)
+
+
+def _optional_http_url(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    candidate = str(value).strip()
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        return None
+    return candidate if parsed.scheme in ("http", "https") and parsed.netloc else None
+
+
 def _date(value: Any) -> date:
     if isinstance(value, date):
         return value
@@ -246,15 +272,15 @@ def normalize_category_ref(raw: Any) -> Optional[CategoryRef]:
     identifier = _pick(value, "id")
     if not identifier:
         return None
-    return CategoryRef(id=str(identifier), name=_text(_pick(value, "name"), "Uncategorized"))
+    return CategoryRef(id=_identifier(identifier), name=_text(_pick(value, "name"), "Uncategorized"))
 
 
 def normalize_account_ref(raw: Any) -> AccountRef:
     value = _mapping(raw)
     return AccountRef(
-        id=str(_pick(value, "id", default="unknown")),
+        id=_identifier(_pick(value, "id")),
         display_name=_text(_pick(value, "displayName", "display_name", "name"), "Unknown account"),
-        mask=_pick(value, "mask", "last4"),
+        mask=_optional_text(_pick(value, "mask", "last4")),
     )
 
 
@@ -263,18 +289,18 @@ def normalize_transaction(raw: Any) -> Transaction:
     merchant = _mapping(_pick(value, "merchant", default={}))
     tags = _pick(value, "tags", default=[])
     return Transaction(
-        id=str(_pick(value, "id")),
+        id=_identifier(_pick(value, "id")),
         date=_date(_pick(value, "date", "postedDate", "createdAt")),
         amount=_money(_pick(value, "amount")),
         merchant=Merchant(
             name=_text(_pick(merchant, "name", default=_pick(value, "merchantName")), "Unknown merchant"),
-            logo_url=_pick(merchant, "logoUrl", "logo_url"),
+            logo_url=_optional_http_url(_pick(merchant, "logoUrl", "logo_url")),
         ),
         category=normalize_category_ref(_pick(value, "category", default={})),
         account=normalize_account_ref(_pick(value, "account", default={})),
         is_pending=bool(_pick(value, "isPending", "pending", default=False)),
         is_recurring=bool(_pick(value, "isRecurring", "recurring", default=False)),
-        notes=_pick(value, "notes"),
+        notes=_optional_text(_pick(value, "notes")),
         tags=[_text(_pick(tag, "name", default=tag)) for tag in tags] if isinstance(tags, list) else [],
     )
 

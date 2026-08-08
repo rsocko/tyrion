@@ -49,6 +49,28 @@ bridge-owned session. They do not create independent session stores. Browser-coo
 setup is the recommended UI path because Monarch may reject programmatic password
 login even when account MFA is disabled; email/password remains a best-effort fallback.
 
+### Mission Control connection
+
+Mission Control must call the bridge's base origin directly. In the homelab stack,
+join the Mission Control server/worker to the external `tyrion-backend` network and
+configure:
+
+```dotenv
+FINANCE_MANAGER_URL=http://tyrion-monarch-bridge:8100
+FINANCE_MANAGER_API_TOKEN=
+```
+
+The Mission Control token must equal Tyrion's server-only `BRIDGE_API_TOKEN`. When
+the connector persists a different bridge hostname instead of using
+`FINANCE_MANAGER_URL`, also allowlist that hostname and token-bearing origin with
+Mission Control's `FINANCE_MANAGER_ALLOWED_HOSTS` and
+`FINANCE_MANAGER_TOKEN_ORIGINS`.
+
+`https://tyrion.socko.us` is the operations UI origin, not the bridge base origin.
+Its `/health` route therefore returns `404`; `/api/bridge/health` is the bounded UI
+proxy health check, and transaction reads or mutations are intentionally not exposed
+through that proxy.
+
 ## Authenticated homelab deployment
 
 Loopback is the default. A non-loopback bind fails closed unless:

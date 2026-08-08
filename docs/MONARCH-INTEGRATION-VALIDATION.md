@@ -29,7 +29,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Expiry and recovery | Expired cleanup and degraded retention | Revoke controlled session, verify `expired`, then set up again |
 | Logout | In-memory and persisted state removal | Completed 2026-08-08; state and external session removal verified |
 | Health/auth state | All four auth states and public reachability | `test_live_auth_health` |
-| Transactions/filter/detail | Pagination, filters, detail, empty/error shapes | Read contract completed 2026-08-08 |
+| Transactions/filter/detail | Mission Control strict DTO parity, 1-500 page bound, bounded opaque cursor, filters, detail, empty/error shapes, malformed upstream rejection | Read contract completed 2026-08-08 |
 | Accounts/categories/recurring/cashflow/budgets | Normalized synthetic current-upstream structures | Completed 2026-08-08 |
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
@@ -109,6 +109,13 @@ The UI container contract is port `3000`, `GET /api/health`, non-root UID/GID
 production ingress at `https://tyrion.socko.us`. Its proxy permits only health,
 auth setup/status/logout, and sync limited to 90 days; the rendered UI fixes sync
 to 30 days. Broad finance routes return `404`.
+
+Mission Control does not use the UI ingress as a bridge origin. Its server and sync
+worker join `tyrion-backend`, call
+`http://tyrion-monarch-bridge:8100`, and send the shared service token as a bearer
+credential. The public UI origin intentionally returns `404` for `/health`; its
+allowlisted `/api/bridge/health` route only confirms private bridge reachability for
+operations.
 
 For a controlled homelab smoke test, inject the same `BRIDGE_API_TOKEN` into both
 containers and retain `BRIDGE_REMOTE_TLS=true` and

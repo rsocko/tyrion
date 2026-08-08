@@ -54,7 +54,7 @@ Data responses contain:
 
 ### Pagination
 
-`GET /transactions` accepts `limit` (1-5000, default 500) and an opaque `cursor`. Its response contains:
+`GET /transactions` accepts `limit` (1-500, default 500) and an opaque `cursor`. Its response contains:
 
 ```json
 {
@@ -66,6 +66,14 @@ Data responses contain:
 ```
 
 Pass `nextCursor` unchanged as the next request's `cursor`. `null` means there is no next page. Cursors have no client-visible structure and must not be persisted indefinitely.
+
+### Service authentication
+
+Non-loopback deployments require `Authorization: Bearer <service-token>` on
+transaction reads and mutations. The same token is configured as
+`BRIDGE_API_TOKEN` on Tyrion and as Mission Control's server-only finance connector
+credential. Never expose it to browser code or place it in a repository environment
+file.
 
 ### Errors
 
@@ -158,7 +166,9 @@ Monarch credentials, cookies, and session values are never returned.
 
 `GET /transactions`
 
-Query parameters: `start_date`, `end_date`, `account_id`, `category_id`, `limit`, and `cursor`.
+Mission Control uses inclusive `start_date` and `end_date`, `limit` from 1 through
+500, and the opaque `cursor` returned by the previous page. The bridge also supports
+the optional `account_id` and `category_id` filters.
 
 ```json
 {
