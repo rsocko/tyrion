@@ -225,6 +225,27 @@ async def test_expired_session_is_removed(live_client, monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_request_expiry_remains_visible_until_reauthentication(
+    live_client,
+    monkeypatch,
+):
+    provider = saved_client()
+    main_module.session_manager.establish(provider)
+    provider.get_accounts.side_effect = Exception("401 Unauthorized")
+    monkeypatch.setattr(main_module, "create_monarch_client", lambda: provider)
+
+    failed_request = await live_client.get("/accounts")
+    status = await live_client.get("/auth/status")
+
+    assert failed_request.status_code == 401
+    assert failed_request.json()["error"]["code"] == "session_expired"
+    assert status.status_code == 200
+    assert status.json()["authState"] == "expired"
+    assert status.json()["authenticated"] is False
+    assert not main_module.session_manager.path.exists()
+
+
+@pytest.mark.anyio
 async def test_transient_failure_marks_session_degraded_without_deleting_it(
     live_client,
     monkeypatch,
@@ -303,7 +324,7 @@ async def test_unreadable_session_is_removed_before_lease_release(
 
     status = await live_client.get("/auth/status")
     assert status.status_code == 200
-    assert status.json()["authState"] == "unauthenticated"
+    assert status.json()["authState"] == "expired"
 
     replacement_owner = SessionManager(path)
     replacement_owner.establish(saved_client())

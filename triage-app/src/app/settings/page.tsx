@@ -14,7 +14,7 @@ export default function SettingsPage() {
   // Login form state
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
-  const [loginMethod, setLoginMethod] = useState<"password" | "cookies">("password");
+  const [loginMethod, setLoginMethod] = useState<"password" | "cookies">("cookies");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
@@ -87,8 +87,11 @@ export default function SettingsPage() {
     if (res.data) {
       setLastSync(new Date().toLocaleString());
       showToast(`Synced ${res.data.transactionsFetched} transactions`);
+    } else if (res.status === 401) {
+      await checkStatus();
+      showToast("Monarch session expired - reconnect with fresh browser cookies");
     } else {
-      showToast("Sync failed — check connection");
+      showToast("Sync failed - check connection");
     }
     setSyncing(false);
   };
@@ -151,7 +154,7 @@ export default function SettingsPage() {
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
           <h2 className="text-sm font-semibold mb-4">Connect to Monarch Money</h2>
           <div className="flex gap-2 mb-4">
-            {(["password", "cookies"] as const).map((method) => (
+            {(["cookies", "password"] as const).map((method) => (
               <button
                 key={method}
                 type="button"
@@ -160,13 +163,19 @@ export default function SettingsPage() {
                   loginMethod === method ? "border-success text-success" : "border-card-2 text-muted"
                 }`}
               >
-                {method === "password" ? "Email and password" : "Browser cookies"}
+                {method === "password"
+                  ? "Email and password (best effort)"
+                  : "Browser cookies (recommended)"}
               </button>
             ))}
           </div>
           <form onSubmit={handleLogin} className="space-y-3" autoComplete="off">
             {loginMethod === "password" ? (
               <>
+                <p className="text-xs text-warning">
+                  Monarch may block programmatic password login even when account MFA
+                  is disabled. Use browser cookies if Monarch rejects this method.
+                </p>
                 <input
                   type="email"
                   value={loginEmail}

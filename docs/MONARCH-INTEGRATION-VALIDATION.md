@@ -4,7 +4,11 @@
 
 - Supported client: `monarchmoneycommunity==1.5.2`
 - Deterministic validation: **2026-08-08**
-- Controlled live validation: **pending an operator-run test account session**
+- Controlled live validation: **2026-08-08** for browser-cookie setup, auth status,
+  read/sync contracts, restart reuse, and logout cleanup
+- Password live validation: **blocked by an ambiguous upstream `403`** on an account
+  with MFA disabled; retained as a best-effort fallback
+- Live category mutation: **not run**
 - Repository policy: no credentials, cookies, session material, private financial
   records, raw upstream payloads, or machine-specific session paths
 
@@ -16,16 +20,16 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 
 | Contract | Deterministic evidence | Opt-in live evidence |
 | --- | --- | --- |
-| Password login | Success, invalid credentials, MFA challenge, CAPTCHA, timeout, rate limit | `TYRION_LIVE_AUTH_METHOD=password` |
+| Password login | Success, invalid credentials, MFA challenge, CAPTCHA, timeout, rate limit | Attempted 2026-08-08; blocked by ambiguous upstream `403` |
 | MFA completion | Success and invalid/expired code | Password live run with process-only MFA code |
-| Cookie login | Success shape, invalid input, sanitized upstream failure | `TYRION_LIVE_AUTH_METHOD=cookies` |
-| Saved-session restart | Load, verification, and connected state | Restart bridge, then run live auth-health check |
+| Cookie login | Success shape, invalid input, sanitized upstream failure | Completed 2026-08-08 through the Settings UI and server proxy |
+| Saved-session restart | Load, verification, and connected state | Completed 2026-08-08 |
 | Expiry and recovery | Expired cleanup and degraded retention | Revoke controlled session, verify `expired`, then set up again |
-| Logout | In-memory and persisted state removal | Auth-flow live test verifies `unauthenticated` |
+| Logout | In-memory and persisted state removal | Completed 2026-08-08; state and external session removal verified |
 | Health/auth state | All four auth states and public reachability | `test_live_auth_health` |
-| Transactions/filter/detail | Pagination, filters, detail, empty/error shapes | `test_live_read_and_sync_contracts` |
-| Accounts/categories/recurring/cashflow/budgets | Normalized synthetic current-upstream structures | `test_live_read_and_sync_contracts` |
-| Sync | Pagination and auth-error preservation | Seven-day controlled sync |
+| Transactions/filter/detail | Pagination, filters, detail, empty/error shapes | Read contract completed 2026-08-08 |
+| Accounts/categories/recurring/cashflow/budgets | Normalized synthetic current-upstream structures | Completed 2026-08-08 |
+| Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Confirmed test mutation, read-back, and restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
