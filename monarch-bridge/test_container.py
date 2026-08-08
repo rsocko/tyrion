@@ -128,7 +128,7 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
 
     assert "runs-on: ubuntu-latest" in ci
     assert "docker build --tag tyrion-bridge:ci ." in ci
-    assert "docker build --tag tyrion-ui:ci triage-app" in ci
+    assert "docker build --file triage-app/Dockerfile --tag tyrion-ui:ci ." in ci
     assert "npm run build" in ci
     assert "npm test" in ci
     assert "push: true" not in ci
@@ -145,7 +145,9 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
     assert publisher.count("repository: registry.socko.us/") == 2
     assert "repository: registry.socko.us/tyrion-bridge" in publisher
     assert "repository: registry.socko.us/tyrion-ui" in publisher
-    assert "context: triage-app" in publisher
+    assert publisher.count("context: .") == 2
+    assert "file: Dockerfile" in publisher
+    assert "file: triage-app/Dockerfile" in publisher
     assert "tag=sha-$IMAGE_SHA" in publisher
     assert "Immutable image already exists; it will not be overwritten." in publisher
     logical_lines = []
@@ -247,4 +249,11 @@ def test_homelab_contract_routes_only_ui_through_traefik():
     assert compose.count("user:") == 0
     assert "TYRION_BRIDGE_IMAGE_TAG=latest" in environment
     assert "TYRION_UI_IMAGE_TAG=latest" in environment
-    assert environment.rstrip().endswith("BRIDGE_API_TOKEN=")
+    environment_lines = environment.splitlines()
+    for secret in (
+        "BRIDGE_API_TOKEN",
+        "TYRION_POLICY_AUTH_SECRET",
+        "TYRION_INSTRUMENT_FINGERPRINT_KEY",
+        "TYRION_REATTRIBUTION_TOKEN",
+    ):
+        assert f"{secret}=" in environment_lines
