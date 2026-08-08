@@ -5,10 +5,12 @@
 - Supported client: `monarchmoneycommunity==1.5.2`
 - Deterministic validation: **2026-08-08**
 - Controlled live validation: **2026-08-08** for browser-cookie setup, auth status,
-  read/sync contracts, restart reuse, and logout cleanup
+  every supported read/sync contract, restart reuse, logout cleanup, and reversible
+  category write-back
 - Password live validation: **blocked by an ambiguous upstream `403`** on an account
   with MFA disabled; retained as a best-effort fallback
-- Live category mutation: **not run**
+- Live category mutation: **completed 2026-08-08** with explicit confirmation,
+  read-back verification, and restoration verification
 - Repository policy: no credentials, cookies, session material, private financial
   records, raw upstream payloads, or machine-specific session paths
 
@@ -30,7 +32,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Transactions/filter/detail | Pagination, filters, detail, empty/error shapes | Read contract completed 2026-08-08 |
 | Accounts/categories/recurring/cashflow/budgets | Normalized synthetic current-upstream structures | Completed 2026-08-08 |
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
-| Category write-back | Rejected writes are never success-shaped | Confirmed test mutation, read-back, and restoration |
+| Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
