@@ -112,12 +112,6 @@ non-secret and may be repeated explicitly by the stack. Runtime secrets must
 be injected by the deployment platform, never baked into the image or placed
 in repository environment files.
 
-Safe parity copies of the current homelab Compose contract and blank environment
-example live in `deploy/homelab/`. They are references for review and local
-validation, not image inputs. `rsocko/homelab-config` remains the deployment
-authority. Application deployment is handled by Dockhand, so Tyrion intentionally
-does not include an application `deploy.sh`.
-
 ## Session lifecycle
 
 | State | Meaning | Operator action |
