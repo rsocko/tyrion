@@ -1,5 +1,6 @@
 """Deterministic policy checks for the production container contract."""
 
+import re
 from pathlib import Path
 
 
@@ -28,10 +29,17 @@ def test_image_contains_only_runtime_bridge_dependencies():
 
 def test_image_runs_non_root_with_external_session_storage():
     dockerfile = read_repository_file("Dockerfile")
+    docker_env = dockerfile.replace("\\\n", " ")
+    env_assignments = dict(
+        re.findall(r"\b([A-Z][A-Z0-9_]*)=([^\s]+)", docker_env)
+    )
 
     assert "USER tyrion" in dockerfile
     assert "TYRION_UID=10001" in dockerfile
-    assert "SESSION_FILE=/var/lib/tyrion/monarch-session.json" in dockerfile
+    assert (
+        env_assignments["SESSION_FILE"].strip("\"'")
+        == "/var/lib/tyrion/monarch-session.json"
+    )
     assert 'VOLUME ["/var/lib/tyrion"]' in dockerfile
     assert "BRIDGE_HOST=0.0.0.0" in dockerfile
     assert "BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us" in dockerfile
@@ -85,5 +93,8 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
     assert "registry.socko.us/tyrion" in publisher
     assert "tag=sha-$IMAGE_SHA" in publisher
     assert "Immutable image already exists; it will not be overwritten." in publisher
-    assert "${{ env.REGISTRY_REPOSITORY }}:main" in publisher
-    assert "${{ env.REGISTRY_REPOSITORY }}:latest" in publisher
+    moving_tags = re.findall(
+        r'--tag "\$\{\{ env\.REGISTRY_REPOSITORY \}\}:([^"]+)"',
+        publisher,
+    )
+    assert moving_tags == ["main", "latest"]
