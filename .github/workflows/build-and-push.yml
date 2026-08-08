@@ -1,4 +1,4 @@
-name: Build and Push Image
+name: Build and Push Images
 
 on:
   workflow_run:
@@ -14,9 +14,6 @@ concurrency:
   group: build-and-push-tyrion
   cancel-in-progress: false
 
-env:
-  REGISTRY_REPOSITORY: registry.socko.us/tyrion
-
 jobs:
   build:
     if: >-
@@ -27,6 +24,16 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: [self-hosted, linux, docker, build, homelab, dockhand]
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: bridge
+            context: .
+            repository: registry.socko.us/tyrion-bridge
+          - component: operations-ui
+            context: triage-app
+            repository: registry.socko.us/tyrion-ui
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -43,7 +50,7 @@ jobs:
           IMAGE_SHA="$(git rev-parse HEAD)"
           echo "sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
           echo "tag=sha-$IMAGE_SHA" >> "$GITHUB_OUTPUT"
-          echo "Resolved image: ${{ env.REGISTRY_REPOSITORY }}:sha-$IMAGE_SHA"
+          echo "Resolved image: ${{ matrix.repository }}:sha-$IMAGE_SHA"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -53,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          IMAGE="${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}"
+          IMAGE="${{ matrix.repository }}:${{ steps.image.outputs.tag }}"
           if INSPECT_ERROR="$(docker buildx imagetools inspect "$IMAGE" 2>&1)"; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "Immutable image already exists; it will not be overwritten."
@@ -68,47 +75,82 @@ jobs:
         if: steps.immutable.outputs.publish == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           push: true
-          tags: ${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}
-          cache-from: type=registry,ref=${{ env.REGISTRY_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY_REPOSITORY }}:buildcache,mode=max
+          tags: ${{ matrix.repository }}:${{ steps.image.outputs.tag }}
+          cache-from: type=registry,ref=${{ matrix.repository }}:buildcache
+          cache-to: type=registry,ref=${{ matrix.repository }}:buildcache,mode=max
 
-      - name: Check whether image is current main
+      - name: Publish immutable image summary
+        shell: bash
+        run: |
+          {
+            echo "## Tyrion ${{ matrix.component }} image"
+            echo
+            echo "Immutable image: \`${{ matrix.repository }}:${{ steps.image.outputs.tag }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  promote:
+    needs: build
+    runs-on: [self-hosted, linux, docker, build, homelab, dockhand]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 1
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Check whether images are current main
         id: current
         shell: bash
-        env:
-          IMAGE_SHA: ${{ steps.image.outputs.sha }}
         run: |
           set -euo pipefail
+          IMAGE_SHA="$(git rev-parse HEAD)"
+          echo "sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
           CURRENT_MAIN="$(git ls-remote origin "refs/heads/${{ github.event.repository.default_branch }}" | cut -f1)"
           if [ "$CURRENT_MAIN" = "$IMAGE_SHA" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "A newer main commit exists; preserving its latest tag."
+            echo "A newer main commit exists; preserving its moving tags."
           fi
 
-      - name: Update latest tag
+      - name: Verify both immutable images
+        if: steps.current.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect \
+            "registry.socko.us/tyrion-bridge:sha-${{ steps.current.outputs.sha }}" >/dev/null
+          docker buildx imagetools inspect \
+            "registry.socko.us/tyrion-ui:sha-${{ steps.current.outputs.sha }}" >/dev/null
+
+      - name: Update both moving tag sets
         if: steps.current.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
           docker buildx imagetools create \
-            --tag "${{ env.REGISTRY_REPOSITORY }}:main" \
-            --tag "${{ env.REGISTRY_REPOSITORY }}:latest" \
-            "${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}"
+            --tag "registry.socko.us/tyrion-bridge:main" \
+            --tag "registry.socko.us/tyrion-bridge:latest" \
+            "registry.socko.us/tyrion-bridge:sha-${{ steps.current.outputs.sha }}"
+          docker buildx imagetools create \
+            --tag "registry.socko.us/tyrion-ui:main" \
+            --tag "registry.socko.us/tyrion-ui:latest" \
+            "registry.socko.us/tyrion-ui:sha-${{ steps.current.outputs.sha }}"
 
-      - name: Publish image summary
+      - name: Publish moving tag summary
         shell: bash
         run: |
           set -euo pipefail
           {
-            echo '## Tyrion Image Build'
+            echo "## Tyrion moving tags"
             echo
-            echo "Immutable image: \`${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}\`"
             if [ "${{ steps.current.outputs.publish }}" = "true" ]; then
-              echo
-              echo "Mutable tag updates: \`${{ env.REGISTRY_REPOSITORY }}:main\`, \`${{ env.REGISTRY_REPOSITORY }}:latest\`"
+              echo "Updated bridge and UI \`main\` and \`latest\` tags from the same commit."
+            else
+              echo "Skipped moving tags because a newer main commit exists."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

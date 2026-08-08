@@ -1,13 +1,13 @@
 services:
   tyrion-monarch-bridge:
-    image: registry.socko.us/tyrion:${TYRION_IMAGE_TAG:-latest}
+    image: registry.socko.us/tyrion-bridge:${TYRION_BRIDGE_IMAGE_TAG:-latest}
     container_name: tyrion-monarch-bridge
     restart: unless-stopped
     init: true
     read_only: true
-    cpus: "${TYRION_CPUS:-1.0}"
-    mem_limit: "${TYRION_MEMORY:-512m}"
-    memswap_limit: "${TYRION_MEMORY:-512m}"
+    cpus: "${TYRION_BRIDGE_CPUS:-1.0}"
+    mem_limit: "${TYRION_BRIDGE_MEMORY:-512m}"
+    memswap_limit: "${TYRION_BRIDGE_MEMORY:-512m}"
     pids_limit: 256
     security_opt:
       - no-new-privileges:true
@@ -16,7 +16,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
     networks:
-      - traefik
+      - tyrion-backend
     volumes:
       - tyrion-session:/var/lib/tyrion
     environment:
@@ -28,6 +28,40 @@ services:
       DEFAULT_TRANSACTION_DAYS: "${DEFAULT_TRANSACTION_DAYS:-90}"
       SESSION_FILE: /var/lib/tyrion/monarch-session.json
       BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a Dockhand secret}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  tyrion-operations-ui:
+    image: registry.socko.us/tyrion-ui:${TYRION_UI_IMAGE_TAG:-latest}
+    container_name: tyrion-operations-ui
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cpus: "${TYRION_UI_CPUS:-0.5}"
+    mem_limit: "${TYRION_UI_MEMORY:-256m}"
+    memswap_limit: "${TYRION_UI_MEMORY:-256m}"
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+      - /app/.next/cache:rw,noexec,nosuid,nodev,size=32m
+    depends_on:
+      tyrion-monarch-bridge:
+        condition: service_healthy
+    networks:
+      - tyrion-backend
+      - traefik
+    environment:
+      BRIDGE_URL: http://tyrion-monarch-bridge:8100
+      BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a Dockhand secret}
+      NEXT_TELEMETRY_DISABLED: "1"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.tyrion.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`)"
@@ -38,10 +72,10 @@ services:
       - "traefik.http.routers.tyrion-secure.tls=true"
       - "traefik.http.routers.tyrion-secure.tls.certresolver=letsencrypt"
       - "traefik.http.routers.tyrion-secure.middlewares=trusted-private-networks@file,compression@file,security-headers@file"
-      - "traefik.http.services.tyrion.loadbalancer.server.port=8100"
+      - "traefik.http.services.tyrion.loadbalancer.server.port=3000"
       - "traefik.docker.network=traefik"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=5)"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -52,5 +86,7 @@ volumes:
     name: ${TYRION_SESSION_VOLUME:-tyrion-session}
 
 networks:
+  tyrion-backend:
+    name: ${TYRION_BACKEND_NETWORK:-tyrion-backend}
   traefik:
     external: true

@@ -1,85 +1,186 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  evaluateBridgeRequest,
+  resolveBridgeConfiguration,
+} from "@/lib/bridge-proxy-policy.mjs";
 
-const BRIDGE_URL = process.env.BRIDGE_URL || "http://localhost:8100";
-const BRIDGE_API_TOKEN = process.env.BRIDGE_API_TOKEN;
 const BRIDGE_TIMEOUT_MS = 30_000;
+const MAX_REQUEST_BODY_BYTES = 16_384;
 
-async function proxyRequest(request: NextRequest, params: { path: string[] }) {
-  const path = params.path.map(encodeURIComponent).join("/");
-  const url = new URL(`${BRIDGE_URL}/${path}`);
+type RouteContext = { params: { path: string[] } };
 
-  // Forward query params
-  request.nextUrl.searchParams.forEach((value, key) => {
-    url.searchParams.set(key, value);
-  });
+function jsonError(status: number, code: string, message: string) {
+  return NextResponse.json(
+    { error: { code, message } },
+    { status, headers: { "Cache-Control": "no-store" } }
+  );
+}
 
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-  };
-  if (BRIDGE_API_TOKEN) {
-    headers.Authorization = `Bearer ${BRIDGE_API_TOKEN}`;
+function requestOrigin(request: NextRequest) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host");
+  const protocol = forwardedProtocol || request.nextUrl.protocol.replace(":", "");
+  return host ? `${protocol}://${host}` : request.nextUrl.origin;
+}
+
+function validatePostOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (!origin || origin !== requestOrigin(request)) {
+    return false;
+  }
+  return !fetchSite || fetchSite === "same-origin";
+}
+
+async function readBoundedBody(request: NextRequest) {
+  if (!request.body) {
+    return { body: "" };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.byteLength;
+    if (byteLength > MAX_REQUEST_BODY_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      return { tooLarge: true };
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { body: new TextDecoder().decode(body) };
+}
+
+async function proxyRequest(request: NextRequest, context: RouteContext) {
+  const policy = evaluateBridgeRequest(
+    request.method,
+    context.params.path,
+    request.nextUrl.searchParams
+  );
+  if (!policy.allowed) {
+    return jsonError(policy.status, policy.error.code, policy.error.message);
+  }
+
+  const configuration = resolveBridgeConfiguration(
+    process.env.BRIDGE_URL,
+    process.env.BRIDGE_API_TOKEN,
+    policy.requiresToken
+  );
+  if (!configuration.configured) {
+    return jsonError(503, "bridge_proxy_misconfigured", "Bridge proxy is not configured");
+  }
+
+  if (request.method === "POST" && !validatePostOrigin(request)) {
+    return jsonError(403, "cross_site_request_rejected", "Cross-site request rejected");
+  }
+
+  const contentLength = request.headers.get("content-length");
+  if (contentLength) {
+    const parsedLength = Number(contentLength);
+    if (!Number.isInteger(parsedLength) || parsedLength < 0) {
+      return jsonError(400, "invalid_request", "Content-Length is invalid");
+    }
+    if (parsedLength > MAX_REQUEST_BODY_BYTES) {
+      return jsonError(413, "payload_too_large", "Request payload is too large");
+    }
+  }
+
+  const headers = new Headers({ Accept: "application/json" });
+  if (configuration.token) {
+    headers.set("Authorization", `Bearer ${configuration.token}`);
+  }
+
   const fetchOptions: RequestInit = {
     method: request.method,
     headers,
     cache: "no-store",
-    signal: controller.signal,
   };
+  if (request.method === "POST") {
+    const expectsJsonBody = policy.upstreamPath.startsWith("/auth/login");
+    const contentType = request.headers
+      .get("content-type")
+      ?.split(";")[0]
+      ?.trim()
+      .toLowerCase();
+    if (expectsJsonBody && contentType !== "application/json") {
+      return jsonError(415, "unsupported_media_type", "Authentication requires application/json");
+    }
 
-  if (request.method !== "GET" && request.method !== "HEAD") {
+    let boundedBody: Awaited<ReturnType<typeof readBoundedBody>>;
     try {
-      const body = await request.text();
-      if (body) {
-        fetchOptions.body = body;
-      }
+      boundedBody = await readBoundedBody(request);
     } catch {
-      // No body to forward
+      return jsonError(400, "invalid_request", "Request body could not be read");
+    }
+    if (boundedBody.tooLarge) {
+      return jsonError(413, "payload_too_large", "Request payload is too large");
+    }
+    const body = boundedBody.body || "";
+    if (!expectsJsonBody && body) {
+      return jsonError(400, "invalid_request", "This bridge operation does not accept a body");
+    }
+    if (body) {
+      headers.set("Content-Type", "application/json");
+      fetchOptions.body = body;
     }
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+  fetchOptions.signal = controller.signal;
+
   try {
-    const res = await fetch(url.toString(), fetchOptions);
-    const contentType = res.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      return NextResponse.json(
-        { error: { code: "invalid_bridge_response", message: "Bridge returned an invalid response" } },
-        { status: 502 }
-      );
+    const upstreamUrl = new URL(policy.upstreamPath, configuration.baseUrl);
+    const response = await fetch(upstreamUrl, fetchOptions);
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      return jsonError(502, "invalid_bridge_response", "Bridge returned an invalid response");
     }
-    const data: unknown = await res.json();
-    return NextResponse.json(data, {
-      status: res.status,
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return jsonError(502, "invalid_bridge_response", "Bridge returned an invalid response");
+    }
+    return NextResponse.json(payload, {
+      status: response.status,
       headers: { "Cache-Control": "no-store" },
     });
   } catch {
-    return NextResponse.json(
-      { error: { code: "bridge_unavailable", message: "Bridge unavailable" } },
-      { status: 502 }
-    );
+    return jsonError(502, "bridge_unavailable", "Bridge unavailable");
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return proxyRequest(request, params);
+export const dynamic = "force-dynamic";
+
+export function GET(request: NextRequest, context: RouteContext) {
+  return proxyRequest(request, context);
 }
 
-export async function POST(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return proxyRequest(request, params);
+export function POST(request: NextRequest, context: RouteContext) {
+  return proxyRequest(request, context);
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return proxyRequest(request, params);
+export function PUT(request: NextRequest, context: RouteContext) {
+  return proxyRequest(request, context);
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return proxyRequest(request, params);
+export function PATCH(request: NextRequest, context: RouteContext) {
+  return proxyRequest(request, context);
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { path: string[] } }) {
-  return proxyRequest(request, params);
+export function DELETE(request: NextRequest, context: RouteContext) {
+  return proxyRequest(request, context);
 }

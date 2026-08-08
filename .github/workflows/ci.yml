@@ -40,5 +40,26 @@ jobs:
       - name: Check bridge Python syntax
         run: python -m compileall -q monarch-bridge
 
-      - name: Build production image without publishing
-        run: docker build --tag tyrion:ci .
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: triage-app/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: triage-app
+        run: npm ci --no-audit --no-fund
+
+      - name: Build operational UI
+        working-directory: triage-app
+        run: npm run build
+
+      - name: Test operational UI boundary and proxy
+        working-directory: triage-app
+        run: npm test
+
+      - name: Build production images without publishing
+        run: |
+          docker build --tag tyrion-bridge:ci .
+          docker build --tag tyrion-ui:ci triage-app

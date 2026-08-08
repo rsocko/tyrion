@@ -24,7 +24,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | --- | --- | --- |
 | Password login | Success, invalid credentials, MFA challenge, CAPTCHA, timeout, rate limit | Attempted 2026-08-08; blocked by ambiguous upstream `403` |
 | MFA completion | Success and invalid/expired code | Password live run with process-only MFA code |
-| Cookie login | Success shape, invalid input, sanitized upstream failure | Completed 2026-08-08 through the Settings UI and server proxy |
+| Cookie login | Success shape, invalid input, sanitized upstream failure | Completed 2026-08-08 through the operational setup UI and server proxy |
 | Saved-session restart | Load, verification, and connected state | Completed 2026-08-08 |
 | Expiry and recovery | Expired cleanup and degraded retention | Revoke controlled session, verify `expired`, then set up again |
 | Logout | In-memory and persisted state removal | Completed 2026-08-08; state and external session removal verified |
@@ -34,7 +34,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
-| Production image | Non-root bridge-only runtime, public loopback health check, external session mount, no auth state in build context | Pull immutable image, mount restricted state, and smoke test through TLS proxy |
+| Production images | Separate non-root bridge/UI runtimes, route allowlist, loopback health checks, external session mount, no auth state in build contexts | Pull immutable images, mount restricted state, and smoke test private bridge plus TLS UI ingress |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
 ## Safe live procedure
@@ -84,13 +84,14 @@ only the minimum structural shape with invented identifiers and values.
 
 ## Container deployment validation
 
-The production image is `registry.socko.us/tyrion`. CI builds it without
-credentials for pull requests; a successful `main` CI run publishes
-`sha-<full-commit>`, `main`, and `latest` from the trusted homelab builder.
-Existing SHA tags are never overwritten, and moving-tag promotion is serialized
-and rechecks the current `main` revision.
+The production images are `registry.socko.us/tyrion-bridge` and
+`registry.socko.us/tyrion-ui`. CI builds both without credentials for pull requests;
+a successful `main` CI run publishes `sha-<full-commit>`, `main`, and `latest` for
+each from the trusted homelab builder. Existing SHA tags are never overwritten, and
+moving-tag promotion is serialized, rechecks the current `main` revision, and waits
+for both immutable builds before promoting both image families from the same commit.
 
-The container contract is port `8100`, public `GET /health`, non-root UID/GID
+The bridge container contract is port `8100`, public `GET /health`, non-root UID/GID
 `10001`, and a writable external mount at `/var/lib/tyrion` with
 `SESSION_FILE=/var/lib/tyrion/monarch-session.json`. The session file and adjacent
 lease must survive container replacement and must never enter an image layer, CI
@@ -98,17 +99,22 @@ artifact, log, or repository. Only one bridge process may mount and own a given
 session directory at a time. The image defaults
 `BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, `BRIDGE_REMOTE_TLS=true`,
 `BRIDGE_LOAD_DOTENV=false`, and `DEFAULT_TRANSACTION_DAYS=90`; the homelab stack
-repeats these settings and selects the image with `TYRION_IMAGE_TAG`. It exposes
-no host port; private Traefik routing at `https://tyrion.socko.us` is the only
-production ingress. The ingress root returns the same sanitized status DTO as
-`GET /health`. The image's default command starts `main.py`; the stack does not
-override it.
+repeats these settings and selects the image with `TYRION_BRIDGE_IMAGE_TAG`. It has
+no host port or Traefik route. The image's default command starts `main.py`; the
+stack does not override it.
 
-For a controlled homelab smoke test, inject `BRIDGE_API_TOKEN` and retain the
-image defaults `BRIDGE_REMOTE_TLS=true` and
-`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`. Confirm direct startup fails when
-the token is absent or `BRIDGE_REMOTE_TLS` is explicitly overridden to `false`,
-`/health` is reachable through the reverse proxy, protected endpoints reject
-missing service authentication, and restart reuses the external session. Do not
-run login, capture responses, or inspect the mounted session as part of image
-publishing.
+The UI container contract is port `3000`, `GET /api/health`, non-root UID/GID
+`10001`, a read-only root filesystem, and runtime-only `BRIDGE_URL` plus
+`BRIDGE_API_TOKEN`. It is selected with `TYRION_UI_IMAGE_TAG` and is the only
+production ingress at `https://tyrion.socko.us`. Its proxy permits only health,
+auth setup/status/logout, and sync limited to 90 days; the rendered UI fixes sync
+to 30 days. Broad finance routes return `404`.
+
+For a controlled homelab smoke test, inject the same `BRIDGE_API_TOKEN` into both
+containers and retain `BRIDGE_REMOTE_TLS=true` and
+`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`. Confirm bridge startup fails when the
+token is absent or `BRIDGE_REMOTE_TLS` is explicitly overridden to `false`, the
+bridge has no ingress route, UI `/api/health` is reachable through TLS, protected
+proxy operations work, broad proxy/UI routes return `404`, and restart reuses the
+external session. Do not run login, capture responses, or inspect the mounted
+session as part of image publishing.

@@ -33,13 +33,13 @@ matching. Those workflows should deep-link to Monarch.
 | `monarch-bridge/` | Monarch authentication, normalized API access, synchronization, and write-back |
 | `kid-engine/` | Household attribution, policy, and suggestion logic |
 | `docs/` | Active boundary, roadmap, contracts, and historical design references |
-| `triage-app/` | Bounded debug and contract-validation console; not the primary product shell |
+| `triage-app/` | Bounded Monarch connector operations and contract-validation console |
 | `mockups/` | UX and visual references; not deployment architecture |
 | `brand/` | Tyrion identity assets adapted within Mission Control's design system |
 
-The debug UI may validate fixture/live contracts and focused interactions. It must
-not grow into an independent dashboard, generic transaction review product, bills
-application, or assistant shell.
+Production deploys only the connector reachability, authentication, logout, and
+bounded sync/recheck surface from `triage-app/`. It must not grow into an independent
+dashboard, generic transaction review product, bills application, or assistant shell.
 
 ## Terminology
 
