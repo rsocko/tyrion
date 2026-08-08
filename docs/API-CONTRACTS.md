@@ -4,6 +4,12 @@
 
 The Monarch Bridge (FastAPI, port 8100) provides REST endpoints that Mission Control's `MonarchConnector` calls during sync cycles and user-triggered actions.
 
+These contracts support the Tyrion domain defined in
+[`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md). Monarch remains the system of
+record. Mission Control stores only the synchronized context, Tyrion policy, and
+audit data needed for exceptions and cross-domain action. The bridge does not
+define a standalone product surface.
+
 ---
 
 ## Authentication
@@ -247,26 +253,27 @@ Every 4 hours (node-cron in Mission Control):
 6. Update lastSyncedAt timestamp
 ```
 
-## Data Flow: Triage Action
+## Data Flow: Exception Action
 
 ```
-User confirms category in triage inbox:
+User resolves an actionable exception in Mission Control:
 
-1. UI sends POST /api/finance/triage/{id} with { category, kidId }
+1. Mission Control sends the confirmed category or kid assignment.
 2. MC API route:
-   a. Updates local financeTransactions record
+   a. Records the requested mutation and provenance
    b. If category changed: calls bridge PATCH /transactions/{id}/category
-   c. Updates kid attribution
-   d. Returns success
+   c. Refreshes the Monarch-backed transaction state
+   d. Updates Tyrion attribution and resolves or preserves the exception
+   e. Returns the authoritative result
 ```
 
 ## Data Flow: AI Chat Query
 
 ```
-User asks "What did Jake spend this week?" in /ai:
+User asks "What did Jake spend this week?" through Houston:
 
 1. AI SDK routes to Monarch MCP tools
 2. MCP server calls Monarch API directly (not through bridge)
 3. AI formats response with kid-aware context from MC's local DB
-4. Response rendered in chat UI
+4. Houston renders the response with Monarch provenance
 ```

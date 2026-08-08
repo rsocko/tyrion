@@ -1,5 +1,10 @@
 # DESIGN.md — Tyrion Visual World
 
+> **Visual reference, not application-shell guidance.** Apply this identity inside
+> Mission Control according to
+> [`docs/PRODUCT-BOUNDARY.md`](../docs/PRODUCT-BOUNDARY.md). Standalone dashboard,
+> navigation, and chat treatments are preserved only as UX references.
+
 > The committed visual world. Codified with Impeccable (v3.5.0). Detector-clean.
 > Incumbent authority: `tyrion-brandkit.html`. Product truth: `PRODUCT.md`.
 

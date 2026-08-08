@@ -1,5 +1,11 @@
 # Finance Management — Design Document
 
+> **Historical design reference — superseded for product scope.** The authoritative
+> boundary is [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md), and active delivery is
+> tracked in [`ROADMAP.md`](./ROADMAP.md). The routes, schemas, and flows below
+> preserve the original design context; they do not authorize a standalone product,
+> generic transaction review, duplicate Monarch dashboards, or a second assistant.
+
 ## 1. Integration Architecture: Hybrid Approach
 
 The finance module uses a **hybrid** integration with Mission Control:

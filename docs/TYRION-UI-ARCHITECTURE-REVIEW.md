@@ -1,5 +1,9 @@
 # Tyrion UI and Product Boundary Review
 
+> **Decision input, not the active specification.** The accepted and authoritative
+> product decision is [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md); delivery is
+> tracked in [`ROADMAP.md`](./ROADMAP.md).
+
 **Reviewed:** August 7, 2026  
 **Scope:** Historical Tyrion design documents, mockups, and prototype UI now preserved in this repository; the current Mission Control implementation reviewed in `rsocko/mission-control`; OWL/Document Intelligence precedent; and current Monarch capabilities.
 

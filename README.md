@@ -1,81 +1,65 @@
-# Personal Finance Management
+# Tyrion
 
-Smart assistance to manage, track, and revise personal finances — integrated into Mission Control.
+Tyrion is Mission Control's household-finance domain and specialist. It observes
+Monarch, applies household-specific attribution and policies, reconciles money
+with documents, and brings exceptions and decisions into Mission Control.
 
-## Origin and Provenance
+**Monarch is the financial system of record. Mission Control is the user-facing
+action, awareness, and assistant shell.**
 
-TYRION was extracted from the private
+The authoritative architecture decision is
+[`docs/PRODUCT-BOUNDARY.md`](docs/PRODUCT-BOUNDARY.md), and delivery is tracked in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## Product scope
+
+Tyrion owns:
+
+- Per-kid transaction attribution and spending policies
+- Ambiguity, anomaly, reconciliation, and write-back exceptions
+- Decision-oriented household summaries
+- Finance notifications and follow-up tasks in Mission Control
+- Permissioned finance tools for Houston
+- Cross-system reconciliation with OWL/Document Intelligence
+
+Tyrion does not replace Monarch's transaction ledger, categorization, budgets,
+recurring management, reports, goals, forecasts, investments, or ordinary receipt
+matching. Those workflows should deep-link to Monarch.
+
+## Repository layout
+
+| Path | Role |
+| --- | --- |
+| `monarch-bridge/` | Monarch authentication, normalized API access, synchronization, and write-back |
+| `kid-engine/` | Household attribution, policy, and suggestion logic |
+| `docs/` | Active boundary, roadmap, contracts, and historical design references |
+| `triage-app/` | Bounded debug and contract-validation console; not the primary product shell |
+| `mockups/` | UX and visual references; not deployment architecture |
+| `brand/` | Tyrion identity assets adapted within Mission Control's design system |
+
+The debug UI may validate fixture/live contracts and focused interactions. It must
+not grow into an independent dashboard, generic transaction review product, bills
+application, or assistant shell.
+
+## Terminology
+
+- **Tyrion** — Mission Control's household-finance domain and specialist
+- **Finance** — functional navigation label and `/finance` route namespace
+- **Monarch** — upstream financial system of record
+- **Monarch connector** — Mission Control connector capability
+- **Monarch Bridge** — service mediating Monarch API access
+
+Legacy identifiers such as `finance`, `finance-manager`, and `monarch-money` may
+remain for compatibility but are not separate product names.
+
+## Origin and provenance
+
+Tyrion was extracted from the private
 [`rsocko/ideation/experiments/personal-automation/finance-management`](https://github.com/rsocko/ideation/tree/27147420c236f0c50582ee39fee02a4a446bd218/experiments/personal-automation/finance-management)
-experiment at source cut `27147420c236f0c50582ee39fee02a4a446bd218`. The extracted baseline also
-includes the branding work merged in [`rsocko/ideation#1117`](https://github.com/rsocko/ideation/pull/1117).
-
-The canonical migration is tracked in [`rsocko/ideation#1119`](https://github.com/rsocko/ideation/issues/1119).
-The source graduation/pointer PR is [`rsocko/ideation#1120`](https://github.com/rsocko/ideation/pull/1120)
-and remains pending merge. The extracted baseline was stabilized in the merged
+experiment at source cut `27147420c236f0c50582ee39fee02a4a446bd218`. The
+baseline includes branding work from
+[`rsocko/ideation#1117`](https://github.com/rsocko/ideation/pull/1117), migration
+tracking in
+[`rsocko/ideation#1119`](https://github.com/rsocko/ideation/issues/1119), and
+stabilization in
 [`rsocko/tyrion#5`](https://github.com/rsocko/tyrion/pull/5).
-
-## Overview
-
-A layered system combining:
-- **Monarch Money** (source of truth for bank connections, transactions, categorization)
-- **Monarch MCP Server** (AI-powered conversational finance queries)
-- **Python Bridge Service** (deterministic sync, batch processing, threshold alerts)
-- **Mission Control Integration** (unified dashboard, triage inbox, kid tracking, alerts)
-
-## Directory Structure
-
-```
-finance-management/
-├── docs/
-│   ├── DESIGN.md              # Detailed architecture & data models
-│   ├── MONARCH-BEST-PRACTICES.md  # Getting the most from Monarch
-│   ├── KID-ATTRIBUTION.md    # How kid spending identification works
-│   └── API-CONTRACTS.md      # Bridge service API specs
-├── brand/
-│   ├── DESIGN.md              # TYRION brand & design-system spec
-│   ├── PRODUCT.md             # Product identity & positioning
-│   ├── tyrion.css             # Shared design-system stylesheet (all mockups link this)
-│   ├── brandkit.html          # Brand kit specimen (tokens, type, color, marks)
-│   ├── logo-lab.html          # Logo/coin cuts across sizes & finishes
-│   └── exploration/           # Naming rounds & identity exploration
-├── mockups/
-│   ├── dashboard.html         # Finance dashboard mockup
-│   ├── triage-inbox.html      # Transaction triage inbox
-│   ├── kid-spending.html      # Per-kid spending view
-│   ├── bills-calendar.html    # Upcoming bills calendar
-│   ├── ai-finance-chat.html   # AI finance chat interface
-│   └── bill-reconciliation.html  # Bill/payment reconciliation
-└── monarch-bridge/
-    ├── README.md              # Bridge service setup & usage
-    ├── requirements.txt       # Python dependencies
-    ├── main.py               # FastAPI service entry point
-    └── config.example.env    # Example configuration
-```
-
-## Key Features
-
-1. **Per-Kid Spending Tracking** — Attribute charges to each of 3 kids via card/merchant rules
-2. **Triage Inbox** — Quick approve/reassign/flag transactions one-by-one
-3. **Threshold Alerts** — Notify when a kid's spending exceeds configurable limits
-4. **AI Finance Chat** — Natural language queries powered by Monarch MCP
-5. **Weekly Summaries** — Spending overview with category breakdowns
-6. **Subscription Audit** — Surface duplicate/forgotten recurring charges
-7. **Cash Flow Forecasting** — Project future balance based on patterns
-
-## Brand &amp; Design System
-
-The product identity is **TYRION** — a household finance agent + UI. All mockups share a
-single design system:
-
-- `brand/DESIGN.md` — visual spec: color tokens, typography, logo/coin cuts, motion, degradation rules
-- `brand/tyrion.css` — the shared stylesheet every mockup links (`../brand/tyrion.css`)
-- `brand/brandkit.html` / `brand/logo-lab.html` — interactive specimens
-- `brand/exploration/` — naming rounds and identity rationale
-
-TYRION is **loosely coupled** to Mission Control, OWL (Document Intelligence), and Monarch:
-those appear only as neutral source tags/actions, never as a parent badge in TYRION's own chrome.
-
-## Related Sessions
-
-- `Task alert aggregation system` — Mission Control (the parent app this integrates into)
-- `Paperless action queue review` — Receipt/statement matching potential integration
