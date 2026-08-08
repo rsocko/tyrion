@@ -28,6 +28,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Sync | Pagination and auth-error preservation | Seven-day controlled sync |
 | Category write-back | Rejected writes are never success-shaped | Confirmed test mutation, read-back, and restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
+| Production image | Non-root bridge-only runtime, public loopback health check, external session mount, no auth state in build context | Pull immutable image, mount restricted state, and smoke test through TLS proxy |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
 ## Safe live procedure
@@ -63,3 +64,26 @@ When upgrading `monarchmoneycommunity`, pin the exact version, verify method
 signatures, update synthetic normalizer inputs, run deterministic tests, then perform
 the controlled live matrix. Never capture a real response as a fixture. Reconstruct
 only the minimum structural shape with invented identifiers and values.
+
+## Container deployment validation
+
+The production image is `registry.socko.us/tyrion`. CI builds it without
+credentials for pull requests; a successful `main` CI run publishes
+`sha-<full-commit>` and `latest` from the trusted homelab builder. Existing SHA
+tags are never overwritten, and `latest` promotion is serialized and rechecks the
+current `main` revision.
+
+The container contract is port `8100`, public `GET /health`, non-root UID/GID
+`10001`, and a writable external mount at `/var/lib/tyrion` with
+`SESSION_FILE=/var/lib/tyrion/session.json`. The session file and adjacent lease
+must survive container replacement and must never enter an image layer, CI
+artifact, log, or repository. Only one bridge process may mount and own a given
+session directory at a time.
+
+For a controlled homelab smoke test, inject `BRIDGE_API_TOKEN`,
+`BRIDGE_REMOTE_TLS=true`, and the intended HTTPS `BRIDGE_ALLOWED_ORIGINS` at
+deployment time. Confirm direct startup fails when the token or TLS
+acknowledgement is absent, `/health` is reachable through the reverse proxy,
+protected endpoints reject missing service authentication, and restart reuses
+the external session. Do not run login, capture responses, or inspect the mounted
+session as part of image publishing.
