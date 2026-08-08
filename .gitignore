@@ -52,5 +52,6 @@ Thumbs.db
 # Obsidian per-user and disposable state (keep plugins and shared settings)
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
+.obsidian/workspaces.json
 .obsidian/cache/
 .obsidian/.trash/
