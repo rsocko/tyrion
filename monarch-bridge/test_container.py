@@ -100,6 +100,10 @@ def test_build_context_excludes_sensitive_and_non_runtime_content():
 def test_workflows_separate_untrusted_validation_from_trusted_publish():
     ci = read_repository_file(".github/workflows/ci.yml")
     publisher = read_repository_file(".github/workflows/build-and-push.yml")
+    bridge_readme = read_repository_file("monarch-bridge/README.md")
+    validation_guide = read_repository_file(
+        "docs/MONARCH-INTEGRATION-VALIDATION.md"
+    )
 
     assert "runs-on: ubuntu-latest" in ci
     assert "docker build --tag tyrion:ci ." in ci
@@ -163,3 +167,16 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
     assert publisher.count(
         "if: steps.current.outputs.publish == 'true'"
     ) == 1
+    normalized_readme = " ".join(bridge_readme.split())
+    normalized_validation = " ".join(validation_guide.split())
+    assert (
+        "publishes an immutable `sha-<full-commit>` tag and moves both "
+        "`main` and `latest`"
+        in normalized_readme
+    )
+    assert (
+        "publishes `sha-<full-commit>`, `main`, and `latest` from the trusted "
+        "homelab builder. Existing SHA tags are never overwritten, and "
+        "moving-tag promotion is serialized"
+        in normalized_validation
+    )
