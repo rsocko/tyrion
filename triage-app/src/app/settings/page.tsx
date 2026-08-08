@@ -112,7 +112,9 @@ export default function SettingsPage() {
             <div>
               <h2 className="text-sm font-semibold">Monarch Money Connection</h2>
               <p className="text-xs text-muted mt-0.5">
-                {connectionStatus === "connected" && `Connected as ${email}`}
+                {connectionStatus === "connected" && (
+                  email ? `Connected as ${email}` : "Connected"
+                )}
                 {connectionStatus === "unauthenticated" && "Not authenticated"}
                 {connectionStatus === "expired" && "Session expired — authenticate again"}
                 {connectionStatus === "degraded" && "Session unavailable — check Monarch and retry"}
