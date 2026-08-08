@@ -25,25 +25,13 @@ export default function BillsPage() {
       getRecurring()
         .then((res) => {
           if (res.data && Array.isArray(res.data.recurring)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const mapped = res.data.recurring.map((r: any, i: number) => ({
-              id: r.id || `recurring-${i}`,
-              name: r.name || r.merchant?.name || "Unknown",
-              amount: Math.abs(r.amount || 0),
-              nextDate: r.nextDate || r.nextDueDate || "",
-              frequency: r.frequency || r.interval || "Monthly",
-              isAutoPay: r.isAutoPay ?? r.autoPay ?? false,
-            }));
-            setLiveBills(mapped);
-          } else if (res.data && Array.isArray(res.data)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const mapped = (res.data as any[]).map((r: any, i: number) => ({
-              id: r.id || `recurring-${i}`,
-              name: r.name || r.merchant?.name || "Unknown",
-              amount: Math.abs(r.amount || 0),
-              nextDate: r.nextDate || r.nextDueDate || "",
-              frequency: r.frequency || r.interval || "Monthly",
-              isAutoPay: r.isAutoPay ?? r.autoPay ?? false,
+            const mapped = res.data.recurring.map((r) => ({
+              id: r.id,
+              name: r.merchant,
+              amount: Math.abs(r.amount),
+              nextDate: r.nextExpectedDate || "",
+              frequency: r.frequency,
+              isAutoPay: false,
             }));
             setLiveBills(mapped);
           }

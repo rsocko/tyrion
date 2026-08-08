@@ -68,29 +68,27 @@ export default function DashboardPage() {
           };
 
           if (cashRes.data && accRes.data) {
-            data.income = cashRes.data.totalIncome;
-            data.expenses = Math.abs(cashRes.data.totalExpenses);
+            data.income = cashRes.data.income;
+            data.expenses = Math.abs(cashRes.data.expenses);
             data.accounts = accRes.data.accounts.length;
           }
 
           // Map budget data
           if (budgetRes.data && Array.isArray(budgetRes.data.budgets) && budgetRes.data.budgets.length > 0) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            data.budgets = budgetRes.data.budgets.slice(0, 6).map((b: any) => ({
-              category: b.category?.name || b.name || "Unknown",
-              spent: Math.abs(b.currentAmount || b.spent || 0),
-              budget: b.budgetAmount || b.limit || b.budget || 0,
+            data.budgets = budgetRes.data.budgets.slice(0, 6).map((b) => ({
+              category: b.category.name,
+              spent: Math.abs(b.spent),
+              budget: b.budgeted,
             }));
           }
 
           // Map recurring bills
           if (recurringRes.data && Array.isArray(recurringRes.data.recurring) && recurringRes.data.recurring.length > 0) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            data.bills = recurringRes.data.recurring.slice(0, 5).map((r: any, i: number) => ({
-              id: r.id || `recurring-${i}`,
-              name: r.name || r.merchant?.name || "Unknown",
-              dueDate: r.nextDate || r.nextDueDate || "Upcoming",
-              amount: Math.abs(r.amount || 0),
+            data.bills = recurringRes.data.recurring.slice(0, 5).map((r) => ({
+              id: r.id,
+              name: r.merchant,
+              dueDate: r.nextExpectedDate || "Upcoming",
+              amount: Math.abs(r.amount),
             }));
           }
 

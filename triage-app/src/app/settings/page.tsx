@@ -65,7 +65,7 @@ export default function SettingsPage() {
         setCookieString("");
         checkStatus();
       } else {
-        setLoginError(data?.detail?.message || data?.message || "Cookie login failed.");
+        setLoginError(data?.error?.message || data?.message || "Cookie login failed.");
       }
     } catch {
       setLoginError("Failed to connect to bridge. Is it running on port 8100?");
@@ -86,7 +86,7 @@ export default function SettingsPage() {
     const res = await syncData(days);
     if (res.data) {
       setLastSync(new Date().toLocaleString());
-      showToast(`Synced ${res.data.transactions_fetched} transactions`);
+      showToast(`Synced ${res.data.transactionsFetched} transactions`);
     } else {
       showToast("Sync failed — check connection");
     }
