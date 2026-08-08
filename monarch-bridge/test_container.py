@@ -1,6 +1,6 @@
 """Deterministic policy checks for the production container contract."""
 
-import re
+import shlex
 from pathlib import Path
 
 
@@ -9,6 +9,22 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 def read_repository_file(path: str) -> str:
     return (REPOSITORY_ROOT / path).read_text(encoding="utf-8")
+
+
+def dockerfile_instructions(dockerfile: str) -> list[str]:
+    instructions = []
+    parts = []
+    for raw_line in dockerfile.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        continued = line.endswith("\\")
+        parts.append(line[:-1].rstrip() if continued else line)
+        if not continued:
+            instructions.append(" ".join(parts))
+            parts = []
+    assert not parts
+    return instructions
 
 
 def test_image_contains_only_runtime_bridge_dependencies():
@@ -29,17 +45,25 @@ def test_image_contains_only_runtime_bridge_dependencies():
 
 def test_image_runs_non_root_with_external_session_storage():
     dockerfile = read_repository_file("Dockerfile")
-    docker_env = dockerfile.replace("\\\n", " ")
-    env_assignments = dict(
-        re.findall(r"\b([A-Z][A-Z0-9_]*)=([^\s]+)", docker_env)
+    instructions = dockerfile_instructions(dockerfile)
+    final_stage_start = max(
+        index
+        for index, instruction in enumerate(instructions)
+        if shlex.split(instruction)[0].upper() == "FROM"
     )
+    session_values = []
+    for instruction in instructions[final_stage_start + 1:]:
+        tokens = shlex.split(instruction)
+        if tokens[0].upper() != "ENV":
+            continue
+        for assignment in tokens[1:]:
+            name, separator, value = assignment.partition("=")
+            if separator and name == "SESSION_FILE":
+                session_values.append(value)
 
     assert "USER tyrion" in dockerfile
     assert "TYRION_UID=10001" in dockerfile
-    assert (
-        env_assignments["SESSION_FILE"].strip("\"'")
-        == "/var/lib/tyrion/monarch-session.json"
-    )
+    assert session_values == ["/var/lib/tyrion/monarch-session.json"]
     assert 'VOLUME ["/var/lib/tyrion"]' in dockerfile
     assert "BRIDGE_HOST=0.0.0.0" in dockerfile
     assert "BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us" in dockerfile
@@ -90,11 +114,52 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
         in publisher
     )
     assert "group: build-and-push-tyrion" in publisher
-    assert "registry.socko.us/tyrion" in publisher
+    assert publisher.count("REGISTRY_REPOSITORY:") == 1
+    assert "REGISTRY_REPOSITORY: registry.socko.us/tyrion" in publisher
     assert "tag=sha-$IMAGE_SHA" in publisher
     assert "Immutable image already exists; it will not be overwritten." in publisher
-    moving_tags = re.findall(
-        r'--tag "\$\{\{ env\.REGISTRY_REPOSITORY \}\}:([^"]+)"',
-        publisher,
+    logical_lines = []
+    logical_parts = []
+    for raw_line in publisher.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        continued = line.endswith("\\")
+        logical_parts.append(line[:-1].rstrip() if continued else line)
+        if not continued:
+            logical_lines.append(" ".join(logical_parts))
+            logical_parts = []
+    assert not logical_parts
+
+    commands = []
+    for logical_line in logical_lines:
+        tokens = shlex.split(logical_line, comments=True)
+        for index in range(len(tokens) - 3):
+            if tokens[index:index + 4] == [
+                "docker",
+                "buildx",
+                "imagetools",
+                "create",
+            ]:
+                commands.append(tokens[index:])
+
+    assert len(commands) == 1
+    moving_tags = []
+    for command in commands:
+        for index, argument in enumerate(command):
+            if argument in ("--tag", "-t"):
+                moving_tags.append(command[index + 1])
+            elif argument.startswith("--tag=") or argument.startswith("-t="):
+                moving_tags.append(argument.split("=", 1)[1])
+            elif argument.startswith("-t") and len(argument) > 2:
+                moving_tags.append(argument[2:])
+    assert moving_tags == [
+        "${{ env.REGISTRY_REPOSITORY }}:main",
+        "${{ env.REGISTRY_REPOSITORY }}:latest",
+    ]
+    assert commands[0][-1] == (
+        "${{ env.REGISTRY_REPOSITORY }}:${{ steps.image.outputs.tag }}"
     )
-    assert moving_tags == ["main", "latest"]
+    assert publisher.count(
+        "if: steps.current.outputs.publish == 'true'"
+    ) == 1
