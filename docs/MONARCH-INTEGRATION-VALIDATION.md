@@ -100,8 +100,9 @@ session directory at a time. The image defaults
 `BRIDGE_LOAD_DOTENV=false`, and `DEFAULT_TRANSACTION_DAYS=90`; the homelab stack
 repeats these settings and selects the image with `TYRION_IMAGE_TAG`. It exposes
 no host port; private Traefik routing at `https://tyrion.socko.us` is the only
-production ingress. The image's default command starts `main.py`; the stack does
-not override it.
+production ingress. The ingress root returns the same sanitized status DTO as
+`GET /health`. The image's default command starts `main.py`; the stack does not
+override it.
 
 For a controlled homelab smoke test, inject `BRIDGE_API_TOKEN` and retain the
 image defaults `BRIDGE_REMOTE_TLS=true` and
