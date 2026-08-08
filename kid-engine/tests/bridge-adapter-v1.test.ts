@@ -25,7 +25,8 @@ const bridgeTransaction: NormalizedBridgeTransactionV1 = {
 
 const mappingContext = {
   sourceRef: 'consumer-safe-ref',
-  instrumentFingerprint: 'household-fingerprint',
+  instrumentFingerprint:
+    'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   historicalAttributions: [],
   existingManualDecision: null,
 };
@@ -50,7 +51,8 @@ describe('normalized bridge v1 attribution adapter', () => {
       },
       transaction: {
         merchantName: 'Synthetic Shop',
-        instrumentFingerprint: 'household-fingerprint',
+        instrumentFingerprint:
+          'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
         occurredOn: '2026-08-08',
       },
       historicalAttributions: [],
