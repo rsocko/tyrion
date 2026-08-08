@@ -31,7 +31,7 @@ def test_image_runs_non_root_with_external_session_storage():
 
     assert "USER tyrion" in dockerfile
     assert "TYRION_UID=10001" in dockerfile
-    assert "SESSION_FILE=/var/lib/tyrion/session.json" in dockerfile
+    assert "SESSION_FILE=/var/lib/tyrion/monarch-session.json" in dockerfile
     assert 'VOLUME ["/var/lib/tyrion"]' in dockerfile
     assert "BRIDGE_HOST=0.0.0.0" in dockerfile
     assert "BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us" in dockerfile
@@ -55,7 +55,7 @@ def test_build_context_excludes_sensitive_and_non_runtime_content():
     for excluded in (
         "**/.env",
         "**/.mm",
-        "**/session.json",
+        "**/monarch-session.json",
         "**/*.key",
         "**/*.pem",
         ".git",

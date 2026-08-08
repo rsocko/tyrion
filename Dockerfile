@@ -23,7 +23,7 @@ ENV PATH=/opt/venv/bin:$PATH \
     BRIDGE_REMOTE_TLS=true \
     BRIDGE_LOAD_DOTENV=false \
     DEFAULT_TRANSACTION_DAYS=90 \
-    SESSION_FILE=/var/lib/tyrion/session.json
+    SESSION_FILE=/var/lib/tyrion/monarch-session.json
 
 RUN groupadd --gid "${TYRION_GID}" tyrion \
     && useradd --uid "${TYRION_UID}" --gid tyrion --create-home \
