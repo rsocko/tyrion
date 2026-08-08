@@ -15,9 +15,11 @@ finance workspace. Tyrion connects the two: it applies household-specific policy
 automation, attribution, and reconciliation, then surfaces only the exceptions and
 decisions that belong in Mission Control.
 
-The standalone UI in `triage-app/` and the HTML mockups are retained as a bounded
-debug console, contract-validation harness, and UX reference. They are not a
-separate product shell or deployment target.
+The Next.js code in `triage-app/` is retained as a bounded operational console,
+contract-validation harness, and UX reference. Production may deploy it only for
+Monarch bridge reachability, authentication status, browser-cookie setup,
+email/password/MFA fallback, logout, and a bounded sync/recheck action. It is not a
+separate finance product shell.
 
 ## System ownership
 
@@ -27,7 +29,19 @@ separate product shell or deployment target.
 | **Mission Control** | Finance attention surfaces, exception review, notifications, tasks, My Day, Houston, navigation, authentication, and shared interaction patterns | A replacement ledger, budget manager, report suite, bills app, or second finance assistant |
 | **Tyrion domain** | Per-kid attribution, household spending policies, exception detection, decision summaries, finance tools, and reconciliation orchestration | Authoritative copies of Monarch data or a general-purpose finance application |
 | **Monarch Bridge** | Authenticated Monarch access, deterministic synchronization, normalized contracts, write-back, health, and observability | Product navigation, task ownership, broad reporting UI, or an assistant shell |
-| **Debug UI** | Connector diagnostics, fixture/live contract validation, focused workflow experiments, and UX reference | Daily household-finance use, independent auth/navigation, generic transaction review, dashboards, bills management, or chat |
+| **Operational UI** | Connector reachability, authentication setup/status, logout, bounded sync/recheck, fixture/live contract validation, and UX reference | Daily household-finance use, transactions, accounts, budgets, bills, generic triage, dashboards, or chat |
+
+## Production operational UI exception
+
+`https://tyrion.socko.us` may host the narrowly scoped Monarch connector operations
+UI. The browser calls only allowlisted Next.js `/api/bridge/...` routes. The bridge
+service token remains server-only, and the bridge remains privately routed with its
+own session storage and protected contract.
+
+The production route tree and proxy allowlist must prevent access to transactions,
+accounts, categories, recurring items, cash flow, budgets, bills, kid views, chat,
+generic triage, or other finance product pages. Mission Control remains the
+day-to-day shell, and Monarch remains the comprehensive finance workspace.
 
 ## Supported Mission Control surfaces
 
@@ -59,7 +73,7 @@ Tyrion must not expand into:
 - A budget-management or reporting suite
 - A generic bills calendar
 - A second conversational assistant
-- An independently deployed household-finance application
+- An independently deployed household-finance product application
 
 ## Terminology
 
@@ -72,7 +86,7 @@ Use these names in product copy and active documentation:
 | **Monarch** | The upstream financial system of record |
 | **Monarch connector** | Mission Control's connector capability for Tyrion |
 | **Monarch Bridge** | The service that mediates Monarch API access |
-| **Debug UI** | The bounded `triage-app/` validation and UX-reference surface |
+| **Operational UI** | The bounded `triage-app/` connector setup, validation, and UX-reference surface |
 
 Existing identifiers such as `finance`, `finance-manager`, and `monarch-money` may
 remain where compatibility requires them. Do not expose them as competing product

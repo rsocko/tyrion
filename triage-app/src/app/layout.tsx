@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { AppShell } from "@/components/layout/AppShell";
 
 export const metadata: Metadata = {
-  title: "TYRION — Finance",
-  description: "TYRION: your household finance agent and command surface",
+  title: "Tyrion | Monarch connector operations",
+  description: "Operational setup and maintenance for Tyrion's Monarch connector",
 };
 
 export default function RootLayout({
@@ -14,9 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className="antialiased">
-        <AppShell>{children}</AppShell>
-      </body>
+      <body className="min-h-screen antialiased">{children}</body>
     </html>
   );
 }

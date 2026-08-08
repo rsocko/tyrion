@@ -1,335 +1,421 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { ProgressBar } from "@/components/ui/ProgressBar";
-import { KidBadge } from "@/components/ui/KidBadge";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
-  summaryCards,
-  kidsWeekly,
-  budgetItems,
-  financeAlerts,
-  upcomingBills,
-  BudgetItem,
-  UpcomingBill,
-} from "@/lib/mock-dashboard-data";
-import { getAccounts, getBudgets, getCashflow, getRecurring } from "@/lib/bridge-client";
-import { setDataSourcePreference } from "@/lib/use-data-source";
+  AuthState,
+  getAuthStatus,
+  getHealth,
+  login,
+  loginWithCookies,
+  logout,
+  syncAndRecheck,
+} from "@/lib/bridge-client";
+import { connectionPresentation } from "@/lib/operational-state.mjs";
 
-const alertColorMap = {
-  red: { bg: "bg-error/10", border: "border-error/25", dot: "text-error" },
-  yellow: { bg: "bg-warning/10", border: "border-warning/25", dot: "text-warning" },
-  blue: { bg: "bg-elevated", border: "border-border", dot: "text-info" },
-};
+type ViewState = AuthState | "checking" | "unavailable";
+type LoginMethod = "cookies" | "password";
 
-const kidBarColors: Record<string, string> = {
-  blue: "bg-jake",
-  purple: "bg-emma",
-  green: "bg-sophie",
-};
+export default function OperationsPage() {
+  const [viewState, setViewState] = useState<ViewState>("checking");
+  const [bridgeReachable, setBridgeReachable] = useState<boolean | null>(null);
+  const [mode, setMode] = useState<"demo" | "live" | null>(null);
+  const [statusError, setStatusError] = useState("");
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>("cookies");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaRequested, setMfaRequested] = useState(false);
+  const [sessionId, setSessionId] = useState("");
+  const [csrfToken, setCsrfToken] = useState("");
+  const [busyAction, setBusyAction] = useState<"login" | "logout" | "sync" | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [notice, setNotice] = useState("");
 
-interface LiveDashboardData {
-  income: number;
-  expenses: number;
-  accounts: number;
-  budgets: BudgetItem[];
-  bills: UpcomingBill[];
-}
+  const refreshStatus = useCallback(async () => {
+    setViewState("checking");
+    setStatusError("");
+    const health = await getHealth();
+    if (!health.data || !health.data.reachable) {
+      setBridgeReachable(false);
+      setMode(null);
+      setViewState("unavailable");
+      setStatusError(health.error || "The Monarch bridge is unavailable.");
+      return;
+    }
 
-export default function DashboardPage() {
-  const [dataSource, setDataSource] = useState<"mock" | "live">("mock");
-  const [liveData, setLiveData] = useState<LiveDashboardData | null>(null);
-  const [liveLoading, setLiveLoading] = useState(false);
+    setBridgeReachable(true);
+    setMode(health.data.mode);
+    const auth = await getAuthStatus();
+    if (!auth.data) {
+      setViewState("unavailable");
+      setStatusError(
+        auth.error || "The bridge is reachable, but protected status could not be checked."
+      );
+      return;
+    }
 
-  // Load persisted data source preference
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("finance-data-source");
-      if (saved === "live" || saved === "mock") setDataSource(saved);
-    } catch {}
+    setMode(auth.data.mode);
+    setViewState(auth.data.authState);
   }, []);
 
-  const handleSetDataSource = (source: "mock" | "live") => {
-    setDataSource(source);
-    setDataSourcePreference(source);
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
+
+  const handleLogin = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusyAction("login");
+    setActionError("");
+    setNotice("");
+
+    const response =
+      loginMethod === "cookies"
+        ? await loginWithCookies(sessionId, csrfToken)
+        : await login(email, password, mfaCode || undefined);
+
+    setPassword("");
+    setMfaCode("");
+    setSessionId("");
+    setCsrfToken("");
+
+    if (response.data) {
+      setMfaRequested(false);
+      setNotice("Monarch authentication succeeded.");
+      await refreshStatus();
+    } else {
+      if (response.code === "mfa_required") {
+        setMfaRequested(true);
+      }
+      setActionError(response.error || "Authentication failed.");
+    }
+    setBusyAction(null);
   };
 
-  useEffect(() => {
-    if (dataSource === "live") {
-      setLiveLoading(true);
-      Promise.all([getCashflow(), getAccounts(), getBudgets(), getRecurring()])
-        .then(([cashRes, accRes, budgetRes, recurringRes]) => {
-          const data: LiveDashboardData = {
-            income: 0,
-            expenses: 0,
-            accounts: 0,
-            budgets: [],
-            bills: [],
-          };
-
-          if (cashRes.data && accRes.data) {
-            data.income = cashRes.data.income;
-            data.expenses = Math.abs(cashRes.data.expenses);
-            data.accounts = accRes.data.accounts.length;
-          }
-
-          // Map budget data
-          if (budgetRes.data && Array.isArray(budgetRes.data.budgets) && budgetRes.data.budgets.length > 0) {
-            data.budgets = budgetRes.data.budgets.slice(0, 6).map((b) => ({
-              category: b.category.name,
-              spent: Math.abs(b.spent),
-              budget: b.budgeted,
-            }));
-          }
-
-          // Map recurring bills
-          if (recurringRes.data && Array.isArray(recurringRes.data.recurring) && recurringRes.data.recurring.length > 0) {
-            data.bills = recurringRes.data.recurring.slice(0, 5).map((r) => ({
-              id: r.id,
-              name: r.merchant,
-              dueDate: r.nextExpectedDate || "Upcoming",
-              amount: Math.abs(r.amount),
-            }));
-          }
-
-          setLiveData(data);
-        })
-        .finally(() => setLiveLoading(false));
+  const handleLogout = async () => {
+    setBusyAction("logout");
+    setActionError("");
+    setNotice("");
+    const response = await logout();
+    if (response.data) {
+      setNotice("The bridge-managed Monarch session was cleared.");
+      await refreshStatus();
+    } else {
+      setActionError(response.error || "Logout failed.");
     }
-  }, [dataSource]);
+    setBusyAction(null);
+  };
 
-  const displaySummary = dataSource === "live" && liveData
-    ? [
-        { ...summaryCards[0], value: `$${liveData.income.toLocaleString()}` },
-        { ...summaryCards[1], value: `$${liveData.expenses.toLocaleString()}` },
-        { ...summaryCards[2], value: `${liveData.accounts} accounts` },
-        summaryCards[3],
-      ]
-    : summaryCards;
+  const handleSync = async () => {
+    setBusyAction("sync");
+    setActionError("");
+    setNotice("");
+    const response = await syncAndRecheck();
+    if (response.data) {
+      setNotice("The bounded 30-day sync completed and status was rechecked.");
+      await refreshStatus();
+    } else {
+      setActionError(response.error || "Sync failed.");
+      if (response.status === 401) {
+        await refreshStatus();
+      }
+    }
+    setBusyAction(null);
+  };
+
+  const presentation = connectionPresentation(viewState);
+  const canAuthenticate = ["unauthenticated", "expired", "degraded"].includes(viewState);
+  const isConnected = viewState === "connected";
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-serif font-bold">Finance Dashboard</h1>
-          <p className="text-sm text-muted mt-1">June 2026 • Week 3</p>
-        </div>
-        <div className="flex gap-2 items-center">
-          {/* Data Source Toggle */}
-          <div className="flex items-center gap-1 mr-4 bg-card border border-border rounded-lg p-0.5">
+    <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+      <header className="mb-8 border-b border-hair pb-6">
+        <p className="eyebrow mb-2">Tyrion operations</p>
+        <h1 className="font-serif text-3xl font-bold text-parchment sm:text-4xl">
+          Monarch connector
+        </h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+          Set up and maintain the bridge-owned Monarch session. Day-to-day finance
+          work remains in Mission Control and Monarch.
+        </p>
+      </header>
+
+      <section aria-labelledby="status-heading" className="mb-6 rounded-xl border border-border bg-card p-5">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+          <div>
+            <h2 id="status-heading" className="text-lg font-semibold">Connection status</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <StatusRow
+                label="Bridge"
+                value={
+                  bridgeReachable === null
+                    ? "Checking"
+                    : bridgeReachable
+                      ? "Reachable"
+                      : "Unavailable"
+                }
+                tone={bridgeReachable === null ? "checking" : bridgeReachable ? "good" : "bad"}
+              />
+              <StatusRow
+                label="Authentication"
+                value={presentation.label}
+                tone={presentation.tone}
+              />
+            </div>
+            <p className="mt-4 text-sm text-muted" aria-live="polite">
+              {presentation.description}
+            </p>
+            {statusError && <p role="alert" className="mt-2 text-sm text-error">{statusError}</p>}
+          </div>
+          <div className="flex items-center gap-2">
+            {mode && (
+              <span className="rounded border border-border bg-elevated px-2 py-1 text-xs text-muted">
+                {mode} mode
+              </span>
+            )}
             <button
-              onClick={() => handleSetDataSource("mock")}
-              className={`px-3 py-1 rounded-md text-xs transition-colors ${
-                dataSource === "mock" ? "bg-card-2 text-parchment" : "text-muted hover:text-parchment"
-              }`}
+              type="button"
+              onClick={() => void refreshStatus()}
+              disabled={viewState === "checking" || busyAction !== null}
+              className="rounded-md border border-border bg-elevated px-3 py-2 text-sm hover:border-gold disabled:opacity-50"
             >
-              Mock Data
-            </button>
-            <button
-              onClick={() => handleSetDataSource("live")}
-              className={`px-3 py-1 rounded-md text-xs transition-colors ${
-                dataSource === "live" ? "bg-success/15 text-success border border-success/40" : "text-muted hover:text-parchment"
-              }`}
-            >
-              Live Data
+              Recheck
             </button>
           </div>
-          <button className="px-3 py-1.5 rounded-md text-sm bg-card border border-border">This Month</button>
-          <button className="px-3 py-1.5 rounded-md text-sm text-muted border border-border/50">Last Month</button>
-          <button className="px-3 py-1.5 rounded-md text-sm text-muted border border-border/50">Custom</button>
         </div>
-      </div>
+      </section>
 
-      {liveLoading && dataSource === "live" && (
-        <div className="mb-4 px-3 py-2 rounded-md bg-success/20 border border-success/30 text-xs text-success">
-          Fetching live data from Monarch Money...
-        </div>
+      {canAuthenticate && (
+        <section aria-labelledby="auth-heading" className="mb-6 rounded-xl border border-border bg-card p-5">
+          <h2 id="auth-heading" className="text-lg font-semibold">Authenticate with Monarch</h2>
+          <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Authentication method">
+            <MethodButton
+              active={loginMethod === "cookies"}
+              onClick={() => setLoginMethod("cookies")}
+            >
+              Browser cookies (recommended)
+            </MethodButton>
+            <MethodButton
+              active={loginMethod === "password"}
+              onClick={() => setLoginMethod("password")}
+            >
+              Email, password, and MFA fallback
+            </MethodButton>
+          </div>
+
+          <form className="mt-5 space-y-4" onSubmit={handleLogin} autoComplete="off">
+            {loginMethod === "cookies" ? (
+              <>
+                <details className="rounded-lg border border-border bg-background p-4 text-sm text-muted">
+                  <summary className="cursor-pointer font-medium text-parchment">
+                    Find the two browser cookie values
+                  </summary>
+                  <ol className="mt-3 list-decimal space-y-2 pl-5 leading-6">
+                    <li>
+                      Sign in at{" "}
+                      <a
+                        className="text-gold-hi underline"
+                        href="https://app.monarchmoney.com"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        app.monarchmoney.com
+                      </a>
+                      .
+                    </li>
+                    <li>Open browser developer tools, then Application or Storage.</li>
+                    <li>
+                      Under Cookies, copy only the values named <code>session_id</code>{" "}
+                      and <code>csrftoken</code>.
+                    </li>
+                  </ol>
+                  <p className="mt-3 text-warning">
+                    Treat cookie values like a password. Do not save, send, log, or
+                    screenshot them.
+                  </p>
+                </details>
+                <SecretField
+                  id="session-id"
+                  label="session_id value"
+                  value={sessionId}
+                  onChange={setSessionId}
+                />
+                <SecretField
+                  id="csrf-token"
+                  label="csrftoken value"
+                  value={csrfToken}
+                  onChange={setCsrfToken}
+                />
+              </>
+            ) : (
+              <>
+                <p className="text-sm leading-6 text-warning">
+                  Monarch may reject programmatic login or require browser verification.
+                  Use browser cookies if this fallback is blocked.
+                </p>
+                <label className="block text-sm text-muted" htmlFor="monarch-email">
+                  Monarch email
+                </label>
+                <input
+                  id="monarch-email"
+                  type="email"
+                  required
+                  autoComplete="username"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                />
+                <SecretField
+                  id="monarch-password"
+                  label="Monarch password"
+                  value={password}
+                  onChange={setPassword}
+                  autoComplete="current-password"
+                />
+                <label className="block text-sm text-muted" htmlFor="mfa-code">
+                  MFA code {mfaRequested ? "(required)" : "(when requested)"}
+                </label>
+                <input
+                  id="mfa-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required={mfaRequested}
+                  minLength={4}
+                  maxLength={32}
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                />
+              </>
+            )}
+
+            <button
+              type="submit"
+              disabled={
+                busyAction !== null ||
+                (loginMethod === "cookies"
+                  ? !sessionId.trim() || !csrfToken.trim()
+                  : !email.trim() || !password)
+              }
+              className="w-full rounded-md bg-success px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {busyAction === "login" ? "Authenticating..." : "Authenticate"}
+            </button>
+          </form>
+        </section>
       )}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        {displaySummary.map((card) => (
-          <div key={card.label} className="bg-card border border-border rounded-xl p-4">
-            <p className="text-xs text-muted uppercase tracking-wider">{card.label}</p>
-            <p className="text-2xl font-bold mt-1">{card.value}</p>
-            <p className={`text-xs ${card.trendColor} mt-1`}>
-              {card.label === "Needs Review" ? (
-                <Link href="/triage" className="hover:underline">{card.trend}</Link>
-              ) : (
-                card.trend
-              )}
-            </p>
+      {isConnected && (
+        <section aria-labelledby="maintenance-heading" className="rounded-xl border border-border bg-card p-5">
+          <h2 id="maintenance-heading" className="text-lg font-semibold">Maintenance</h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Sync is intentionally limited to the most recent 30 days. This page does
+            not display accounts, transactions, budgets, bills, or other finance data.
+          </p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={busyAction !== null}
+              className="rounded-md bg-gold px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50"
+            >
+              {busyAction === "sync" ? "Syncing..." : "Sync 30 days and recheck"}
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={busyAction !== null}
+              className="rounded-md border border-error/60 px-4 py-2.5 text-sm font-semibold text-error disabled:opacity-50"
+            >
+              {busyAction === "logout" ? "Disconnecting..." : "Disconnect Monarch"}
+            </button>
           </div>
-        ))}
+        </section>
+      )}
+
+      <div className="mt-5 min-h-6" aria-live="polite">
+        {notice && <p className="text-sm text-success">{notice}</p>}
+        {actionError && <p role="alert" className="text-sm text-error">{actionError}</p>}
       </div>
+    </main>
+  );
+}
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-3 gap-6">
-        {/* Left: Per-Kid Spending */}
-        <div className="col-span-1 bg-card border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Kids This Week</h2>
-
-          {dataSource === "live" ? (
-            <div className="border border-dashed border-card-2 rounded-lg p-4">
-              <p className="text-sm text-muted">Coming Soon</p>
-              <p className="text-xs text-dim mt-1">Configure kid rules in Settings to track per-kid spending automatically.</p>
-              <Link href="/settings" className="text-xs text-accent hover:underline mt-3 block">
-                Configure Kids →
-              </Link>
-            </div>
-          ) : (
-            <>
-              {kidsWeekly.map((kid) => (
-                <div key={kid.id} className="mb-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <KidBadge name={kid.name} color={kid.color} />
-                    <span className="text-sm font-mono">
-                      ${kid.spent}{" "}
-                      <span className={kid.spent > kid.limit ? "text-error" : "text-muted"}>/ ${kid.limit}</span>
-                    </span>
-                  </div>
-                  <ProgressBar value={kid.spent} max={kid.limit} color={kidBarColors[kid.color]} showOverflow />
-                  {kid.warning && <p className="text-xs text-error mt-1">{kid.warning}</p>}
-                </div>
-              ))}
-            </>
-          )}
-
-          <Link href="/kids" className="text-xs text-accent hover:underline mt-2 block">
-            View kid details →
-          </Link>
-        </div>
-
-        {/* Center: Budget vs Actual */}
-        <div className="col-span-1 bg-card border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">Budget vs Actual</h2>
-
-          {dataSource === "live" ? (
-            liveData && liveData.budgets.length > 0 ? (
-              <div className="space-y-3">
-                {liveData.budgets.map((item) => {
-                  const isOver = item.spent > item.budget;
-                  const isNear = item.budget > 0 && item.spent / item.budget > 0.9;
-                  const color = isOver ? "text-error" : isNear ? "text-warning" : "text-muted";
-                  const barColor = isOver ? "bg-error" : isNear ? "bg-warning" : "bg-card-2";
-                  return (
-                    <div key={item.category}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span>{item.category}</span>
-                        <span className={color}>${item.spent} / ${item.budget}</span>
-                      </div>
-                      <ProgressBar value={item.spent} max={item.budget || 1} color={barColor} height="h-1.5" />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="border border-dashed border-card-2 rounded-lg p-4">
-                <p className="text-sm text-muted">No Budgets Configured</p>
-                <p className="text-xs text-dim mt-1">Set up budgets in Monarch to see progress here.</p>
-              </div>
-            )
-          ) : (
-            <div className="space-y-3">
-              {budgetItems.map((item) => {
-                const isOver = item.spent > item.budget;
-                const isNear = item.spent / item.budget > 0.9;
-                const color = isOver ? "text-error" : isNear ? "text-warning" : "text-muted";
-                const barColor = isOver ? "bg-error" : isNear ? "bg-warning" : "bg-card-2";
-                return (
-                  <div key={item.category}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span>{item.category}</span>
-                      <span className={color}>${item.spent} / ${item.budget}</span>
-                    </div>
-                    <ProgressBar value={item.spent} max={item.budget} color={barColor} height="h-1.5" />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Right: Alerts + Upcoming Bills */}
-        <div className="col-span-1 space-y-4">
-          {/* Alerts */}
-          <div className="bg-card border border-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Finance Alerts</h2>
-            {dataSource === "live" ? (
-              <div className="border border-dashed border-card-2 rounded-lg p-4">
-                <p className="text-sm text-muted">Coming Soon</p>
-                <p className="text-xs text-dim mt-1">Alerts will appear once spending patterns are analyzed.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {financeAlerts.map((alert) => {
-                  const colors = alertColorMap[alert.severity];
-                  return (
-                    <div key={alert.id} className={`flex items-start gap-2 p-2 rounded-lg ${colors.bg} border ${colors.border}`}>
-                      <span className={`${colors.dot} text-xs mt-0.5`}>●</span>
-                      <div>
-                        <p className="text-xs font-medium">{alert.message}</p>
-                        <p className="text-xs text-muted">{alert.detail}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Upcoming Bills */}
-          <div className="bg-card border border-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Upcoming Bills</h2>
-            {dataSource === "live" ? (
-              liveData && liveData.bills.length > 0 ? (
-                <div className="space-y-2">
-                  {liveData.bills.map((bill, i) => (
-                    <div
-                      key={bill.id}
-                      className={`flex justify-between items-center py-1.5 ${
-                        i < liveData.bills.length - 1 ? "border-b border-border/50" : ""
-                      }`}
-                    >
-                      <div>
-                        <p className="text-xs font-medium">{bill.name}</p>
-                        <p className="text-xs text-muted">{bill.dueDate}</p>
-                      </div>
-                      <span className="text-sm font-mono">${bill.amount.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="border border-dashed border-card-2 rounded-lg p-4">
-                  <p className="text-sm text-muted">No Recurring Bills</p>
-                  <p className="text-xs text-dim mt-1">No recurring bills found in Monarch.</p>
-                </div>
-              )
-            ) : (
-              <div className="space-y-2">
-                {upcomingBills.map((bill, i) => (
-                  <div
-                    key={bill.id}
-                    className={`flex justify-between items-center py-1.5 ${
-                      i < upcomingBills.length - 1 ? "border-b border-border/50" : ""
-                    }`}
-                  >
-                    <div>
-                      <p className="text-xs font-medium">{bill.name}</p>
-                      <p className="text-xs text-muted">{bill.dueDate}</p>
-                    </div>
-                    <span className="text-sm font-mono">${bill.amount.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <Link href="/bills" className="text-xs text-accent hover:underline mt-3 block">
-              View full calendar →
-            </Link>
-          </div>
-        </div>
-      </div>
+function StatusRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "good" | "warning" | "bad" | "checking";
+}) {
+  const color =
+    tone === "good"
+      ? "bg-success"
+      : tone === "warning"
+        ? "bg-warning"
+        : tone === "bad"
+          ? "bg-error"
+          : "animate-pulse bg-muted";
+  return (
+    <div className="flex min-w-48 items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-2">
+      <span className={`h-2.5 w-2.5 rounded-full ${color}`} aria-hidden="true" />
+      <span className="text-xs uppercase tracking-wide text-muted">{label}</span>
+      <span className="ml-auto text-sm font-medium">{value}</span>
     </div>
+  );
+}
+
+function MethodButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`rounded-md border px-3 py-2 text-sm ${
+        active ? "border-gold text-parchment" : "border-border text-muted"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecretField({
+  id,
+  label,
+  value,
+  onChange,
+  autoComplete = "off",
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete?: string;
+}) {
+  return (
+    <>
+      <label className="block text-sm text-muted" htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        type="password"
+        required
+        spellCheck={false}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
+      />
+    </>
   );
 }

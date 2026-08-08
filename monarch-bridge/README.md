@@ -1,7 +1,7 @@
 # Monarch Bridge Service
 
 The bridge is Tyrion's sole owner of Monarch authentication state. Mission Control,
-scheduled sync, the debug UI, and MCP tooling must call this service rather than
+scheduled sync, the operational UI, and MCP tooling must call this service rather than
 creating or persisting separate Monarch sessions.
 
 ## Supported client
@@ -19,7 +19,7 @@ python -m venv .venv
 # Safe fixture data; never contacts Monarch.
 .\.venv\Scripts\python.exe main.py --demo
 
-# Headless/recovery setup. The normal setup surface is Mission Control Settings.
+# Headless/recovery setup. The normal setup surface is the operational UI.
 .\.venv\Scripts\python.exe main.py --setup
 
 # Live bridge, bound only to loopback by default.
@@ -36,14 +36,15 @@ payloads in `.env`, command history, test fixtures, logs, screenshots, or issue/
 content. Login inputs are accepted only for the current request and are not retained
 by Tyrion.
 
-## Mission Control proxy
+## Operational UI proxy
 
-The browser calls the Next.js `/api/bridge/...` route. That server-side route forwards
-requests to the bridge and injects `BRIDGE_API_TOKEN` when configured. The token must
-remain server-only; never use a `NEXT_PUBLIC_` variable. Scheduled sync and MCP clients
-must use the same bridge URL and service token.
+The browser calls the Next.js `/api/bridge/...` route. That server-side route permits
+only health, auth setup/status/logout, and bounded sync, then injects
+`BRIDGE_API_TOKEN` for protected operations. The token must remain server-only; never
+use a `NEXT_PUBLIC_` variable. Mission Control, scheduled sync, and MCP clients use the
+private bridge URL and service token directly rather than the public UI proxy.
 
-The Settings UI and `python main.py --setup` are initiation surfaces for the same
+The operational UI and `python main.py --setup` are initiation surfaces for the same
 bridge-owned session. They do not create independent session stores. Browser-cookie
 setup is the recommended UI path because Monarch may reject programmatic password
 login even when account MFA is disabled; email/password remains a best-effort fallback.
@@ -55,7 +56,8 @@ Loopback is the default. A non-loopback bind fails closed unless:
 1. `BRIDGE_API_TOKEN` is a random value of at least 32 characters.
 2. TLS is terminated by a trusted reverse proxy and `BRIDGE_REMOTE_TLS=true`.
 3. `BRIDGE_ALLOWED_ORIGINS` contains only intended browser origins.
-4. The Next.js server, scheduled jobs, and MCP clients send the service token over TLS.
+4. The public UI is behind trusted private-network TLS ingress, while server callers
+   send the service token only over the private backend network or trusted TLS.
 
 ```dotenv
 BRIDGE_HOST=192.0.2.10
@@ -76,21 +78,29 @@ can contain private transaction identifiers.
 
 ### Production container
 
-The repository publishes the bridge-only private image as
-`registry.socko.us/tyrion`. A successful `CI` run on `main` publishes an immutable
-`sha-<full-commit>` tag and moves both `main` and `latest`; pull requests build the
-image on a GitHub-hosted runner but never publish it. The trusted homelab builder
-uses the same runner-level registry authentication as Mission Control and Ohm, so
-the workflow does not receive registry credentials as repository secrets.
-The homelab stack selects either tag with `TYRION_IMAGE_TAG`.
+The repository publishes the private bridge image as
+`registry.socko.us/tyrion-bridge` and the separate operational UI image as
+`registry.socko.us/tyrion-ui`. A successful `CI` run on `main` publishes
+`sha-<full-commit>` for both and moves each image's `main` and `latest` tags. Pull
+requests build both images on a GitHub-hosted runner but never publish them. The
+trusted homelab builder uses runner-level registry authentication, so the workflow
+does not receive registry credentials as repository secrets. The homelab stack
+selects tags with `TYRION_BRIDGE_IMAGE_TAG` and `TYRION_UI_IMAGE_TAG`. Moving tags
+are promoted only after both immutable image builds succeed and both source
+manifests are verified for the same commit.
 
-The image runs `main.py` as UID/GID `10001`, listens on container port `8100`, and
+The bridge image runs `main.py` as UID/GID `10001`, listens on container port `8100`, and
 checks `GET /health` over loopback. It contains only the bridge runtime and runtime
-dependencies; the debug UI, tests, documentation, local environment files, and
+dependencies; the operational UI, tests, documentation, local environment files, and
 session material are excluded from the build context and final image.
-Production exposes the service only through the private Traefik route at
-`https://tyrion.socko.us`; the ingress root returns the same sanitized status as
-`GET /health`. Do not publish a host port.
+Production gives the bridge no Traefik route and publishes no host port. The
+operational UI reaches it by service DNS on the unexposed `tyrion-backend` Docker
+network. Authorized Mission Control, scheduled sync, and MCP services may join that
+network and call the protected bridge contract directly.
+
+The UI image runs as UID/GID `10001`, listens on port `3000`, and checks
+`GET /api/health`. It is the only service routed from
+`https://tyrion.socko.us`; the browser uses its allowlisted `/api/bridge/...` proxy.
 
 Production must mount writable persistent storage at `/var/lib/tyrion`. The bridge
 stores the opaque session at `/var/lib/tyrion/monarch-session.json` and creates its
@@ -106,8 +116,8 @@ production setting contract is:
 | Variable | Production value |
 | --- | --- |
 | `BRIDGE_API_TOKEN` | Random server-only value with at least 32 characters |
-| `BRIDGE_REMOTE_TLS` | `true`, acknowledging trusted reverse-proxy TLS termination |
-| `BRIDGE_ALLOWED_ORIGINS` | `https://mc.socko.us` for the private Mission Control route |
+| `BRIDGE_REMOTE_TLS` | `true`, acknowledging trusted TLS ingress and isolated private routing |
+| `BRIDGE_ALLOWED_ORIGINS` | `https://mc.socko.us`; browsers do not call the bridge directly |
 
 `BRIDGE_PORT` and `SESSION_FILE` default to `8100` and
 `/var/lib/tyrion/monarch-session.json`; keep those values aligned with the image
@@ -122,7 +132,7 @@ in repository environment files.
 
 | State | Meaning | Operator action |
 | --- | --- | --- |
-| `unauthenticated` | No bridge-managed session exists | Start setup from Mission Control or the CLI |
+| `unauthenticated` | No bridge-managed session exists | Start setup from the operational UI or CLI |
 | `connected` | The session passed a live account check | No action |
 | `expired` | Monarch rejected the session; persisted state was removed | Authenticate again |
 | `degraded` | A session exists but Monarch is temporarily unavailable or returned an unknown failure | Retry, then reauthenticate if it persists |
@@ -137,9 +147,9 @@ Browser cookies cannot be refreshed automatically because Monarch does not provi
 bridge a refresh credential. When an upstream request explicitly rejects the session,
 the bridge removes it, preserves the `expired` health state, and requires the user to
 copy fresh browser cookie values. Transient network/upstream failures retain the
-session as `degraded` instead of forcing reauthentication. The debug UI retries safe
-reads and sync at most twice with short backoff, never retries authentication or
-mutation, and displays a persistent recovery banner after retries are exhausted.
+session as `degraded` instead of forcing reauthentication. The operational UI offers
+explicit status recheck and one bounded 30-day sync action; it never exposes finance
+read or mutation routes.
 
 Monarch does not publish a cookie TTL. The community client reports that saved
 sessions have sometimes lasted several months, but this is observational rather than
