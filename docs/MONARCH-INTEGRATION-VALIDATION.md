@@ -85,11 +85,10 @@ session directory at a time. The homelab stack selects the image with
 at `https://tyrion.socko.us` is the only production ingress. The image's default
 command starts `main.py`; the stack does not override it.
 
-For a controlled homelab smoke test, inject `BRIDGE_API_TOKEN` and retain the
-image defaults `BRIDGE_REMOTE_TLS=true` and
-`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`. Confirm direct startup fails when
-the token is absent or `BRIDGE_REMOTE_TLS` is explicitly overridden to `false`,
-`/health` is reachable through the reverse proxy, protected endpoints reject
-missing service authentication, and restart reuses the external session. Do not
-run login, capture responses, or inspect the mounted session as part of image
-publishing.
+For a controlled homelab smoke test, inject `BRIDGE_API_TOKEN`,
+`BRIDGE_REMOTE_TLS=true`, and the intended HTTPS `BRIDGE_ALLOWED_ORIGINS` at
+deployment time. Confirm direct startup fails when the token or TLS
+acknowledgement is absent, `/health` is reachable through the reverse proxy,
+protected endpoints reject missing service authentication, and restart reuses
+the external session. Do not run login, capture responses, or inspect the mounted
+session as part of image publishing.

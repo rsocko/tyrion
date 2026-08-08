@@ -35,7 +35,7 @@ def test_image_runs_non_root_with_external_session_storage():
     assert 'VOLUME ["/var/lib/tyrion"]' in dockerfile
     assert "BRIDGE_HOST=0.0.0.0" in dockerfile
     assert "BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us" in dockerfile
-    assert "BRIDGE_REMOTE_TLS=true" in dockerfile
+    assert "BRIDGE_REMOTE_TLS=" not in dockerfile
     assert "BRIDGE_LOAD_DOTENV=false" in dockerfile
     assert "DEFAULT_TRANSACTION_DAYS=90" in dockerfile
 
