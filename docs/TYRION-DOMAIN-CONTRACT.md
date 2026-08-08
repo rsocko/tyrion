@@ -25,17 +25,26 @@ field or changing its meaning requires a new major contract version.
 
 ## Normalized ingestion mapping
 
-The ingestion consumer maps each normalized Monarch Bridge transaction to
-`AttributionInputV1`:
+The package exports
+`createAttributionInputFromBridgeTransactionV1(transaction, context)` and
+`createAttributionInputsFromBridgePageV1(page, householdId, recordContexts)`.
+They strictly validate the Monarch Bridge v1 transaction/page DTO before mapping it
+to `AttributionInputV1`. The page adapter uses bridge `provenance.fetchedAt` as the
+observation timestamp and requires exactly one consumer mapping context per
+transaction.
+
+The adapter deliberately copies only the normalized merchant name and calendar date
+from a bridge transaction. Amount, notes, tags, category, raw transaction ID, raw
+account ID, display name, mask, pending state, recurring state, logo, and pagination
+cursor are validated but never copied into attribution input, policy, explanation,
+or result. The consumer supplies:
 
 - `householdId`: caller-authorized Tyrion household scope.
-- `source.recordRef`: opaque stable consumer reference; never logged by the engine.
-- `source.system`: always `monarch-bridge`.
-- `transaction.merchantName`: normalized bridge merchant display text.
-- `transaction.instrumentFingerprint`: nullable, irreversible,
+- `sourceRef`: opaque stable consumer reference derived outside this package; never
+  logged by the engine.
+- `instrumentFingerprint`: nullable, irreversible,
   household-scoped fingerprint produced by the integration consumer. Tyrion policy
   never stores raw account identifiers or reusable payment credentials.
-- `transaction.occurredOn`: ISO calendar date.
 - `historicalAttributions`: minimum aggregate counts needed for deterministic
   historical matching.
 - `existingManualDecision`: the persisted human decision, when present.

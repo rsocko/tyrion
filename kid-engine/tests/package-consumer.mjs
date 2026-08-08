@@ -4,6 +4,7 @@ import {
   ReattributionService,
   TYRION_DOMAIN_CONTRACT_VERSION,
   attributeTransactionV1,
+  createAttributionInputsFromBridgePageV1,
 } from '@rsocko/tyrion-kid-engine';
 import {
   parseAttributionInputV1,
@@ -20,6 +21,7 @@ const exportsToVerify = [
   PolicyService,
   ReattributionService,
   attributeTransactionV1,
+  createAttributionInputsFromBridgePageV1,
   parseAttributionInputV1,
   parsePolicySnapshotV1,
   FilePolicyRepository,
