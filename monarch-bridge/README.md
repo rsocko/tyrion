@@ -92,8 +92,9 @@ cross-process lease alongside that file. Ensure the mounted directory is owned b
 UID/GID `10001` and is accessible only to the bridge operator. Do not copy, back up,
 or inspect the session through CI or deployment automation.
 
-The image sets `BRIDGE_HOST=0.0.0.0`, so startup deliberately fails unless runtime
-configuration injects the service token and TLS acknowledgement. The complete
+The image sets `BRIDGE_HOST=0.0.0.0` and acknowledges the required private
+Traefik TLS termination with `BRIDGE_REMOTE_TLS=true`, so startup deliberately
+fails unless runtime configuration injects the service token. The complete
 production setting contract is:
 
 | Variable | Production value |
@@ -105,11 +106,11 @@ production setting contract is:
 `BRIDGE_PORT` and `SESSION_FILE` default to `8100` and
 `/var/lib/tyrion/monarch-session.json`; keep those values aligned with the image
 health check and volume mount. The image also defaults
-`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, sets
-`BRIDGE_LOAD_DOTENV=false`, and sets `DEFAULT_TRANSACTION_DAYS=90`; these are
-non-secret and may be repeated explicitly by the stack. Runtime secrets must be
-injected by the deployment platform, never baked into the image or placed in
-repository environment files.
+`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, `BRIDGE_REMOTE_TLS=true`,
+`BRIDGE_LOAD_DOTENV=false`, and `DEFAULT_TRANSACTION_DAYS=90`; these are
+non-secret and may be repeated explicitly by the stack. Runtime secrets must
+be injected by the deployment platform, never baked into the image or placed
+in repository environment files.
 
 ## Session lifecycle
 
