@@ -24,5 +24,25 @@ security-header middleware on the UI route. Neither service publishes a host por
 The bridge session volume is external to the image and persists normal stack updates;
 do not remove, copy, inspect, or back it up without equivalent secret controls.
 
+The UI also mounts the external `tyrion-policy` volume at
+`/var/lib/tyrion-policy`. It contains only strict Tyrion policy snapshots and
+metadata-only audit events; it must be access-restricted and backed up. Configure
+independent minimum-32-character policy assertion and instrument fingerprint keys as
+Dockhand secrets.
+
+The dedicated high-priority `tyrion-policy` router sends `/api/policy` through the
+trusted forward-auth service configured by `TYRION_POLICY_AUTH_URL`. That service
+must strip browser-supplied `x-tyrion-*` headers and return the short-lived signed
+actor, household, and permission assertion documented in `triage-app/README.md`.
+The policy API fails closed until this integration and
+`TYRION_POLICY_AUTH_SECRET` agree. Connector operations continue to use only the
+bridge proxy contract.
+
+Controlled re-attribution additionally requires a protected internal implementation
+of the `ReattributionRepository` adapter plus `TYRION_REATTRIBUTION_URL` and
+`TYRION_REATTRIBUTION_TOKEN`. Leave both blank when that bounded operation is not
+deployed; policy configuration remains available and preview/apply return a sanitized
+unavailable response.
+
 Health checks are `GET /api/health` on UI port `3000` and `GET /health` on bridge port
 `8100`. The UI's bridge reachability check is `GET /api/bridge/health`.

@@ -275,6 +275,20 @@ class StaticPolicyRepository implements PolicyRepository {
   async listAudit(): Promise<PolicyAuditEventV1[]> {
     return [];
   }
+
+  async withPolicyVersionFence<T>(
+    householdId: string,
+    expectedPolicyVersion: number,
+    operation: () => Promise<T>
+  ): Promise<T | null> {
+    if (
+      this.policy.householdId !== householdId ||
+      this.policy.policyVersion !== expectedPolicyVersion
+    ) {
+      return null;
+    }
+    return operation();
+  }
 }
 
 class MemoryReattributionRepository implements ReattributionRepository {

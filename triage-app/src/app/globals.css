@@ -74,6 +74,24 @@ body {
   outline-offset: 2px;
 }
 
+@layer components {
+  .input {
+    @apply min-h-10 rounded-md border border-border bg-elevated px-3 py-2 text-parchment placeholder:text-dim disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-primary {
+    @apply min-h-10 rounded-md border border-gold-deep bg-gold-deep px-4 py-2 text-sm font-semibold text-parchment hover:border-gold-hi disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-secondary {
+    @apply min-h-10 rounded-md border border-border bg-elevated px-4 py-2 text-sm font-medium text-parchment hover:border-gold disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-danger {
+    @apply min-h-10 rounded-md border border-error px-3 py-2 text-sm text-error hover:bg-card disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;

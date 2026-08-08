@@ -13,11 +13,13 @@ import {
   FilePolicyRepository,
   PolicyStoreConfigurationError,
   PolicyStoreCorruptError,
+  PolicyStoreBusyError,
 } from '../src/policy/file-repository.js';
 import {
   PolicyAuthorizationError,
   PolicyService,
   PolicyVersionConflictError,
+  authorizePolicy,
   authorizeReattribution,
   type PolicyRepository,
 } from '../src/policy/service.js';
@@ -99,6 +101,13 @@ describe('policy service authorization and versioning', () => {
       authorizeReattribution(writer, 'household-demo', 'apply')
     ).toThrowError(PolicyAuthorizationError);
   });
+
+  it('exposes policy authorization without repository access', () => {
+    expect(() => authorizePolicy(writer, 'household-demo', 'write')).not.toThrow();
+    expect(() =>
+      authorizePolicy(writer, 'household-other', 'read')
+    ).toThrowError(PolicyAuthorizationError);
+  });
 });
 
 describe('durable file policy repository', () => {
@@ -173,6 +182,45 @@ describe('durable file policy repository', () => {
         }
       )
     ).rejects.toBeInstanceOf(PolicyVersionConflictError);
+  });
+
+  it('fences policy writes while a version-bound operation is applying', async () => {
+    const directory = await temporaryDirectory();
+    const repository = new FilePolicyRepository(resolve(directory, 'policies.json'));
+    const service = new PolicyService(repository);
+    const created = await service.replacePolicy(writer, 'household-demo', {
+      expectedPolicyVersion: null,
+      policy: policyDraftFixture,
+    });
+    let enterFence!: () => void;
+    let releaseFence!: () => void;
+    const entered = new Promise<void>((resolvePromise) => {
+      enterFence = resolvePromise;
+    });
+    const released = new Promise<void>((resolvePromise) => {
+      releaseFence = resolvePromise;
+    });
+    const fenced = repository.withPolicyVersionFence(
+      'household-demo',
+      created.policyVersion,
+      async () => {
+        enterFence();
+        await released;
+        return 'applied';
+      }
+    );
+    await entered;
+    await expect(
+      service.replacePolicy(writer, 'household-demo', {
+        expectedPolicyVersion: created.policyVersion,
+        policy: policyDraftFixture,
+      })
+    ).rejects.toBeInstanceOf(PolicyStoreBusyError);
+    releaseFence();
+    await expect(fenced).resolves.toBe('applied');
+    await expect(
+      service.getPolicy(writer, 'household-demo')
+    ).resolves.toMatchObject({ policyVersion: created.policyVersion });
   });
 
   it('sanitizes audit input before persisting it', async () => {
@@ -278,5 +326,19 @@ class MemoryPolicyRepository implements PolicyRepository {
 
   async listAudit(): Promise<PolicyAuditEventV1[]> {
     return structuredClone(this.audit);
+  }
+
+  async withPolicyVersionFence<T>(
+    householdId: string,
+    expectedPolicyVersion: number,
+    operation: () => Promise<T>
+  ): Promise<T | null> {
+    if (
+      this.snapshot?.householdId !== householdId ||
+      this.snapshot.policyVersion !== expectedPolicyVersion
+    ) {
+      return null;
+    }
+    return operation();
   }
 }

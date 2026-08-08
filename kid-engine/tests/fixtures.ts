@@ -17,7 +17,8 @@ export const policyDraftFixture: PolicyDraftV1 = {
     {
       id: 'rule-card-alpha',
       kidId: 'kid-alpha',
-      instrumentFingerprint: 'fingerprint-alpha',
+      instrumentFingerprint:
+        'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       confidence: 'definite',
       enabled: true,
     },
@@ -34,6 +35,16 @@ export const policyDraftFixture: PolicyDraftV1 = {
   limits: [
     { kidId: 'kid-alpha', period: 'daily', amount: 25, currency: 'USD' },
   ],
+  exceptionPolicy: {
+    limitWarningPercent: 80,
+    requireReviewForLikelyAttribution: true,
+    notificationSignals: [
+      'limit-warning',
+      'limit-exceeded',
+      'attribution-review',
+      'connector-degraded',
+    ],
+  },
 };
 
 export const policyFixture: PolicySnapshotV1 = {

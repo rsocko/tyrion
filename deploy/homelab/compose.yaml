@@ -58,9 +58,18 @@ services:
     networks:
       - tyrion-backend
       - traefik
+    volumes:
+      - tyrion-policy:/var/lib/tyrion-policy
     environment:
       BRIDGE_URL: http://tyrion-monarch-bridge:8100
       BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a Dockhand secret}
+      TYRION_POLICY_STORE_PATH: /var/lib/tyrion-policy/policies.json
+      TYRION_POLICY_AUTH_SECRET: ${TYRION_POLICY_AUTH_SECRET:?Provision TYRION_POLICY_AUTH_SECRET as a Dockhand secret}
+      TYRION_INSTRUMENT_FINGERPRINT_KEY: ${TYRION_INSTRUMENT_FINGERPRINT_KEY:?Provision TYRION_INSTRUMENT_FINGERPRINT_KEY as a Dockhand secret}
+      TYRION_REATTRIBUTION_URL: ${TYRION_REATTRIBUTION_URL:-}
+      TYRION_REATTRIBUTION_TOKEN: ${TYRION_REATTRIBUTION_TOKEN:-}
+      TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "false"
+      TYRION_POLICY_DEMO_MODE: "false"
       NEXT_TELEMETRY_DISABLED: "1"
     labels:
       - "traefik.enable=true"
@@ -72,6 +81,16 @@ services:
       - "traefik.http.routers.tyrion-secure.tls=true"
       - "traefik.http.routers.tyrion-secure.tls.certresolver=letsencrypt"
       - "traefik.http.routers.tyrion-secure.middlewares=trusted-private-networks@file,compression@file,security-headers@file"
+      - "traefik.http.routers.tyrion-policy.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`) && PathPrefix(`/api/policy`)"
+      - "traefik.http.routers.tyrion-policy.entrypoints=websecure"
+      - "traefik.http.routers.tyrion-policy.tls=true"
+      - "traefik.http.routers.tyrion-policy.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.tyrion-policy.priority=100"
+      - "traefik.http.routers.tyrion-policy.middlewares=trusted-private-networks@file,tyrion-policy-auth,compression@file,security-headers@file"
+      - "traefik.http.routers.tyrion-policy.service=tyrion"
+      - "traefik.http.middlewares.tyrion-policy-auth.forwardauth.address=${TYRION_POLICY_AUTH_URL:?Provision TYRION_POLICY_AUTH_URL for signed policy assertions}"
+      - "traefik.http.middlewares.tyrion-policy-auth.forwardauth.trustForwardHeader=false"
+      - "traefik.http.middlewares.tyrion-policy-auth.forwardauth.authResponseHeaders=X-Tyrion-Actor,X-Tyrion-Household,X-Tyrion-Permissions,X-Tyrion-Auth-Timestamp,X-Tyrion-Auth-Signature"
       - "traefik.http.services.tyrion.loadbalancer.server.port=3000"
       - "traefik.docker.network=traefik"
     healthcheck:
@@ -84,6 +103,8 @@ services:
 volumes:
   tyrion-session:
     name: ${TYRION_SESSION_VOLUME:-tyrion-session}
+  tyrion-policy:
+    name: ${TYRION_POLICY_VOLUME:-tyrion-policy}
 
 networks:
   tyrion-backend:

@@ -87,6 +87,42 @@ export class FilePolicyRepository implements PolicyRepository {
       .map((event) => structuredClone(event));
   }
 
+  async withPolicyVersionFence<T>(
+    householdId: string,
+    expectedPolicyVersion: number,
+    operation: () => Promise<T>
+  ): Promise<T | null> {
+    await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await lockfile.lock(this.filePath, {
+        realpath: false,
+        lockfilePath: this.lockPath,
+        stale: 10_000,
+        update: 2_000,
+        retries: 0,
+      });
+    } catch (error) {
+      if (nodeErrorCode(error) === 'ELOCKED') throw new PolicyStoreBusyError();
+      throw new PolicyStoreUnavailableError();
+    }
+    try {
+      const current = await this.readStore();
+      if (
+        current.policies[householdId]?.policyVersion !== expectedPolicyVersion
+      ) {
+        return null;
+      }
+      return await operation();
+    } finally {
+      try {
+        await release();
+      } catch {
+        throw new PolicyStoreUnavailableError();
+      }
+    }
+  }
+
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
     await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
     let release: (() => Promise<void>) | undefined;

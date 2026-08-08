@@ -76,4 +76,4 @@ jobs:
       - name: Build production images without publishing
         run: |
           docker build --tag tyrion-bridge:ci .
-          docker build --tag tyrion-ui:ci triage-app
+          docker build --file triage-app/Dockerfile --tag tyrion-ui:ci .

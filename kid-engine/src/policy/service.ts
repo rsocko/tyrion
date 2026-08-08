@@ -19,6 +19,11 @@ export interface PolicyRepository {
     auditEvent: PolicyAuditEventV1
   ): Promise<void>;
   listAudit(householdId: string): Promise<PolicyAuditEventV1[]>;
+  withPolicyVersionFence<T>(
+    householdId: string,
+    expectedPolicyVersion: number,
+    operation: () => Promise<T>
+  ): Promise<T | null>;
 }
 
 export interface ReplacePolicyRequestV1 {
@@ -48,7 +53,7 @@ export class PolicyService {
     householdId: string
   ): Promise<PolicySnapshotV1 | null> {
     const parsedActor = parsePolicyActorV1(actor);
-    authorize(parsedActor, householdId, 'policy:read');
+    authorizePolicy(parsedActor, householdId, 'read');
     return this.repository.load(householdId);
   }
 
@@ -58,7 +63,7 @@ export class PolicyService {
     request: ReplacePolicyRequestV1
   ): Promise<PolicySnapshotV1> {
     const parsedActor = parsePolicyActorV1(actor);
-    authorize(parsedActor, householdId, 'policy:write');
+    authorizePolicy(parsedActor, householdId, 'write');
     const draft = parsePolicyDraftV1(request.policy);
     const current = await this.repository.load(householdId);
     const currentVersion = current?.policyVersion ?? null;
@@ -94,7 +99,7 @@ export class PolicyService {
     householdId: string
   ): Promise<PolicyAuditEventV1[]> {
     const parsedActor = parsePolicyActorV1(actor);
-    authorize(parsedActor, householdId, 'policy:read');
+    authorizePolicy(parsedActor, householdId, 'read');
     return this.repository.listAudit(householdId);
   }
 }
@@ -127,6 +132,19 @@ export function authorizeReattribution(
     parsedActor,
     householdId,
     operation === 'preview' ? 'reattribution:preview' : 'reattribution:apply'
+  );
+}
+
+export function authorizePolicy(
+  actor: PolicyActorV1,
+  householdId: string,
+  operation: 'read' | 'write'
+): void {
+  const parsedActor = parsePolicyActorV1(actor);
+  authorize(
+    parsedActor,
+    householdId,
+    operation === 'read' ? 'policy:read' : 'policy:write'
   );
 }
 
