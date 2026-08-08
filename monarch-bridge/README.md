@@ -1,99 +1,145 @@
 # Monarch Bridge Service
 
-A lightweight FastAPI microservice that wraps the `monarchmoneycommunity` Python library, providing a REST API for Mission Control to sync and interact with Monarch Money data.
+The bridge is Tyrion's sole owner of Monarch authentication state. Mission Control,
+scheduled sync, the debug UI, and MCP tooling must call this service rather than
+creating or persisting separate Monarch sessions.
 
-## Why a Separate Service?
+## Supported client
 
-- The mature Monarch libraries are Python (not Node.js)
-- Isolates authentication/session management from the main app
-- Can be restarted independently without affecting Mission Control
-- Enables future scaling (e.g., running on a different machine)
+`monarchmoneycommunity==1.5.2` is pinned in `requirements.txt`. Authentication,
+transaction pagination, and category mutation signatures are covered by deterministic
+tests. Upgrade the pin only with a contract-test and controlled live-validation run.
 
-## Quick Start (Demo Mode)
+## Local setup
 
-```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# Install dependencies
-pip install -r requirements.txt
+# Safe fixture data; never contacts Monarch.
+.\.venv\Scripts\python.exe main.py --demo
 
-# Run with mock data (no credentials needed!)
-python main.py --demo
+# Headless/recovery setup. The normal setup surface is Mission Control Settings.
+.\.venv\Scripts\python.exe main.py --setup
 
-# API docs at http://localhost:8100/docs
+# Live bridge, bound only to loopback by default.
+.\.venv\Scripts\python.exe main.py
 ```
 
-## Production Setup
+The bridge stores its opaque session outside the repository under the operating
+system's per-user application-state directory. The directory and file are restricted
+to the bridge user, and session replacement is atomic. `SESSION_FILE` may override
+the path, but the bridge rejects paths inside a Git repository.
 
-```bash
-# Configure
-cp config.example.env .env
-# Edit .env with your Monarch credentials
+Do not put Monarch passwords, MFA seeds, cookie values, session files, or financial
+payloads in `.env`, command history, test fixtures, logs, screenshots, or issue/PR
+content. Login inputs are accepted only for the current request and are not retained
+by Tyrion.
 
-# First run (interactive login for MFA)
-python main.py --setup
+## Mission Control proxy
 
-# Normal run
-python main.py
-# or
-uvicorn main:app --host 0.0.0.0 --port 8100
+The browser calls the Next.js `/api/bridge/...` route. That server-side route forwards
+requests to the bridge and injects `BRIDGE_API_TOKEN` when configured. The token must
+remain server-only; never use a `NEXT_PUBLIC_` variable. Scheduled sync and MCP clients
+must use the same bridge URL and service token.
+
+The Settings UI and `python main.py --setup` are initiation surfaces for the same
+bridge-owned session. They do not create independent session stores.
+
+## Authenticated homelab deployment
+
+Loopback is the default. A non-loopback bind fails closed unless:
+
+1. `BRIDGE_API_TOKEN` is a random value of at least 32 characters.
+2. TLS is terminated by a trusted reverse proxy and `BRIDGE_REMOTE_TLS=true`.
+3. `BRIDGE_ALLOWED_ORIGINS` contains only intended browser origins.
+4. The Next.js server, scheduled jobs, and MCP clients send the service token over TLS.
+
+```dotenv
+BRIDGE_HOST=192.0.2.10
+BRIDGE_API_TOKEN=<random-server-only-value>
+BRIDGE_REMOTE_TLS=true
+BRIDGE_ALLOWED_ORIGINS=https://mission-control.example
 ```
 
-## Running Tests
+Only `/health` and `/contract` are public. Public health reports reachability and a
+coarse auth state; all auth, read, sync, mutation, OpenAPI, and docs routes require
+service authentication in a remote deployment. Put rate limits and request logging
+redaction at the reverse proxy, and never log request bodies or authorization headers.
+Start the service through `main.py`; if a raw ASGI server overrides the bind address,
+non-loopback clients still fail closed, but that is not a supported TLS deployment.
 
-```bash
-python -m pytest test_bridge.py -v
+## Session lifecycle
+
+| State | Meaning | Operator action |
+| --- | --- | --- |
+| `unauthenticated` | No bridge-managed session exists | Start setup from Mission Control or the CLI |
+| `connected` | The session passed a live account check | No action |
+| `expired` | Monarch rejected the session; persisted state was removed | Authenticate again |
+| `degraded` | A session exists but Monarch is temporarily unavailable or returned an unknown failure | Retry, then reauthenticate if it persists |
+
+Startup loads only the bridge-owned session. `GET /auth/status` verifies it against
+Monarch. Expired or unreadable sessions are removed. Logout clears in-memory and
+persisted state. A cross-process lease prevents a second bridge process from loading
+or deleting the session while it is owned. To revoke access held by another device,
+revoke Monarch sessions upstream as well.
+
+## Revocation and incident recovery
+
+1. Stop every bridge process.
+2. Sign out all Monarch sessions from Monarch's security settings.
+3. Rotate the Monarch password if credentials or session material may have escaped.
+4. Delete the configured external session file and any untracked local captures.
+5. Rotate `BRIDGE_API_TOKEN` for remote deployments and update server-side callers.
+6. Run setup again, then confirm `/auth/status` reports `connected`.
+7. Check Git history, CI artifacts, backups, reverse-proxy logs, and issue attachments;
+   purge exposed material rather than committing a deletion alone.
+
+Exclude the session directory from backups unless the backup has equivalent access
+controls and encryption. Never restore a session after upstream revocation.
+
+## Tests
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest test_auth.py test_bridge.py
 ```
 
-Tests run in demo mode and require no credentials.
+The deterministic suite disables `.env` loading, uses temporary session paths, mocks
+the Monarch client at `create_monarch_client`, and cannot contact Monarch.
+
+Credentialed checks are separately opt-in:
+
+```powershell
+$env:TYRION_LIVE_TESTS = "1"
+$env:TYRION_LIVE_BRIDGE_URL = "http://127.0.0.1:8100"
+.\.venv\Scripts\python.exe -m pytest test_live_integration.py
+```
+
+Live auth values are process environment only. Category mutation also requires a
+dedicated test transaction/category and
+`TYRION_LIVE_MUTATION_CONFIRM=I_ACCEPT_REVERSIBLE_MONARCH_MUTATION`; the test verifies
+the write and restores the original category in a `finally` block. Do not redirect
+live test output to tracked files.
+
+See [`docs/MONARCH-INTEGRATION-VALIDATION.md`](../docs/MONARCH-INTEGRATION-VALIDATION.md)
+for the evidence matrix, limitations, and safe refresh procedure.
 
 ## Endpoints
 
 | Method | Path | Description |
-|--------|------|-------------|
-| GET | `/contract` | Stable contract version and supported versions |
-| GET | `/health` | Health check + session status |
-| POST | `/sync` | Trigger full transaction pull (Mission Control calls this) |
+| --- | --- | --- |
+| GET | `/contract` | Stable contract version |
+| GET | `/health` | Reachability and coarse auth state |
+| POST | `/auth/login` | Password/MFA setup |
+| POST | `/auth/login-with-cookies` | Browser-cookie setup |
+| GET | `/auth/status` | Verified session state |
+| POST | `/auth/logout` | Clear bridge-owned session |
+| POST | `/sync` | Trigger transaction pull |
 | GET | `/transactions` | Fetch transactions with filters |
 | GET | `/transactions/{id}` | Single transaction detail |
-| PATCH | `/transactions/{id}/category` | Update category (writes to Monarch) |
-| GET | `/categories` | All transaction categories |
-| GET | `/accounts` | Connected accounts |
-| GET | `/recurring` | Recurring/subscription transactions |
-| GET | `/cashflow` | Income vs. expenses summary |
-| GET | `/budgets` | Budget status per category |
-| GET | `/docs` | Interactive API documentation (auto-generated) |
-
-All responses implement contract v1.0, include `contractVersion`, and set the
-`X-Monarch-Contract-Version` response header. See
-[`docs/API-CONTRACTS.md`](../docs/API-CONTRACTS.md) for DTO and error semantics.
-
-## Demo Mode
-
-Use `--demo` flag or set `DEMO_MODE=true` in your environment. Returns realistic mock financial data so you can develop Mission Control connectors without live credentials.
-
-## Authentication
-
-On first run, the service performs an interactive login (email + password + optional MFA code). The session token is cached at `~/.monarch_session` and auto-refreshed on subsequent starts.
-
-## Architecture
-
-```
-Mission Control (Node.js/Next.js)
-        │
-        │ HTTP (localhost:8100)
-        │
-   ┌────▼────┐
-   │ FastAPI  │ ← Monarch Bridge
-   │ Service  │
-   └────┬────┘
-        │
-        │ GraphQL (Monarch's internal API)
-        │
-   ┌────▼────────────┐
-   │ Monarch Money   │
-   │ (Cloud Service) │
-   └─────────────────┘
-```
+| PATCH | `/transactions/{id}/category` | Verified category write-back |
+| GET | `/categories` | Categories |
+| GET | `/accounts` | Accounts |
+| GET | `/recurring` | Recurring transactions |
+| GET | `/cashflow` | Cash-flow summary |
+| GET | `/budgets` | Budget status |

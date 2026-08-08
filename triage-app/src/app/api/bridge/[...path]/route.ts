@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const BRIDGE_URL = process.env.BRIDGE_URL || "http://localhost:8100";
+const BRIDGE_API_TOKEN = process.env.BRIDGE_API_TOKEN;
+const BRIDGE_TIMEOUT_MS = 30_000;
 
 async function proxyRequest(request: NextRequest, params: { path: string[] }) {
-  const path = params.path.join("/");
+  const path = params.path.map(encodeURIComponent).join("/");
   const url = new URL(`${BRIDGE_URL}/${path}`);
 
   // Forward query params
@@ -14,10 +16,17 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
   const headers: HeadersInit = {
     "Content-Type": "application/json",
   };
+  if (BRIDGE_API_TOKEN) {
+    headers.Authorization = `Bearer ${BRIDGE_API_TOKEN}`;
+  }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
   const fetchOptions: RequestInit = {
     method: request.method,
     headers,
+    cache: "no-store",
+    signal: controller.signal,
   };
 
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -33,13 +42,25 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
 
   try {
     const res = await fetch(url.toString(), fetchOptions);
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
-  } catch (error) {
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return NextResponse.json(
+        { error: { code: "invalid_bridge_response", message: "Bridge returned an invalid response" } },
+        { status: 502 }
+      );
+    }
+    const data: unknown = await res.json();
+    return NextResponse.json(data, {
+      status: res.status,
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch {
     return NextResponse.json(
-      { error: "Bridge unavailable", message: error instanceof Error ? error.message : "Connection refused" },
+      { error: { code: "bridge_unavailable", message: "Bridge unavailable" } },
       { status: 502 }
     );
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

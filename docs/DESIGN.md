@@ -250,10 +250,11 @@ export const financeAlertConfigs = sqliteTable('finance_alert_configs', {
 
 ### Authentication Flow
 ```
-1. First run: interactive login (email + password + optional MFA)
-2. Session token cached locally (~/.monarch_session)
-3. Bridge auto-refreshes session on expiry
-4. MCP server uses same session for AI queries
+1. Mission Control Settings initiates password/MFA or cookie setup through its server proxy
+2. The bridge atomically stores the sole session outside the repository with user-only access
+3. Expired sessions are deleted and require reauthentication; transient failures are degraded
+4. CLI setup is the headless/recovery initiation path for the same bridge-owned state
+5. Scheduled sync and MCP tools call the authenticated bridge rather than loading sessions
 ```
 
 ## 4. Connector Interface Implementation

@@ -57,6 +57,8 @@ async def test_health(client):
     assert data["status"] == "ok"
     assert data["mode"] == "demo"
     assert data["authenticated"] is True
+    assert data["authState"] == "connected"
+    assert data["reachable"] is True
     assert_contract(resp)
 
 

@@ -540,6 +540,7 @@ The system **learns** aliases over time:
 
 - All matching happens locally (self-hosted)
 - Medical data (PHI) never leaves the homelab
-- Monarch credentials stored in `.env` (not committed)
+- Monarch session material is owned only by the bridge and stored outside the repository;
+  callers use the protected bridge contract, and login inputs are never committed
 - Paperless API tokens scoped to minimum needed permissions
 - Audit log for all automatic actions (matches, status changes, task completions)

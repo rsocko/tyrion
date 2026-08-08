@@ -81,7 +81,7 @@ All bridge-generated errors have one shape:
 }
 ```
 
-Stable codes include `invalid_request`, `invalid_cursor`, `invalid_date_range`, `not_authenticated`, `invalid_credentials`, `mfa_required`, `captcha_required`, `transaction_not_found`, `upstream_error`, and `internal_error`. Clients should branch on `code`, not `message`.
+Stable codes include `invalid_request`, `invalid_cursor`, `invalid_date_range`, `bridge_auth_required`, `bridge_unavailable`, `not_authenticated`, `session_in_use`, `session_expired`, `invalid_credentials`, `invalid_mfa`, `mfa_required`, `captcha_required`, `upstream_timeout`, `upstream_rate_limited`, `transaction_not_found`, `upstream_error`, and `internal_error`. Clients should branch on `code`, not `message`. Upstream exception text and sensitive values are never returned.
 
 ## Endpoints
 
@@ -104,28 +104,34 @@ Stable codes include `invalid_request`, `invalid_cursor`, `invalid_date_range`, 
   "contractVersion": "1.0",
   "status": "ok",
   "mode": "demo",
-  "authenticated": true
+  "reachable": true,
+  "authenticated": true,
+  "authState": "connected"
 }
 ```
 
-`status` is `ok` or `error`; `mode` is `demo` or `live`.
+`status` is `ok` or `degraded`; `mode` is `demo` or `live`. `authState` is
+`unauthenticated`, `connected`, `expired`, or `degraded`. Health does not expose
+session paths or upstream failure details.
 
 ### Authentication
 
 `POST /auth/login`
 
 ```json
-{ "email": "user@example.com", "password": "secret", "mfaCode": "123456" }
+{ "email": "<email>", "password": "<redacted>", "mfaCode": "<redacted>" }
 ```
 
-`mfaCode` is optional. `POST /auth/login-with-cookies` accepts `{ "cookies": "..." }`. Successful authentication and `POST /auth/logout` return:
+`mfaCode` is optional. `POST /auth/login-with-cookies` accepts a single cookie-header
+value. Authentication request bodies are bounded, never logged, and never echoed.
+Successful authentication and `POST /auth/logout` return:
 
 ```json
 {
   "contractVersion": "1.0",
   "status": "success",
   "message": "Authenticated successfully",
-  "email": "user@example.com"
+  "email": "<email>"
 }
 ```
 
@@ -137,10 +143,14 @@ Stable codes include `invalid_request`, `invalid_cursor`, `invalid_date_range`, 
 {
   "contractVersion": "1.0",
   "authenticated": true,
-  "email": "user@example.com",
+  "authState": "connected",
+  "email": "<email>",
   "mode": "live"
 }
 ```
+
+The email is in-memory display context only and is `null` after restart. Reusable
+Monarch credentials, cookies, and session values are never returned.
 
 ### Transactions
 

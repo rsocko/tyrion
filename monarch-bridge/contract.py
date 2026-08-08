@@ -41,13 +41,16 @@ class ContractInfoResponse(ContractResponse):
 
 
 class HealthResponse(ContractResponse):
-    status: Literal["ok", "error"]
+    status: Literal["ok", "degraded"]
     mode: Literal["demo", "live"]
+    reachable: bool = True
     authenticated: bool
+    auth_state: Literal["unauthenticated", "connected", "expired", "degraded"]
 
 
 class AuthStatusResponse(ContractResponse):
     authenticated: bool
+    auth_state: Literal["unauthenticated", "connected", "expired", "degraded"]
     email: Optional[str] = None
     mode: Literal["demo", "live"]
 

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { getAuthStatus, logout, syncData } from "@/lib/bridge-client";
+import { getAuthStatus, login, loginWithCookies, logout, syncData } from "@/lib/bridge-client";
 
-type ConnectionStatus = "connected" | "disconnected" | "checking" | "error";
+type ConnectionStatus = "connected" | "unauthenticated" | "expired" | "degraded" | "checking" | "error";
 
 export default function SettingsPage() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("checking");
@@ -14,6 +14,10 @@ export default function SettingsPage() {
   // Login form state
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<"password" | "cookies">("password");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
 
   // Sync controls
   const [syncInterval, setSyncInterval] = useState("4h");
@@ -36,7 +40,7 @@ export default function SettingsPage() {
         setConnectionStatus("connected");
         setEmail(res.data.email || "");
       } else {
-        setConnectionStatus("disconnected");
+        setConnectionStatus(res.data.authState);
       }
     } else {
       setConnectionStatus("error");
@@ -49,33 +53,28 @@ export default function SettingsPage() {
 
   const [cookieString, setCookieString] = useState("");
 
-  const handleCookieLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
     setLoginLoading(true);
-    try {
-      const res = await fetch("/api/bridge/auth/login-with-cookies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cookies: cookieString }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast("✓ Connected to Monarch Money");
-        setCookieString("");
-        checkStatus();
-      } else {
-        setLoginError(data?.error?.message || data?.message || "Cookie login failed.");
-      }
-    } catch {
-      setLoginError("Failed to connect to bridge. Is it running on port 8100?");
+    const res = loginMethod === "password"
+      ? await login(loginEmail, loginPassword, mfaCode || undefined)
+      : await loginWithCookies(cookieString);
+    if (res.data) {
+      showToast("Connected to Monarch Money");
+      setLoginPassword("");
+      setMfaCode("");
+      setCookieString("");
+      checkStatus();
+    } else {
+      setLoginError(res.error || "Authentication failed.");
     }
     setLoginLoading(false);
   };
 
   const handleLogout = async () => {
     await logout();
-    setConnectionStatus("disconnected");
+    setConnectionStatus("unauthenticated");
     setEmail("");
     showToast("Disconnected from Monarch Money");
   };
@@ -113,7 +112,9 @@ export default function SettingsPage() {
               <h2 className="text-sm font-semibold">Monarch Money Connection</h2>
               <p className="text-xs text-muted mt-0.5">
                 {connectionStatus === "connected" && `Connected as ${email}`}
-                {connectionStatus === "disconnected" && "Not connected"}
+                {connectionStatus === "unauthenticated" && "Not authenticated"}
+                {connectionStatus === "expired" && "Session expired — authenticate again"}
+                {connectionStatus === "degraded" && "Session unavailable — check Monarch and retry"}
                 {connectionStatus === "checking" && "Checking connection..."}
                 {connectionStatus === "error" && "Bridge unavailable — is it running on port 8100?"}
               </p>
@@ -143,25 +144,61 @@ export default function SettingsPage() {
       </div>
 
       {/* Login Form — only shown when disconnected */}
-      {(connectionStatus === "disconnected" || connectionStatus === "error") && (
+      {(["unauthenticated", "expired", "degraded", "error"] as ConnectionStatus[]).includes(connectionStatus) && (
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
           <h2 className="text-sm font-semibold mb-4">Connect to Monarch Money</h2>
-          <p className="text-xs text-dim mb-3">
-            Log into <a href="https://app.monarchmoney.com" target="_blank" className="text-success underline">app.monarchmoney.com</a> in your browser, then:<br/>
-            1. Open DevTools (F12) → <strong>Application</strong> tab → <strong>Cookies</strong><br/>
-            2. Find <code className="text-success">session_id</code> and <code className="text-success">csrftoken</code><br/>
-            3. Paste as: <code className="text-success">session_id=VALUE; csrftoken=VALUE</code>
-          </p>
-          <form onSubmit={handleCookieLogin} className="space-y-3">
-            <div>
-              <label className="text-xs text-muted block mb-1">Browser Cookie</label>
+          <div className="flex gap-2 mb-4">
+            {(["password", "cookies"] as const).map((method) => (
+              <button
+                key={method}
+                type="button"
+                onClick={() => setLoginMethod(method)}
+                className={`text-xs px-3 py-1.5 rounded-md border ${
+                  loginMethod === method ? "border-success text-success" : "border-card-2 text-muted"
+                }`}
+              >
+                {method === "password" ? "Email and password" : "Browser cookies"}
+              </button>
+            ))}
+          </div>
+          <form onSubmit={handleLogin} className="space-y-3" autoComplete="off">
+            {loginMethod === "password" ? (
+              <>
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="Monarch email"
+                  autoComplete="username"
+                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-sm"
+                />
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="Monarch password"
+                  autoComplete="current-password"
+                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-sm"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  placeholder="MFA code (when requested)"
+                  autoComplete="one-time-code"
+                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-sm"
+                />
+              </>
+            ) : (
               <textarea
                 value={cookieString}
                 onChange={(e) => setCookieString(e.target.value)}
                 className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 h-20 font-mono"
-                placeholder="session_id=abc123; csrftoken=xyz789"
+                placeholder="Paste the Cookie request header"
+                spellCheck={false}
               />
-            </div>
+            )}
             {loginError && (
               <p className="text-xs text-error bg-error/20 border border-error/30 rounded-md px-3 py-2">
                 {loginError}
@@ -169,10 +206,15 @@ export default function SettingsPage() {
             )}
             <button
               type="submit"
-              disabled={loginLoading || !cookieString.trim()}
+              disabled={
+                loginLoading ||
+                (loginMethod === "password"
+                  ? !loginEmail.trim() || !loginPassword
+                  : !cookieString.trim())
+              }
               className="w-full py-2 rounded-md bg-success hover:bg-success text-white text-sm font-medium transition-colors disabled:opacity-50"
             >
-              {loginLoading ? "Connecting..." : "Connect with Cookies"}
+              {loginLoading ? "Connecting..." : "Connect"}
             </button>
           </form>
         </div>
