@@ -130,9 +130,17 @@ export function login(email: string, password: string, mfaCode?: string) {
   });
 }
 
+export function loginWithCookies(cookies: string) {
+  return bridgeFetch<AuthAction>("/auth/login-with-cookies", {
+    method: "POST",
+    body: JSON.stringify({ cookies }),
+  });
+}
+
 export function getAuthStatus() {
   return bridgeFetch<ContractEnvelope & {
     authenticated: boolean;
+    authState: "unauthenticated" | "connected" | "expired" | "degraded";
     email: string | null;
     mode: "demo" | "live";
   }>("/auth/status");
@@ -205,9 +213,11 @@ export function syncData(days = 90) {
 
 export function getHealth() {
   return bridgeFetch<ContractEnvelope & {
-    status: "ok" | "error";
+    status: "ok" | "degraded";
     mode: "demo" | "live";
+    reachable: boolean;
     authenticated: boolean;
+    authState: "unauthenticated" | "connected" | "expired" | "degraded";
   }>("/health");
 }
 

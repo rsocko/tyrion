@@ -22,6 +22,11 @@ __pycache__/
 !*.example.env
 .mm/
 .monarch_session
+**/session.json
+**/.session-*.tmp
+monarch-bridge/.live/
+monarch-bridge/live-artifacts/
+*.har
 *.pickle
 *.pkl
 

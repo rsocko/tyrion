@@ -13,7 +13,6 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -21,9 +20,19 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from bridge_runtime import (
+    AuthState,
+    BridgeSettings,
+    InvalidSessionError,
+    RedactingFilter,
+    SessionInUseError,
+    SessionManager,
+    UpstreamFailure,
+    classify_failure,
+)
 from contract import (
     CONTRACT_VERSION,
     AccountsResponse,
@@ -51,7 +60,12 @@ from contract import (
     normalize_transactions,
     provenance,
 )
-load_dotenv()
+
+if os.getenv("BRIDGE_LOAD_DOTENV", "").lower() in ("1", "true", "yes"):
+    load_dotenv()
+
+SETTINGS = BridgeSettings.from_env()
+session_manager = SessionManager(SETTINGS.session_file)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -62,10 +76,37 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("monarch_bridge")
+logger.addFilter(RedactingFilter())
+
+
+def create_monarch_client():
+    from monarchmoney import MonarchMoney
+
+    return MonarchMoney()
 
 
 def upstream_error(resource: str, exc: Exception) -> HTTPException:
-    logger.error("Monarch %s request failed: %s", resource, exc, exc_info=True)
+    failure = classify_failure(exc)
+    logger.warning("Monarch %s request failed (%s)", resource, failure.value)
+    if failure == UpstreamFailure.EXPIRED:
+        session_manager.clear(AuthState.EXPIRED)
+        return HTTPException(
+            401,
+            detail={
+                "error": "session_expired",
+                "message": "The Monarch session expired; authenticate again",
+            },
+        )
+    if failure == UpstreamFailure.TIMEOUT:
+        return HTTPException(
+            504,
+            detail={"error": "upstream_timeout", "message": "Monarch did not respond in time"},
+        )
+    if failure == UpstreamFailure.RATE_LIMITED:
+        return HTTPException(
+            429,
+            detail={"error": "upstream_rate_limited", "message": "Monarch rate limited the request"},
+        )
     return HTTPException(
         502,
         detail={
@@ -228,29 +269,44 @@ class DemoProvider:
 
 
 # ---------------------------------------------------------------------------
-# Monarch client management (live mode only)
-# ---------------------------------------------------------------------------
-mm: Optional[object] = None
-
-
 async def get_client():
     """Get or initialize the Monarch Money client (live mode only)."""
-    global mm
     if DEMO_MODE:
         raise RuntimeError("get_client() should not be called in demo mode")
 
-    if mm is None:
-        from monarchmoney import MonarchMoney
-        mm = MonarchMoney()
-        session_file = SESSION_FILE
-
-        if session_file.exists():
-            mm.load_session(str(session_file))
-            logger.info("Loaded existing Monarch session from %s", session_file)
-        else:
-            raise HTTPException(401, detail={"error": "not_authenticated", "message": "Please authenticate via /auth/login"})
-
-    return mm
+    try:
+        return await session_manager.get_client(create_monarch_client)
+    except SessionInUseError:
+        raise HTTPException(
+            409,
+            detail={
+                "error": "session_in_use",
+                "message": "Another bridge process owns the Monarch session",
+            },
+        )
+    except FileNotFoundError:
+        raise HTTPException(
+            401,
+            detail={"error": "not_authenticated", "message": "Authenticate with the bridge first"},
+        )
+    except InvalidSessionError:
+        logger.warning("Stored Monarch session could not be loaded")
+        raise HTTPException(
+            401,
+            detail={
+                "error": "session_expired",
+                "message": "The Monarch session is invalid; authenticate again",
+            },
+        )
+    except Exception:
+        logger.error("Monarch client could not be initialized")
+        raise HTTPException(
+            503,
+            detail={
+                "error": "bridge_unavailable",
+                "message": "The Monarch client is unavailable",
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +315,7 @@ async def get_client():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mode = "DEMO" if DEMO_MODE else "LIVE"
-    logger.info("Monarch Bridge starting in %s mode on port %s", mode, os.getenv("BRIDGE_PORT", "8100"))
+    logger.info("Monarch Bridge starting in %s mode", mode)
     yield
     logger.info("Monarch Bridge shutting down")
 
@@ -275,20 +331,47 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware for local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=list(SETTINGS.allowed_origins),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Bridge-Token"],
 )
 
 
 @app.middleware("http")
-async def add_contract_version_header(request: Request, call_next):
+async def secure_bridge_request(request: Request, call_next):
+    if request.url.path.startswith("/auth/") and request.method == "POST":
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > SETTINGS.max_auth_body_bytes:
+                    return error_response(413, "payload_too_large", "Authentication payload is too large")
+            except ValueError:
+                return error_response(400, "invalid_request", "Content-Length is invalid")
+        body = await request.body()
+        if len(body) > SETTINGS.max_auth_body_bytes:
+            return error_response(413, "payload_too_large", "Authentication payload is too large")
+
+    public_path = request.url.path in {"/health", "/contract"}
+    client_host = request.client.host if request.client else None
+    service_auth_required = SETTINGS.request_requires_service_auth(client_host)
+    if (
+        request.method != "OPTIONS"
+        and not public_path
+        and not SETTINGS.authorizes(
+            request.headers.get("authorization"),
+            request.headers.get("x-bridge-token"),
+            required=service_auth_required,
+        )
+    ):
+        return error_response(401, "bridge_auth_required", "Bridge authentication is required")
+
     response = await call_next(request)
     response.headers["X-Monarch-Contract-Version"] = CONTRACT_VERSION
+    if request.url.path.startswith("/auth/"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -297,6 +380,7 @@ def error_response(status_code: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content=payload.model_dump(mode="json", by_alias=True),
+        headers={"X-Monarch-Contract-Version": CONTRACT_VERSION},
     )
 
 
@@ -323,7 +407,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    logger.error("Unhandled error on %s %s", request.method, request.url.path)
     return error_response(500, "internal_error", "The bridge could not complete the request")
 
 
@@ -342,21 +426,33 @@ class CategoryUpdate(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
-    mfaCode: Optional[str] = None
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+    mfaCode: Optional[str] = Field(default=None, min_length=4, max_length=32)
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_well_formed(cls, value: str) -> str:
+        value = value.strip()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("email must be valid")
+        return value
 
 
 class CookieLoginRequest(BaseModel):
-    cookies: str  # Raw cookie header string from browser
+    cookies: str = Field(min_length=3, max_length=12000)
+
+    @field_validator("cookies")
+    @classmethod
+    def cookies_must_be_header_pairs(cls, value: str) -> str:
+        if "=" not in value or "\r" in value or "\n" in value:
+            raise ValueError("cookies must be a single cookie header value")
+        return value
 
 
 # ---------------------------------------------------------------------------
 # Auth Endpoints
 # ---------------------------------------------------------------------------
-SESSION_FILE = Path(os.getenv("SESSION_FILE", "~/.monarch_session")).expanduser()
-
-
 @app.post("/auth/login", response_model=AuthActionResponse)
 async def auth_login(request: LoginRequest):
     """Authenticate with Monarch Money using email/password + optional email OTP code.
@@ -373,16 +469,12 @@ async def auth_login(request: LoginRequest):
         )
 
     try:
-        from monarchmoney import MonarchMoney
-
-        global mm
-        client = MonarchMoney()
+        client = create_monarch_client()
 
         if request.mfaCode:
             await client.multi_factor_authenticate(request.email, request.password, request.mfaCode)
-            client.save_session(str(SESSION_FILE))
-            mm = client
-            logger.info("MFA login successful for %s", request.email)
+            session_manager.establish(client, request.email)
+            logger.info("MFA login successful")
             return AuthActionResponse(
                 status="success",
                 message="Authenticated successfully",
@@ -395,9 +487,8 @@ async def auth_login(request: LoginRequest):
             use_saved_session=False,
             save_session=False,
         )
-        client.save_session(str(SESSION_FILE))
-        mm = client
-        logger.info("Login successful for %s", request.email)
+        session_manager.establish(client, request.email)
+        logger.info("Login successful")
         return AuthActionResponse(
             status="success",
             message="Authenticated successfully",
@@ -406,15 +497,18 @@ async def auth_login(request: LoginRequest):
 
     except HTTPException:
         raise
-    except Exception as e:
-        error_msg = str(e).lower()
-        if (
-            "mfa" in error_msg
-            or "multi-factor" in error_msg
-            or "two-factor" in error_msg
-            or "verification" in error_msg
-        ):
-            logger.info("MFA code required for %s", request.email)
+    except SessionInUseError:
+        raise HTTPException(
+            409,
+            detail={
+                "error": "session_in_use",
+                "message": "Another bridge process owns the Monarch session",
+            },
+        )
+    except Exception as exc:
+        failure = classify_failure(exc, login_flow=True)
+        logger.info("Login failed (%s)", failure.value)
+        if failure == UpstreamFailure.MFA_REQUIRED:
             raise HTTPException(
                 403,
                 detail={
@@ -422,16 +516,32 @@ async def auth_login(request: LoginRequest):
                     "message": "Monarch requires a verification code. Enter it and try again.",
                 },
             )
-        elif "password" in error_msg or "credentials" in error_msg or "unauthorized" in error_msg:
+        if failure == UpstreamFailure.INVALID_CREDENTIALS:
             raise HTTPException(401, detail={"error": "invalid_credentials", "message": "Invalid email or password"})
-        elif "captcha" in error_msg:
+        if failure == UpstreamFailure.INVALID_MFA:
+            raise HTTPException(
+                401,
+                detail={"error": "invalid_mfa", "message": "The verification code is invalid or expired"},
+            )
+        if failure == UpstreamFailure.CAPTCHA_REQUIRED:
             raise HTTPException(403, detail={
                 "error": "captcha_required",
                 "message": "Monarch requires CAPTCHA. Use cookie-based login instead: log in via browser, then paste your cookies."
             })
-        else:
-            logger.error("Login failed: %s", e)
-            raise HTTPException(500, detail={"error": "login_failed", "message": str(e)})
+        if failure == UpstreamFailure.TIMEOUT:
+            raise HTTPException(
+                504,
+                detail={"error": "upstream_timeout", "message": "Monarch did not respond in time"},
+            )
+        if failure == UpstreamFailure.RATE_LIMITED:
+            raise HTTPException(
+                429,
+                detail={"error": "upstream_rate_limited", "message": "Try again later"},
+            )
+        raise HTTPException(
+            502,
+            detail={"error": "login_failed", "message": "Monarch authentication failed"},
+        )
 
 
 @app.post("/auth/login-with-cookies", response_model=AuthActionResponse)
@@ -447,59 +557,65 @@ async def auth_login_cookies(request: CookieLoginRequest):
         return AuthActionResponse(status="success", message="Demo mode - no real auth needed")
 
     try:
-        from monarchmoney import MonarchMoney
-
-        global mm
-        client = MonarchMoney()
+        client = create_monarch_client()
         await client.login_with_cookies(request.cookies, save_session=False)
-        client.save_session(str(SESSION_FILE))
-        mm = client
+        session_manager.establish(client)
         logger.info("Cookie-based login successful")
         return AuthActionResponse(status="success", message="Authenticated via browser cookies")
 
-    except Exception as e:
-        logger.error("Cookie login failed: %s", e)
-        raise HTTPException(401, detail={"error": "cookie_login_failed", "message": f"Cookie auth failed: {e}"})
+    except Exception as exc:
+        if isinstance(exc, SessionInUseError):
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "session_in_use",
+                    "message": "Another bridge process owns the Monarch session",
+                },
+            )
+        failure = classify_failure(exc, login_flow=True)
+        logger.info("Cookie login failed (%s)", failure.value)
+        status = 504 if failure == UpstreamFailure.TIMEOUT else 401
+        code = "upstream_timeout" if failure == UpstreamFailure.TIMEOUT else "cookie_login_failed"
+        raise HTTPException(
+            status,
+            detail={"error": code, "message": "Cookie authentication failed"},
+        )
 
 
 @app.get("/auth/status", response_model=AuthStatusResponse)
 async def auth_status():
     """Check whether the current session is active."""
     if DEMO_MODE:
-        return AuthStatusResponse(authenticated=True, email="demo@example.com", mode="demo")
+        return AuthStatusResponse(
+            authenticated=True,
+            auth_state=AuthState.CONNECTED.value,
+            email="demo@example.com",
+            mode="demo",
+        )
 
-    if SESSION_FILE.exists():
-        try:
-            from monarchmoney import MonarchMoney
-            global mm
-            if mm is None:
-                client = MonarchMoney()
-                client.load_session(str(SESSION_FILE))
-                mm = client
-            # Try a lightweight call to verify session is valid
-            await mm.get_accounts()
-            return AuthStatusResponse(
-                authenticated=True,
-                email=os.getenv("MONARCH_EMAIL", "authenticated"),
-                mode="live",
-            )
-        except Exception as e:
-            logger.warning("Session invalid: %s", e)
-            return AuthStatusResponse(authenticated=False, mode="live")
-    else:
-        return AuthStatusResponse(authenticated=False, mode="live")
+    state = await session_manager.verify(create_monarch_client)
+    return AuthStatusResponse(
+        authenticated=state == AuthState.CONNECTED,
+        auth_state=state.value,
+        email=session_manager.email if state == AuthState.CONNECTED else None,
+        mode="live",
+    )
 
 
 @app.post("/auth/logout", response_model=AuthActionResponse)
 async def auth_logout():
     """Clear cached session and log out."""
-    global mm
-    mm = None
-
-    if SESSION_FILE.exists():
-        SESSION_FILE.unlink()
-        logger.info("Session file removed: %s", SESSION_FILE)
-
+    try:
+        session_manager.clear()
+    except SessionInUseError:
+        raise HTTPException(
+            409,
+            detail={
+                "error": "session_in_use",
+                "message": "Another bridge process owns the Monarch session",
+            },
+        )
+    logger.info("Bridge-managed session cleared")
     return AuthActionResponse(status="logged_out", message="Session cleared")
 
 
@@ -514,15 +630,21 @@ async def contract_info():
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    """Health check and session status."""
+    """Return reachability and the last known authentication state."""
     if DEMO_MODE:
-        return HealthResponse(status="ok", mode="demo", authenticated=True)
-    try:
-        await get_client()
-        return HealthResponse(status="ok", mode="live", authenticated=True)
-    except Exception as e:
-        logger.warning("Health check failed: %s", e)
-        return HealthResponse(status="error", mode="live", authenticated=False)
+        return HealthResponse(
+            status="ok",
+            mode="demo",
+            authenticated=True,
+            auth_state=AuthState.CONNECTED.value,
+        )
+    state = session_manager.state
+    return HealthResponse(
+        status="ok" if state in (AuthState.CONNECTED, AuthState.UNAUTHENTICATED) else "degraded",
+        mode="live",
+        authenticated=state == AuthState.CONNECTED,
+        auth_state=state.value,
+    )
 
 
 @app.post("/sync", response_model=SyncResponse)
@@ -882,17 +1004,15 @@ if __name__ == "__main__":
         os.environ["DEMO_MODE"] = "true"
 
     if args.setup:
-        from monarchmoney import MonarchMoney
-
         async def setup():
-            client = MonarchMoney()
+            client = create_monarch_client()
             await client.interactive_login()
-            client.save_session(str(SESSION_FILE))
-            print(f"Session saved to {SESSION_FILE}")
+            session_manager.establish(client)
+            print("Bridge authentication configured")
 
         asyncio.run(setup())
     else:
-        host = os.getenv("BRIDGE_HOST", "0.0.0.0")
-        port = args.port or int(os.getenv("BRIDGE_PORT", "8100"))
+        host = SETTINGS.host
+        port = args.port or SETTINGS.port
         logger.info("Starting Monarch Bridge on %s:%d (demo=%s)", host, port, DEMO_MODE)
         uvicorn.run(app, host=host, port=port)
