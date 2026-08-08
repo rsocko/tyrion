@@ -61,6 +61,7 @@ def test_build_context_excludes_sensitive_and_non_runtime_content():
         "**/*.pem",
         ".git",
         "triage-app",
+        "deploy",
         "monarch-bridge/test*.py",
     ):
         assert excluded in dockerignore
@@ -88,3 +89,21 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
     assert "Immutable image already exists; it will not be overwritten." in publisher
     assert "${{ env.REGISTRY_REPOSITORY }}:main" in publisher
     assert "${{ env.REGISTRY_REPOSITORY }}:latest" in publisher
+
+
+def test_homelab_parity_copies_are_safe_and_deployable():
+    compose = read_repository_file("deploy/homelab/compose.yaml")
+    example = read_repository_file("deploy/homelab/.env.example")
+
+    assert "registry.socko.us/tyrion:${TYRION_IMAGE_TAG:-latest}" in compose
+    assert "SESSION_FILE: /var/lib/tyrion/monarch-session.json" in compose
+    assert "BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?" in compose
+    assert "tyrion-session:/var/lib/tyrion" in compose
+    assert "external: true" in compose
+    assert "http://127.0.0.1:8100/health" in compose
+    assert "ports:" not in compose
+    assert "TYRION_IMAGE_TAG=latest" in example
+    assert "TYRION_HOSTNAME=tyrion.socko.us" in example
+    assert "BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us" in example
+    assert "\nBRIDGE_API_TOKEN=\n" in f"\n{example}"
+    assert not (REPOSITORY_ROOT / "deploy/homelab/deploy.sh").exists()

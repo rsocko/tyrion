@@ -28,6 +28,7 @@
 **/node_modules
 **/.next
 triage-app
+deploy
 docs
 brand
 *.md
