@@ -6,20 +6,19 @@ import { mockTransactions, kids, ruleSuggestions } from "@/lib/mock-data";
 import { TransactionCard } from "@/components/transaction-card";
 import { Toast } from "@/components/toast";
 import { useDataSource } from "@/lib/use-data-source";
-import { getTransactions } from "@/lib/bridge-client";
+import { getTransactions, Transaction } from "@/lib/bridge-client";
 
-function mapMonarchTransactions(raw: unknown[]): TriageTransaction[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return raw.map((t: any) => {
+function mapMonarchTransactions(raw: Transaction[]): TriageTransaction[] {
+  return raw.map((t) => {
     const categoryName = t.category?.name || null;
     const isUncategorized = !categoryName || categoryName === "Uncategorized";
     return {
-      id: t.id || String(Math.random()),
-      merchantName: t.merchant?.name || t.name || "Unknown",
-      amount: Math.abs(t.amount || 0),
-      date: t.date || new Date().toISOString().split("T")[0],
-      cardLabel: t.account?.displayName || "Account",
-      cardLast4: t.account?.displayName?.slice(-4) || "****",
+      id: t.id,
+      merchantName: t.merchant.name,
+      amount: Math.abs(t.amount),
+      date: t.date,
+      cardLabel: t.account.displayName,
+      cardLast4: t.account.mask || "****",
       originalCategory: categoryName || undefined,
       triageStatus: isUncategorized ? "uncategorized" : "suggested-kid",
       suggestedCategories: isUncategorized ? ["Groceries", "Shopping", "Dining Out"] : undefined,
@@ -47,8 +46,6 @@ export default function TriagePage() {
         .then((res) => {
           if (res.data && Array.isArray(res.data.transactions)) {
             setLiveTransactions(mapMonarchTransactions(res.data.transactions));
-          } else if (res.data && Array.isArray(res.data)) {
-            setLiveTransactions(mapMonarchTransactions(res.data as unknown[]));
           }
         })
         .finally(() => setLiveLoading(false));

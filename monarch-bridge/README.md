@@ -53,6 +53,7 @@ Tests run in demo mode and require no credentials.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/contract` | Stable contract version and supported versions |
 | GET | `/health` | Health check + session status |
 | POST | `/sync` | Trigger full transaction pull (Mission Control calls this) |
 | GET | `/transactions` | Fetch transactions with filters |
@@ -64,6 +65,10 @@ Tests run in demo mode and require no credentials.
 | GET | `/cashflow` | Income vs. expenses summary |
 | GET | `/budgets` | Budget status per category |
 | GET | `/docs` | Interactive API documentation (auto-generated) |
+
+All responses implement contract v1.0, include `contractVersion`, and set the
+`X-Monarch-Contract-Version` response header. See
+[`docs/API-CONTRACTS.md`](../docs/API-CONTRACTS.md) for DTO and error semantics.
 
 ## Demo Mode
 
