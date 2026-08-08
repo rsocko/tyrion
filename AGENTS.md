@@ -107,6 +107,13 @@ Review the change for:
 - **Security:** Authentication bypasses, non-loopback exposure, permissive CORS,
   secret leakage, unsafe session paths or permissions, raw errors, unbounded inputs,
   proxy token exposure, and accidental live access.
+- **Runtime sensitive-data exposure:** Secrets and private data emitted through
+  application, proxy, test, or CI logs; telemetry; exception text; API error payloads;
+  browser output; screenshots; snapshots; and generated artifacts.
+- **GitHub and review exposure:** Secrets and private data present in tracked or
+  untracked files, the complete PR diff, fixtures, examples, documentation, generated
+  output, commit messages, PR titles or descriptions, review comments, and uploaded
+  CI artifacts.
 - **Session lifecycle:** Creation, atomic replacement, restart reuse, expiry cleanup,
   degraded state, logout, concurrent processes, and recovery.
 - **Error handling:** Stable public codes, useful sanitized messages, preserved HTTP
@@ -131,7 +138,10 @@ Review the change for:
 
 - Run the smallest relevant Python tests and the Next.js build/type checks.
 - Run `git diff --check`.
-- Re-run sensitive-file/content checks after the final edit.
+- Re-run sensitive-file/content checks after the final edit. Inspect changed and
+  untracked file names and contents, the complete staged and unstaged diff, and any
+  commit or PR metadata prepared for GitHub; separately verify that exercised runtime
+  paths emit only sanitized logs, errors, telemetry, and artifacts.
 - Confirm documentation and example configuration match runtime behavior.
 
 ### Phase 5: Specialized review
