@@ -6,6 +6,7 @@ import {
   attributeTransactionV1,
   createAttributionInputsFromBridgePageV1,
 } from '@rsocko/tyrion-kid-engine';
+import * as publicApi from '@rsocko/tyrion-kid-engine';
 import {
   parseAttributionInputV1,
   parsePolicySnapshotV1,
@@ -30,4 +31,15 @@ const exportsToVerify = [
 
 if (exportsToVerify.some((value) => value === undefined)) {
   throw new Error('Published Tyrion kid-engine exports are incomplete');
+}
+
+for (const unsupportedLegacyExport of [
+  'attributeTransaction',
+  'matchCardRules',
+  'checkThresholds',
+  'generateSuggestions',
+]) {
+  if (unsupportedLegacyExport in publicApi) {
+    throw new Error(`Unsupported legacy export is public: ${unsupportedLegacyExport}`);
+  }
 }

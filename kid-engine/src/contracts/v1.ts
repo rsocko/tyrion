@@ -395,6 +395,7 @@ export function parseReattributionPreviewV1(
   if (Date.parse(expiresAt) <= Date.parse(createdAt)) {
     invalid('expiresAt must be later than createdAt');
   }
+  const policyVersion = positiveInteger(preview.policyVersion, 'policyVersion');
   const items = array(preview.items, 'items').map((item, index) => {
     const previewItem = object(item, `items[${index}]`);
     exactKeys(previewItem, [
@@ -411,6 +412,9 @@ export function parseReattributionPreviewV1(
     const proposed = parseAttributionResultV1(previewItem.proposed);
     if (previous.sourceRef !== sourceRef || proposed.sourceRef !== sourceRef) {
       invalid(`items[${index}] source references are inconsistent`);
+    }
+    if (proposed.provenance.policyVersion !== policyVersion) {
+      invalid(`items[${index}] proposed policy version is inconsistent`);
     }
     return {
       sourceRef,
@@ -436,7 +440,7 @@ export function parseReattributionPreviewV1(
     contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
     previewId: identifier(preview.previewId, 'previewId'),
     householdId: identifier(preview.householdId, 'householdId'),
-    policyVersion: positiveInteger(preview.policyVersion, 'policyVersion'),
+    policyVersion,
     createdAt,
     expiresAt,
     items,

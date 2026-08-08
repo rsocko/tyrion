@@ -179,5 +179,23 @@ describe('v1 domain contract validation', () => {
         ],
       })
     ).toThrow('unexpected field');
+    expect(() =>
+      parseReattributionPreviewV1({
+        contractVersion: '1.0',
+        previewId: 'preview-demo',
+        householdId: 'household-demo',
+        policyVersion: 2,
+        createdAt: '2026-08-08T12:03:00Z',
+        expiresAt: '2026-08-08T12:18:00Z',
+        items: [
+          {
+            sourceRef: 'source-record-demo',
+            previous: result,
+            proposed: result,
+            disposition: 'unchanged',
+          },
+        ],
+      })
+    ).toThrow('proposed policy version is inconsistent');
   });
 });

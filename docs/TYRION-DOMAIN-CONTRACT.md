@@ -16,12 +16,13 @@ Public entry points:
 
 | Import | Surface |
 | --- | --- |
-| `@rsocko/tyrion-kid-engine` | Complete supported public API |
+| `@rsocko/tyrion-kid-engine` | Complete supported version 1 API |
 | `@rsocko/tyrion-kid-engine/contracts/v1` | Versioned DTOs and strict input parsers |
 | `@rsocko/tyrion-kid-engine/policy` | Policy service, repository port, authorization helpers, and secure file adapter |
 
 Consumers must import these entry points rather than package internals. Removing a
 field or changing its meaning requires a new major contract version.
+The pre-contract prototype modules are not exported by the published package.
 
 ## Distribution and consumption
 
@@ -107,7 +108,8 @@ The package exports
 They strictly validate the Monarch Bridge v1 transaction/page DTO before mapping it
 to `AttributionInputV1`. The page adapter uses bridge `provenance.fetchedAt` as the
 observation timestamp and requires exactly one consumer mapping context per
-transaction.
+transaction. Additive Bridge v1 fields are accepted and ignored, as required by the
+bridge contract; all required fields and consumed values remain validated.
 
 The adapter deliberately copies only the normalized merchant name and calendar date
 from a bridge transaction. Amount, notes, tags, category, raw transaction ID, raw

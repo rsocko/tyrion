@@ -152,6 +152,7 @@ export function createUnavailableAttributionResultV1(
 ): AttributionResultV1 {
   const input = parseAttributionInputV1(inputValue);
   const evaluatedAt = requireTimestamp(evaluatedAtValue);
+  const validatedPolicyVersion = requireOptionalPolicyVersion(policyVersion);
   if (input.existingManualDecision) {
     return {
       contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
@@ -165,7 +166,7 @@ export function createUnavailableAttributionResultV1(
       method: 'manual',
       explanation: input.existingManualDecision.explanation,
       review: { status: 'resolved', reasons: [] },
-      provenance: provenance(policyVersion, evaluatedAt, 'manual', []),
+      provenance: provenance(validatedPolicyVersion, evaluatedAt, 'manual', []),
     };
   }
   return {
@@ -178,7 +179,7 @@ export function createUnavailableAttributionResultV1(
     explanation:
       'Attribution is pending; transaction synchronization completed without an attribution decision.',
     review: { status: 'pending', reasons: [reason] },
-    provenance: provenance(policyVersion, evaluatedAt, 'fallback', []),
+    provenance: provenance(validatedPolicyVersion, evaluatedAt, 'fallback', []),
   };
 }
 
@@ -343,4 +344,15 @@ function requireTimestamp(value: string): string {
       'evaluatedAt must be an ISO 8601 timestamp with an offset'
     );
   }
+}
+
+function requireOptionalPolicyVersion(value: number | null): number | null {
+  if (value === null) return null;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new AttributionEvaluationError(
+      'invalid_options',
+      'policyVersion must be null or a positive integer'
+    );
+  }
+  return value;
 }

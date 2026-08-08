@@ -82,13 +82,49 @@ describe('normalized bridge v1 attribution adapter', () => {
     expect(inputs[0].source.observedAt).toBe('2026-08-08T12:00:00Z');
   });
 
-  it('rejects bridge contract drift and non-finite amounts', () => {
-    expect(() =>
-      parseNormalizedBridgeTransactionV1({
-        ...bridgeTransaction,
-        kidId: 'kid-alpha',
-      })
-    ).toThrow('unexpected field: kidId');
+  it('accepts additive bridge fields without copying them', () => {
+    const parsed = parseNormalizedBridgeTransactionV1({
+      ...bridgeTransaction,
+      additiveTransactionField: 'future-value',
+      merchant: {
+        ...bridgeTransaction.merchant,
+        additiveMerchantField: 'future-value',
+      },
+      category: {
+        ...bridgeTransaction.category!,
+        additiveCategoryField: 'future-value',
+      },
+      account: {
+        ...bridgeTransaction.account,
+        additiveAccountField: 'future-value',
+      },
+    });
+    expect(parsed).toEqual(bridgeTransaction);
+
+    const inputs = createAttributionInputsFromBridgePageV1(
+      {
+        contractVersion: '1.0',
+        provenance: {
+          provider: 'live',
+          fetchedAt: '2026-08-08T12:00:00Z',
+          additiveProvenanceField: 'future-value',
+        },
+        transactions: [bridgeTransaction],
+        total: 1,
+        page: {
+          limit: 500,
+          nextCursor: null,
+          additivePaginationField: 'future-value',
+        },
+        additiveResponseField: 'future-value',
+      },
+      'household-demo',
+      [mappingContext]
+    );
+    expect(JSON.stringify(inputs)).not.toContain('future-value');
+  });
+
+  it('rejects non-finite bridge amounts', () => {
     expect(() =>
       parseNormalizedBridgeTransactionV1({
         ...bridgeTransaction,
@@ -114,6 +150,28 @@ describe('normalized bridge v1 attribution adapter', () => {
         []
       )
     ).toThrow('one item per bridge transaction');
+  });
+
+  it('rejects duplicate consumer-safe references within a page', () => {
+    expect(() =>
+      createAttributionInputsFromBridgePageV1(
+        {
+          contractVersion: '1.0',
+          provenance: {
+            provider: 'live',
+            fetchedAt: '2026-08-08T12:00:00Z',
+          },
+          transactions: [
+            bridgeTransaction,
+            { ...bridgeTransaction, id: 'bridge-record-demo-2' },
+          ],
+          total: 2,
+          page: { limit: 500, nextCursor: null },
+        },
+        'household-demo',
+        [mappingContext, mappingContext]
+      )
+    ).toThrow('sourceRef values must be unique');
   });
 
   it('rejects record context attempts to override page scope or provenance', () => {

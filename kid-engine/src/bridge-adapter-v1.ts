@@ -78,6 +78,7 @@ export function createAttributionInputsFromBridgePageV1(
   if (recordContexts.length !== page.transactions.length) {
     invalid('recordContexts must contain one item per bridge transaction');
   }
+  const sourceRefs = new Set<string>();
   return page.transactions.map((transaction, index) => {
     const context = object(recordContexts[index], `recordContexts[${index}]`);
     exactKeys(context, [
@@ -86,7 +87,7 @@ export function createAttributionInputsFromBridgePageV1(
       'historicalAttributions',
       'existingManualDecision',
     ]);
-    return buildAttributionInput(transaction, {
+    const input = buildAttributionInput(transaction, {
       householdId,
       sourceRef: context.sourceRef,
       observedAt: page.provenance.fetchedAt,
@@ -94,6 +95,11 @@ export function createAttributionInputsFromBridgePageV1(
       historicalAttributions: context.historicalAttributions,
       existingManualDecision: context.existingManualDecision,
     });
+    if (sourceRefs.has(input.source.recordRef)) {
+      invalid('recordContexts sourceRef values must be unique');
+    }
+    sourceRefs.add(input.source.recordRef);
+    return input;
   });
 }
 
@@ -123,26 +129,11 @@ export function parseNormalizedBridgeTransactionV1(
   value: unknown
 ): NormalizedBridgeTransactionV1 {
   const transaction = object(value, 'bridge transaction');
-  exactKeys(transaction, [
-    'id',
-    'date',
-    'amount',
-    'merchant',
-    'category',
-    'account',
-    'isPending',
-    'isRecurring',
-    'notes',
-    'tags',
-  ]);
   const merchant = object(transaction.merchant, 'merchant');
-  exactKeys(merchant, ['name', 'logoUrl']);
   const account = object(transaction.account, 'account');
-  exactKeys(account, ['id', 'displayName', 'mask']);
   let category: NormalizedBridgeTransactionV1['category'] = null;
   if (transaction.category !== null) {
     const categoryValue = object(transaction.category, 'category');
-    exactKeys(categoryValue, ['id', 'name']);
     category = {
       id: string(categoryValue.id, 'category.id', 1, 256),
       name: string(categoryValue.name, 'category.name', 1, 160),
@@ -190,18 +181,10 @@ export function parseNormalizedBridgeTransactionsPageV1(
   value: unknown
 ): NormalizedBridgeTransactionsPageV1 {
   const response = object(value, 'bridge transactions response');
-  exactKeys(response, [
-    'contractVersion',
-    'provenance',
-    'transactions',
-    'total',
-    'page',
-  ]);
   if (response.contractVersion !== TYRION_DOMAIN_CONTRACT_VERSION) {
     invalid('contractVersion must be 1.0');
   }
   const provenance = object(response.provenance, 'provenance');
-  exactKeys(provenance, ['provider', 'fetchedAt']);
   if (provenance.provider !== 'demo' && provenance.provider !== 'live') {
     invalid('provenance.provider must be demo or live');
   }
@@ -219,7 +202,6 @@ export function parseNormalizedBridgeTransactionsPageV1(
     invalid('total must be a non-negative integer');
   }
   const page = object(response.page, 'page');
-  exactKeys(page, ['limit', 'nextCursor']);
   if (
     !Number.isSafeInteger(page.limit) ||
     (page.limit as number) < 1 ||

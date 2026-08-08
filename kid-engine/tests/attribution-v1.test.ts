@@ -167,6 +167,20 @@ describe('v1 deterministic attribution', () => {
     });
   });
 
+  it.each([0, -1, 1.5, Number.NaN])(
+    'rejects invalid fallback policy version %s',
+    (policyVersion) => {
+      expect(() =>
+        createUnavailableAttributionResultV1(
+          inputFixture,
+          'policy-unavailable',
+          evaluatedAt,
+          policyVersion
+        )
+      ).toThrowError(AttributionEvaluationError);
+    }
+  );
+
   it('rejects cross-household policy use', () => {
     expect(() =>
       attributeTransactionV1(
