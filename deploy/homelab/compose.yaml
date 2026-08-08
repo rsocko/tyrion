@@ -22,10 +22,10 @@ services:
     environment:
       BRIDGE_HOST: 0.0.0.0
       BRIDGE_PORT: "8100"
-      BRIDGE_ALLOWED_ORIGINS: ${BRIDGE_ALLOWED_ORIGINS:-https://mc.socko.us}
+      BRIDGE_ALLOWED_ORIGINS: ${TYRION_BRIDGE_ALLOWED_ORIGINS:-https://mc.socko.us}
       BRIDGE_REMOTE_TLS: "true"
       BRIDGE_LOAD_DOTENV: "false"
-      DEFAULT_TRANSACTION_DAYS: "${DEFAULT_TRANSACTION_DAYS:-90}"
+      DEFAULT_TRANSACTION_DAYS: "${TYRION_DEFAULT_TRANSACTION_DAYS:-90}"
       SESSION_FILE: /var/lib/tyrion/monarch-session.json
       BRIDGE_API_TOKEN: ${TYRION_BRIDGE_API_TOKEN:?Provision TYRION_BRIDGE_API_TOKEN as a Dockhand secret}
     labels:

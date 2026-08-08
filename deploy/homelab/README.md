@@ -1,10 +1,10 @@
 # Homelab deployment parity copy
 
-This directory documents the production Tyrion stack maintained in
-`rsocko/homelab-config`. The homelab repository is the deployment source of
-truth; update this copy only to preserve reviewable contract parity. It deploys
-only the Monarch Bridge. The bounded `triage-app` debug UI is not a deployment
-target.
+This directory documents the production Tyrion stack maintained by
+[`rsocko/homelab-config` PR #426](https://github.com/rsocko/homelab-config/pull/426).
+That pull request is authoritative; update this copy only to preserve reviewable
+contract parity. It deploys only the Monarch Bridge. The bounded `triage-app`
+debug UI is not a deployment target.
 
 ## Contract
 
@@ -26,7 +26,8 @@ temporary filesystem.
 
 ## Dockhand variables
 
-Copy `.env.example` values into the corresponding Dockhand regular variables.
+The committed non-secret substitution map in `homelab-config` and its Dockhand
+configuration supply these values; `.env.example` documents their names here.
 Set `TYRION_IMAGE_TAG` to a published immutable tag such as
 `sha-0123456789abcdef0123456789abcdef01234567`. Provision
 `TYRION_BRIDGE_API_TOKEN` as an external Dockhand secret containing at least 32
