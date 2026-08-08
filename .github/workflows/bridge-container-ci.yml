@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - "monarch-bridge/**"
+      - "deploy/homelab/**"
       - ".github/workflows/bridge-container-ci.yml"
       - ".github/workflows/publish-bridge-image.yml"
   push:
     branches: [main]
     paths:
       - "monarch-bridge/**"
+      - "deploy/homelab/**"
       - ".github/workflows/bridge-container-ci.yml"
       - ".github/workflows/publish-bridge-image.yml"
 
@@ -47,6 +49,9 @@ jobs:
 
       - name: Check bridge syntax
         run: python -m compileall -q monarch-bridge
+
+      - name: Validate homelab parity compose
+        run: docker compose --file deploy/homelab/compose.yaml config --no-interpolate --quiet
 
       - name: Build production image without publishing
         run: docker build --tag "tyrion:ci-${GITHUB_SHA}" monarch-bridge

@@ -112,6 +112,10 @@ and smoke-test on GitHub-hosted runners without a registry push path. A successf
 publishes the immutable tag and updates moving tags only when dispatched from `main`.
 Publication fails closed if that commit's immutable tag already exists.
 
+[`deploy/homelab`](../deploy/homelab/) contains documentation copies of the
+production Compose and environment contracts. `homelab-config` remains the deployment
+source of truth.
+
 ## Session lifecycle
 
 | State | Meaning | Operator action |
