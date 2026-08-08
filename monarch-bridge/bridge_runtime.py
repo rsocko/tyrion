@@ -349,6 +349,8 @@ class SessionManager:
             return self.client
 
     async def verify(self, factory: Callable[[], object]) -> AuthState:
+        if self.state == AuthState.EXPIRED and not self.path.exists():
+            return self.state
         try:
             client = await self.get_client(factory)
             await client.get_accounts()

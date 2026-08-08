@@ -122,8 +122,10 @@ session paths or upstream failure details.
 { "email": "<email>", "password": "<redacted>", "mfaCode": "<redacted>" }
 ```
 
-`mfaCode` is optional. `POST /auth/login-with-cookies` accepts a single cookie-header
-value. Authentication request bodies are bounded, never logged, and never echoed.
+`mfaCode` is optional. `POST /auth/login-with-cookies` accepts
+`{ "sessionId": "<redacted>", "csrfToken": "<redacted>" }`; the bridge constructs the
+upstream cookie header in memory. Authentication request bodies are bounded, never
+logged, and never echoed.
 Successful authentication and `POST /auth/logout` return:
 
 ```json

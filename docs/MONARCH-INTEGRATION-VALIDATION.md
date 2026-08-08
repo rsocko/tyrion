@@ -4,7 +4,13 @@
 
 - Supported client: `monarchmoneycommunity==1.5.2`
 - Deterministic validation: **2026-08-08**
-- Controlled live validation: **pending an operator-run test account session**
+- Controlled live validation: **2026-08-08** for browser-cookie setup, auth status,
+  every supported read/sync contract, restart reuse, logout cleanup, and reversible
+  category write-back
+- Password live validation: **blocked by an ambiguous upstream `403`** on an account
+  with MFA disabled; retained as a best-effort fallback
+- Live category mutation: **completed 2026-08-08** with explicit confirmation,
+  read-back verification, and restoration verification
 - Repository policy: no credentials, cookies, session material, private financial
   records, raw upstream payloads, or machine-specific session paths
 
@@ -16,17 +22,17 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 
 | Contract | Deterministic evidence | Opt-in live evidence |
 | --- | --- | --- |
-| Password login | Success, invalid credentials, MFA challenge, CAPTCHA, timeout, rate limit | `TYRION_LIVE_AUTH_METHOD=password` |
+| Password login | Success, invalid credentials, MFA challenge, CAPTCHA, timeout, rate limit | Attempted 2026-08-08; blocked by ambiguous upstream `403` |
 | MFA completion | Success and invalid/expired code | Password live run with process-only MFA code |
-| Cookie login | Success shape, invalid input, sanitized upstream failure | `TYRION_LIVE_AUTH_METHOD=cookies` |
-| Saved-session restart | Load, verification, and connected state | Restart bridge, then run live auth-health check |
+| Cookie login | Success shape, invalid input, sanitized upstream failure | Completed 2026-08-08 through the Settings UI and server proxy |
+| Saved-session restart | Load, verification, and connected state | Completed 2026-08-08 |
 | Expiry and recovery | Expired cleanup and degraded retention | Revoke controlled session, verify `expired`, then set up again |
-| Logout | In-memory and persisted state removal | Auth-flow live test verifies `unauthenticated` |
+| Logout | In-memory and persisted state removal | Completed 2026-08-08; state and external session removal verified |
 | Health/auth state | All four auth states and public reachability | `test_live_auth_health` |
-| Transactions/filter/detail | Pagination, filters, detail, empty/error shapes | `test_live_read_and_sync_contracts` |
-| Accounts/categories/recurring/cashflow/budgets | Normalized synthetic current-upstream structures | `test_live_read_and_sync_contracts` |
-| Sync | Pagination and auth-error preservation | Seven-day controlled sync |
-| Category write-back | Rejected writes are never success-shaped | Confirmed test mutation, read-back, and restoration |
+| Transactions/filter/detail | Pagination, filters, detail, empty/error shapes | Read contract completed 2026-08-08 |
+| Accounts/categories/recurring/cashflow/budgets | Normalized synthetic current-upstream structures | Completed 2026-08-08 |
+| Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
+| Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
@@ -48,8 +54,19 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 - Monarch's API is private and may change without notice.
 - CAPTCHA can block password login; cookie setup is a recovery path, not a second
   session owner.
+- The supported client currently maps most login `403` responses to an MFA challenge.
+  When account MFA is disabled, treat that response as an ambiguous programmatic-login
+  rejection and use the browser-cookie recovery path.
 - MFA codes are short-lived and cannot be stored or replayed.
 - Session lifetime is controlled by Monarch and is not published.
+- The community client reports that saved sessions may last several months, but no
+  fixed TTL is guaranteed: https://pypi.org/project/monarchmoneycommunity/
+- Browser `Expires`/`Max-Age` metadata is visible manually in DevTools but is not
+  available through normal page JavaScript with the cookie values omitted:
+  https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie
+- `monarchmoneycommunity==1.5.2` replays its saved cookie dictionary and does not
+  capture rotated `Set-Cookie` responses. Tyrion therefore detects expiry from an
+  explicit upstream authentication rejection instead of predicting it.
 - Rate limits are not published; the bridge maps observed throttling to a stable
   `upstream_rate_limited` response.
 - Network timeouts and unknown upstream failures produce `degraded`; explicit

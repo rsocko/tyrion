@@ -44,7 +44,9 @@ remain server-only; never use a `NEXT_PUBLIC_` variable. Scheduled sync and MCP 
 must use the same bridge URL and service token.
 
 The Settings UI and `python main.py --setup` are initiation surfaces for the same
-bridge-owned session. They do not create independent session stores.
+bridge-owned session. They do not create independent session stores. Browser-cookie
+setup is the recommended UI path because Monarch may reject programmatic password
+login even when account MFA is disabled; email/password remains a best-effort fallback.
 
 ## Authenticated homelab deployment
 
@@ -68,6 +70,8 @@ service authentication in a remote deployment. Put rate limits and request loggi
 redaction at the reverse proxy, and never log request bodies or authorization headers.
 Start the service through `main.py`; if a raw ASGI server overrides the bind address,
 non-loopback clients still fail closed, but that is not a supported TLS deployment.
+The supported `main.py` entrypoint disables Uvicorn access logs because endpoint paths
+can contain private transaction identifiers.
 
 ## Session lifecycle
 
@@ -83,6 +87,20 @@ Monarch. Expired or unreadable sessions are removed. Logout clears in-memory and
 persisted state. A cross-process lease prevents a second bridge process from loading
 or deleting the session while it is owned. To revoke access held by another device,
 revoke Monarch sessions upstream as well.
+
+Browser cookies cannot be refreshed automatically because Monarch does not provide the
+bridge a refresh credential. When an upstream request explicitly rejects the session,
+the bridge removes it, preserves the `expired` health state, and requires the user to
+copy fresh browser cookie values. Transient network/upstream failures retain the
+session as `degraded` instead of forcing reauthentication. The debug UI retries safe
+reads and sync at most twice with short backoff, never retries authentication or
+mutation, and displays a persistent recovery banner after retries are exhausted.
+
+Monarch does not publish a cookie TTL. The community client reports that saved
+sessions have sometimes lasted several months, but this is observational rather than
+a guarantee. The pinned client replays the original cookie values and does not capture
+rotated `Set-Cookie` responses, so Tyrion treats a real authentication rejection as the
+only reliable expiry signal rather than predicting a date.
 
 ## Revocation and incident recovery
 

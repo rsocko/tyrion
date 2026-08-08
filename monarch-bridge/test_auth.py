@@ -93,22 +93,25 @@ async def test_cookie_login_success_uses_same_session_store(live_client, monkeyp
 
     response = await live_client.post(
         "/auth/login-with-cookies",
-        json={"cookies": "opaque-cookie=synthetic-value"},
+        json={
+            "sessionId": "synthetic-session",
+            "csrfToken": "synthetic-csrf",
+        },
     )
 
     assert response.status_code == 200
     provider.login_with_cookies.assert_awaited_once_with(
-        "opaque-cookie=synthetic-value",
+        "session_id=synthetic-session; csrftoken=synthetic-csrf",
         save_session=False,
     )
     assert main_module.session_manager.path.exists()
 
 
 @pytest.mark.anyio
-async def test_cookie_login_rejects_incomplete_header(live_client):
+async def test_cookie_login_requires_both_values(live_client):
     response = await live_client.post(
         "/auth/login-with-cookies",
-        json={"cookies": "not-a-cookie-header"},
+        json={"sessionId": "synthetic-session"},
     )
 
     assert response.status_code == 422
@@ -166,7 +169,10 @@ async def test_cookie_failure_never_returns_cookie_or_upstream_error(
 
     response = await live_client.post(
         "/auth/login-with-cookies",
-        json={"cookies": f"{session_cookie_name}=input-value; {csrf_cookie_name}=input-value"},
+        json={
+            "sessionId": "input-value",
+            "csrfToken": "input-value",
+        },
     )
 
     assert response.status_code == 401
@@ -215,6 +221,27 @@ async def test_expired_session_is_removed(live_client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["authState"] == "expired"
     assert response.json()["authenticated"] is False
+    assert not main_module.session_manager.path.exists()
+
+
+@pytest.mark.anyio
+async def test_request_expiry_remains_visible_until_reauthentication(
+    live_client,
+    monkeypatch,
+):
+    provider = saved_client()
+    main_module.session_manager.establish(provider)
+    provider.get_accounts.side_effect = Exception("401 Unauthorized")
+    monkeypatch.setattr(main_module, "create_monarch_client", lambda: provider)
+
+    failed_request = await live_client.get("/accounts")
+    status = await live_client.get("/auth/status")
+
+    assert failed_request.status_code == 401
+    assert failed_request.json()["error"]["code"] == "session_expired"
+    assert status.status_code == 200
+    assert status.json()["authState"] == "expired"
+    assert status.json()["authenticated"] is False
     assert not main_module.session_manager.path.exists()
 
 
@@ -297,7 +324,7 @@ async def test_unreadable_session_is_removed_before_lease_release(
 
     status = await live_client.get("/auth/status")
     assert status.status_code == 200
-    assert status.json()["authState"] == "unauthenticated"
+    assert status.json()["authState"] == "expired"
 
     replacement_owner = SessionManager(path)
     replacement_owner.establish(saved_client())
@@ -429,7 +456,10 @@ async def test_auth_payload_size_is_bounded(live_client, monkeypatch):
 
     response = await live_client.post(
         "/auth/login-with-cookies",
-        json={"cookies": f"opaque={'x' * 2000}"},
+        json={
+            "sessionId": "x" * 2000,
+            "csrfToken": "x" * 2000,
+        },
     )
 
     assert response.status_code == 413

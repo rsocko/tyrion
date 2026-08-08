@@ -14,10 +14,12 @@ export default function SettingsPage() {
   // Login form state
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
-  const [loginMethod, setLoginMethod] = useState<"password" | "cookies">("password");
+  const [loginMethod, setLoginMethod] = useState<"password" | "cookies">("cookies");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [csrfToken, setCsrfToken] = useState("");
 
   // Sync controls
   const [syncInterval, setSyncInterval] = useState("4h");
@@ -51,20 +53,19 @@ export default function SettingsPage() {
     checkStatus();
   }, [checkStatus]);
 
-  const [cookieString, setCookieString] = useState("");
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
     setLoginLoading(true);
     const res = loginMethod === "password"
       ? await login(loginEmail, loginPassword, mfaCode || undefined)
-      : await loginWithCookies(cookieString);
+      : await loginWithCookies(sessionId, csrfToken);
     if (res.data) {
       showToast("Connected to Monarch Money");
       setLoginPassword("");
       setMfaCode("");
-      setCookieString("");
+      setSessionId("");
+      setCsrfToken("");
       checkStatus();
     } else {
       setLoginError(res.error || "Authentication failed.");
@@ -86,8 +87,11 @@ export default function SettingsPage() {
     if (res.data) {
       setLastSync(new Date().toLocaleString());
       showToast(`Synced ${res.data.transactionsFetched} transactions`);
+    } else if (res.status === 401) {
+      await checkStatus();
+      showToast("Monarch session expired - reconnect with fresh browser cookies");
     } else {
-      showToast("Sync failed — check connection");
+      showToast("Sync failed - check connection");
     }
     setSyncing(false);
   };
@@ -111,7 +115,9 @@ export default function SettingsPage() {
             <div>
               <h2 className="text-sm font-semibold">Monarch Money Connection</h2>
               <p className="text-xs text-muted mt-0.5">
-                {connectionStatus === "connected" && `Connected as ${email}`}
+                {connectionStatus === "connected" && (
+                  email ? `Connected as ${email}` : "Connected"
+                )}
                 {connectionStatus === "unauthenticated" && "Not authenticated"}
                 {connectionStatus === "expired" && "Session expired — authenticate again"}
                 {connectionStatus === "degraded" && "Session unavailable — check Monarch and retry"}
@@ -148,7 +154,7 @@ export default function SettingsPage() {
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
           <h2 className="text-sm font-semibold mb-4">Connect to Monarch Money</h2>
           <div className="flex gap-2 mb-4">
-            {(["password", "cookies"] as const).map((method) => (
+            {(["cookies", "password"] as const).map((method) => (
               <button
                 key={method}
                 type="button"
@@ -157,13 +163,19 @@ export default function SettingsPage() {
                   loginMethod === method ? "border-success text-success" : "border-card-2 text-muted"
                 }`}
               >
-                {method === "password" ? "Email and password" : "Browser cookies"}
+                {method === "password"
+                  ? "Email and password (best effort)"
+                  : "Browser cookies (recommended)"}
               </button>
             ))}
           </div>
           <form onSubmit={handleLogin} className="space-y-3" autoComplete="off">
             {loginMethod === "password" ? (
               <>
+                <p className="text-xs text-warning">
+                  Monarch may block programmatic password login even when account MFA
+                  is disabled. Use browser cookies if Monarch rejects this method.
+                </p>
                 <input
                   type="email"
                   value={loginEmail}
@@ -191,13 +203,73 @@ export default function SettingsPage() {
                 />
               </>
             ) : (
-              <textarea
-                value={cookieString}
-                onChange={(e) => setCookieString(e.target.value)}
-                className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 h-20 font-mono"
-                placeholder="Paste the Cookie request header"
-                spellCheck={false}
-              />
+              <>
+                <details className="rounded-md border border-card-2 bg-background px-3 py-2 text-xs text-muted">
+                  <summary className="cursor-pointer font-medium text-foreground">
+                    How to get browser cookies in Microsoft Edge
+                  </summary>
+                  <ol className="mt-3 list-decimal space-y-2 pl-5">
+                    <li>
+                      Sign in at{" "}
+                      <a
+                        href="https://app.monarchmoney.com"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-success underline"
+                      >
+                        app.monarchmoney.com
+                      </a>
+                      {" "}and leave that tab open.
+                    </li>
+                    <li>
+                      Press <kbd className="font-mono">F12</kbd> or{" "}
+                      <kbd className="font-mono">Ctrl+Shift+I</kbd> to open Edge
+                      DevTools.
+                    </li>
+                    <li>
+                      Open <strong>Application</strong>. If it is hidden, select the{" "}
+                      <strong>+</strong> tab and choose <strong>Application</strong>.
+                    </li>
+                    <li>
+                      In the left sidebar, expand <strong>Storage</strong>, then{" "}
+                      <strong>Cookies</strong>. Select the Monarch entry that contains
+                      cookies named <code>session_id</code> and <code>csrftoken</code>.
+                    </li>
+                    <li>
+                      Copy each cookie&apos;s <strong>Value</strong> into its matching
+                      field below. Tyrion constructs the cookie header in memory.
+                    </li>
+                  </ol>
+                  <p className="mt-3 text-warning">
+                    Treat these values like a password. Paste them only into this local
+                    page. Do not send, save, screenshot, or commit them.
+                  </p>
+                </details>
+                <label htmlFor="monarch-session-id" className="block text-xs text-muted">
+                  <code>session_id</code> value
+                </label>
+                <input
+                  id="monarch-session-id"
+                  type="password"
+                  value={sessionId}
+                  onChange={(e) => setSessionId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 font-mono"
+                  placeholder="Paste the session_id value"
+                  spellCheck={false}
+                />
+                <label htmlFor="monarch-csrf-token" className="block text-xs text-muted">
+                  <code>csrftoken</code> value
+                </label>
+                <input
+                  id="monarch-csrf-token"
+                  type="password"
+                  value={csrfToken}
+                  onChange={(e) => setCsrfToken(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 font-mono"
+                  placeholder="Paste the csrftoken value"
+                  spellCheck={false}
+                />
+              </>
             )}
             {loginError && (
               <p className="text-xs text-error bg-error/20 border border-error/30 rounded-md px-3 py-2">
@@ -210,7 +282,7 @@ export default function SettingsPage() {
                 loginLoading ||
                 (loginMethod === "password"
                   ? !loginEmail.trim() || !loginPassword
-                  : !cookieString.trim())
+                  : !sessionId.trim() || !csrfToken.trim())
               }
               className="w-full py-2 rounded-md bg-success hover:bg-success text-white text-sm font-medium transition-colors disabled:opacity-50"
             >
