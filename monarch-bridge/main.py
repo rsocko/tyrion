@@ -513,7 +513,11 @@ async def auth_login(request: LoginRequest):
                 403,
                 detail={
                     "error": "mfa_required",
-                    "message": "Monarch requires a verification code. Enter it and try again.",
+                    "message": (
+                        "Monarch rejected programmatic login. It may require MFA, "
+                        "browser verification, or CAPTCHA. If MFA is disabled, use "
+                        "browser cookies instead."
+                    ),
                 },
             )
         if failure == UpstreamFailure.INVALID_CREDENTIALS:

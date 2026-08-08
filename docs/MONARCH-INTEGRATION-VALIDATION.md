@@ -48,6 +48,9 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 - Monarch's API is private and may change without notice.
 - CAPTCHA can block password login; cookie setup is a recovery path, not a second
   session owner.
+- The supported client currently maps most login `403` responses to an MFA challenge.
+  When account MFA is disabled, treat that response as an ambiguous programmatic-login
+  rejection and use the browser-cookie recovery path.
 - MFA codes are short-lived and cannot be stored or replayed.
 - Session lifetime is controlled by Monarch and is not published.
 - Rate limits are not published; the bridge maps observed throttling to a stable

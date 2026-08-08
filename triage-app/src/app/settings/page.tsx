@@ -191,13 +191,63 @@ export default function SettingsPage() {
                 />
               </>
             ) : (
-              <textarea
-                value={cookieString}
-                onChange={(e) => setCookieString(e.target.value)}
-                className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 h-20 font-mono"
-                placeholder="Paste the Cookie request header"
-                spellCheck={false}
-              />
+              <>
+                <details className="rounded-md border border-card-2 bg-background px-3 py-2 text-xs text-muted">
+                  <summary className="cursor-pointer font-medium text-foreground">
+                    How to get browser cookies in Microsoft Edge
+                  </summary>
+                  <ol className="mt-3 list-decimal space-y-2 pl-5">
+                    <li>
+                      Sign in at{" "}
+                      <a
+                        href="https://app.monarchmoney.com"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-success underline"
+                      >
+                        app.monarchmoney.com
+                      </a>
+                      {" "}and leave that tab open.
+                    </li>
+                    <li>
+                      Press <kbd className="font-mono">F12</kbd> or{" "}
+                      <kbd className="font-mono">Ctrl+Shift+I</kbd> to open Edge
+                      DevTools.
+                    </li>
+                    <li>
+                      Open <strong>Application</strong>. If it is hidden, select the{" "}
+                      <strong>+</strong> tab and choose <strong>Application</strong>.
+                    </li>
+                    <li>
+                      In the left sidebar, expand <strong>Storage</strong>, then{" "}
+                      <strong>Cookies</strong>. Select the Monarch entry that contains
+                      cookies named <code>session_id</code> and <code>csrftoken</code>.
+                    </li>
+                    <li>
+                      Copy each cookie&apos;s <strong>Value</strong> and paste them below
+                      in this exact format:
+                      <code className="mt-1 block break-all rounded bg-elevated p-2">
+                        session_id=&lt;value&gt;; csrftoken=&lt;value&gt;
+                      </code>
+                    </li>
+                  </ol>
+                  <p className="mt-3 text-warning">
+                    Treat these values like a password. Paste them only into this local
+                    page. Do not send, save, screenshot, or commit them.
+                  </p>
+                </details>
+                <label htmlFor="monarch-cookie-header" className="block text-xs text-muted">
+                  Monarch cookie values
+                </label>
+                <textarea
+                  id="monarch-cookie-header"
+                  value={cookieString}
+                  onChange={(e) => setCookieString(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md bg-background border border-card-2 text-xs focus:outline-none focus:border-success/50 h-20 font-mono"
+                  placeholder="session_id=<value>; csrftoken=<value>"
+                  spellCheck={false}
+                />
+              </>
             )}
             {loginError && (
               <p className="text-xs text-error bg-error/20 border border-error/30 rounded-md px-3 py-2">
