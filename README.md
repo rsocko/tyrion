@@ -56,12 +56,7 @@ remain for compatibility but are not separate product names.
 
 ## Origin and provenance
 
-Tyrion was extracted from the private
-[`rsocko/ideation/experiments/personal-automation/finance-management`](https://github.com/rsocko/ideation/tree/27147420c236f0c50582ee39fee02a4a446bd218/experiments/personal-automation/finance-management)
-experiment at source cut `27147420c236f0c50582ee39fee02a4a446bd218`. The
-baseline includes branding work from
-[`rsocko/ideation#1117`](https://github.com/rsocko/ideation/pull/1117), migration
-tracking in
-[`rsocko/ideation#1119`](https://github.com/rsocko/ideation/issues/1119), and
-stabilization in
+Tyrion was extracted from a private predecessor experiment. The public repository
+does not link to that repository's internal paths, revisions, issues, or pull
+requests. Stabilization of the extracted baseline is recorded in
 [`rsocko/tyrion#5`](https://github.com/rsocko/tyrion/pull/5).
