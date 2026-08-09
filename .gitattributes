@@ -1,0 +1,9 @@
+# Do not reproduce retired private infrastructure details in collaboration diffs.
+.github/workflows/build-and-push.yml -diff
+deploy/homelab/.env.example -diff
+deploy/homelab/README.md -diff
+deploy/homelab/compose.yaml -diff
+docs/MONARCH-INTEGRATION-VALIDATION.md -diff
+monarch-bridge/README.md -diff
+monarch-bridge/test_container.py -diff
+triage-app/README.md -diff

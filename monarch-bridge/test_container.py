@@ -141,7 +141,7 @@ def test_images_include_repository_and_dependency_license_notices():
     assert "!THIRD-PARTY-NOTICES.md" in bridge_dockerignore
 
 
-def test_workflows_separate_untrusted_validation_from_trusted_publish():
+def test_workflows_keep_untrusted_validation_separate_and_publication_disabled():
     ci = read_repository_file(".github/workflows/ci.yml")
     publisher = read_repository_file(".github/workflows/build-and-push.yml")
     bridge_readme = read_repository_file("monarch-bridge/README.md")
@@ -155,86 +155,24 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
     assert "npm run build" in ci
     assert "npm test" in ci
     assert "push: true" not in ci
-    assert (
-        "runs-on: [self-hosted, linux, docker, build, homelab, dockhand]"
-        in publisher
-    )
-    assert "github.event.workflow_run.event == 'push'" in publisher
-    assert (
-        "github.event.workflow_run.head_repository.full_name == github.repository"
-        in publisher
-    )
-    assert "group: build-and-push-tyrion" in publisher
-    assert publisher.count("repository: registry.socko.us/") == 2
-    assert "repository: registry.socko.us/tyrion-bridge" in publisher
-    assert "repository: registry.socko.us/tyrion-ui" in publisher
-    assert publisher.count("context: .") == 2
-    assert "file: Dockerfile" in publisher
-    assert "file: triage-app/Dockerfile" in publisher
-    assert "tag=sha-$IMAGE_SHA" in publisher
-    assert "Immutable image already exists; it will not be overwritten." in publisher
-    logical_lines = []
-    logical_parts = []
-    for raw_line in publisher.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        continued = line.endswith("\\")
-        logical_parts.append(line[:-1].rstrip() if continued else line)
-        if not continued:
-            logical_lines.append(" ".join(logical_parts))
-            logical_parts = []
-    assert not logical_parts
-
-    commands = []
-    for logical_line in logical_lines:
-        tokens = shlex.split(logical_line, comments=True)
-        for index in range(len(tokens) - 3):
-            if tokens[index:index + 4] == [
-                "docker",
-                "buildx",
-                "imagetools",
-                "create",
-            ]:
-                commands.append(tokens[index:])
-
-    assert len(commands) == 2
-    moving_tags = []
-    for command in commands:
-        for index, argument in enumerate(command):
-            if argument in ("--tag", "-t"):
-                moving_tags.append(command[index + 1])
-            elif argument.startswith("--tag=") or argument.startswith("-t="):
-                moving_tags.append(argument.split("=", 1)[1])
-            elif argument.startswith("-t") and len(argument) > 2:
-                moving_tags.append(argument[2:])
-    assert moving_tags == [
-        "registry.socko.us/tyrion-bridge:main",
-        "registry.socko.us/tyrion-bridge:latest",
-        "registry.socko.us/tyrion-ui:main",
-        "registry.socko.us/tyrion-ui:latest",
-    ]
-    assert commands[0][-1] == (
-        "registry.socko.us/tyrion-bridge:sha-${{ steps.current.outputs.sha }}"
-    )
-    assert commands[1][-1] == (
-        "registry.socko.us/tyrion-ui:sha-${{ steps.current.outputs.sha }}"
-    )
-    assert publisher.count(
-        "if: steps.current.outputs.publish == 'true'"
-    ) == 2
-    assert "needs: build" in publisher
+    assert "workflow_dispatch:" in publisher
+    assert "permissions: {}" in publisher
+    assert "if: ${{ false }}" in publisher
+    assert "runs-on: ubuntu-latest" in publisher
+    assert "uses:" not in publisher
+    assert "self-hosted" not in publisher
+    assert "workflow_run" not in publisher
+    assert "pull_request" not in publisher
+    assert "push:" not in publisher
+    assert "secrets." not in publisher
     normalized_readme = " ".join(bridge_readme.split())
     normalized_validation = " ".join(validation_guide.split())
     assert (
-        "publishes `sha-<full-commit>` for both and moves each image's "
-        "`main` and `latest` tags"
+        "CI builds both production containers without publishing them"
         in normalized_readme
     )
     assert (
-        "publishes `sha-<full-commit>`, `main`, and `latest` for each from the "
-        "trusted homelab builder. Existing SHA tags are never overwritten, "
-        "and moving-tag promotion is serialized"
+        "Automated publication is disabled"
         in normalized_validation
     )
     assert (
@@ -242,14 +180,8 @@ def test_workflows_separate_untrusted_validation_from_trusted_publish():
         "`/api/bridge/...` proxy"
         in normalized_readme
     )
-    assert (
-        "`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`"
-        in normalized_readme
-    )
-    assert (
-        "`BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`"
-        in normalized_validation
-    )
+    assert "BRIDGE_ALLOWED_ORIGINS" in normalized_readme
+    assert "BRIDGE_ALLOWED_ORIGINS" in normalized_validation
     assert "`BRIDGE_REMOTE_TLS=true`" in normalized_readme
     assert "`BRIDGE_REMOTE_TLS=true`" in normalized_validation
     assert (
@@ -263,8 +195,8 @@ def test_homelab_contract_routes_only_ui_through_traefik():
     environment = read_repository_file("deploy/homelab/.env.example")
     bridge_section, ui_section = compose.split("  tyrion-operations-ui:", 1)
 
-    assert "registry.socko.us/tyrion-bridge:" in bridge_section
-    assert "registry.socko.us/tyrion-ui:" in ui_section
+    assert "${TYRION_BRIDGE_IMAGE:?" in bridge_section
+    assert "${TYRION_UI_IMAGE:?" in ui_section
     assert "traefik" not in bridge_section
     assert "BRIDGE_URL: http://tyrion-monarch-bridge:8100" in ui_section
     assert "traefik.http.services.tyrion.loadbalancer.server.port=3000" in ui_section
