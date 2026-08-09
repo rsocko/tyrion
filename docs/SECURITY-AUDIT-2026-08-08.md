@@ -112,7 +112,9 @@ on scanner signatures:
 
 Path counts are the union of `git ls-tree -r` over every reachable commit, not
 `rev-list --objects`, which binds a shared blob to a single name. Merge-only blob
-counts use source and destination blob IDs from non-merge diffs.
+counts use source and destination blob IDs from non-merge diffs. Extracted residue
+blobs use a text extension, and the scan must confirm a non-zero byte count because
+Gitleaks can silently skip binary-looking extensions.
 
 ## Redacted classification
 
