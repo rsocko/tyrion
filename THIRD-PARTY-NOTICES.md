@@ -9,7 +9,7 @@ files and notices.
 
 | Component | Version or source | License | Required notice / source |
 | --- | --- | --- | --- |
-| Next.js | 16.2.9 | MIT | Copyright (c) Vercel, Inc.; [license](https://github.com/vercel/next.js/blob/v16.2.9/license.md) |
+| Next.js | 16.2.12 | MIT | Copyright (c) Vercel, Inc.; [license](https://github.com/vercel/next.js/blob/v16.2.12/license.md) |
 | React and React DOM | 19.2.0 | MIT | Copyright (c) Meta Platforms, Inc. and affiliates; [license](https://github.com/facebook/react/blob/v19.2.0/LICENSE) |
 | sharp and `@img/sharp-*` platform packages | 0.34.5 | Apache-2.0, with LGPL-3.0-or-later and MIT terms where declared by platform packages | [sharp source and license](https://github.com/lovell/sharp/tree/v0.34.5); installed package license files remain authoritative |
 | `@img/sharp-libvips-*` platform packages | 1.2.4 | LGPL-3.0-or-later | [libvips source and license](https://github.com/libvips/libvips); installed platform package notices remain authoritative |
