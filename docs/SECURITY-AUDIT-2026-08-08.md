@@ -140,6 +140,12 @@ Gitleaks can silently skip binary-looking extensions.
 
 All findings are explained. No candidate remains unclassified or uncertain.
 
+The fixture, mock, demo, example-configuration, documentation, and operational
+metadata classes received a dedicated follow-up review in
+[`SYNTHETIC-DATA-CERTIFICATION.md`](./SYNTHETIC-DATA-CERTIFICATION.md). That review
+replayed this report's complete advertised-ref methodology and records the reviewer
+and disposition for every retained public-value class.
+
 ## Negative results
 
 No private keys, certificates, provider credentials, JWTs, real environment files,
