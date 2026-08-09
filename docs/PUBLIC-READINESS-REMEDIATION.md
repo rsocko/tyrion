@@ -45,8 +45,8 @@ pull-request refs cannot be completely purged by a repository rewrite.
 | #103 | Operational identifiers and architecture detail | Repository owner and #103 technical reviewer | **Resolved or approved.** Current values are standard platform metadata, repository-derived expressions, reserved examples, generalized roles, or required public coordinates. | [`SYNTHETIC-DATA-CERTIFICATION.md`](SYNTHETIC-DATA-CERTIFICATION.md) |
 | #104 | Actions logs, artifacts, and caches existing before the first surface audit | Repository maintainer | **Resolved.** All downloadable material was scanned in controlled storage and nonessential runs, artifacts, and caches were deleted. No credential rotation was indicated. | [`GITHUB-SURFACE-AUDIT-2026-08-09.md`](GITHUB-SURFACE-AUDIT-2026-08-09.md) |
 | #104 / #102 follow-up | Five later legacy publication build records | Repository maintainer | **Resolved.** All five records were downloaded despite their nonstandard archive encoding, recursively inspected, and scanned. The only secret-shaped hits were public base-image signing fingerprints. Their five obsolete publication runs and artifacts were deleted; post-deletion artifact, publication-run, and cache counts are zero. | Final issue #102 GitHub-surface scan and authenticated Actions APIs |
-| #104 / #102 follow-up | Current Actions logs | Repository maintainer | **Resolved.** Every downloadable current log was scanned. Two runs had no downloadable log. Findings were limited to generic hosted-runner, CI, or generalized service-role paths. | Final issue #102 GitHub-surface scan |
-| #104 / #102 follow-up | Current GitHub collaboration metadata | Repository maintainer | **Resolved.** Issues, pull requests, comments, reviews, branches, labels, milestones, hooks, deployments, environments, releases, and tags were inventoried. Unverified detector results were cross-field constructions created by minified Dependabot API JSON; no individual field contained a candidate. | Final issue #102 GitHub-surface scan |
+| #104 / #102 follow-up | Current Actions logs | Repository maintainer | **Resolved.** Every downloadable current log was scanned. One run had no downloadable log. Findings were limited to generic hosted-runner, CI, or generalized service-role paths. | Final issue #102 GitHub-surface scan |
+| #104 / #102 follow-up | Current GitHub collaboration metadata | Repository maintainer | **Resolved.** Issues, pull requests, comments, reviews, branches, labels, milestones, hooks, deployments, environments, releases, and tags were inventoried. The final scan produced no detector finding. | Final issue #102 GitHub-surface scan |
 | #104 | Packages, releases, assets, attachments, wiki, projects, discussions, deployments, and environments | Repository owner and maintainer | **Resolved.** Owner attests that no GitHub Package exists; the other retained publication surfaces have no content requiring remediation. Wiki and discussions are disabled. | [`GITHUB-SURFACE-AUDIT-2026-08-09.md`](GITHUB-SURFACE-AUDIT-2026-08-09.md), authenticated API inventory |
 | #104 | Actions retention and future artifacts | Repository owner | **Resolved.** Retention is one day. Repository policy rejects explicit artifact upload and all cache or artifact handoffs; any future use requires an explicit reviewed policy change. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md), baseline policy checks |
 
@@ -109,9 +109,10 @@ records the final published-head delta and post-push ref/surface counts.
 ### Final closing snapshot
 
 After the dependency workstreams landed, the closing branch was rebased onto current
-`main` and the complete scan was repeated. The isolated mirror reconciled all 80
-advertised refs (23 branches, 51 pull-request heads, six pull-request merge refs, and
-no tags) with no missing or mismatched tip. It contained 172 commits, 389 trees, 604
+`main` and the complete scan was repeated at the pushed closing head immediately
+before this evidence-only finalization. The isolated mirror reconciled all 80
+advertised refs (22 branches, 52 pull-request heads, six pull-request merge refs, and
+no tags) with no missing or mismatched tip. It contained 175 commits, 392 trees, 606
 reachable blobs, and 223 unique historical paths; every reachable blob was extracted.
 
 Gitleaks 8.30.1 again reported zero history findings. Its two exact-blob findings were
@@ -121,14 +122,14 @@ covered by the established deterministic-test and placeholder classifications.
 Targeted private-key, JWT, sensitive-path, generated-output, package-bound, and
 repository-hygiene checks found no unexplained sensitive content.
 
-The final GitHub-surface snapshot contained 290 Actions runs: 288 logs were
-downloadable and scanned, and two had no downloadable log. Artifact and cache counts
+The final GitHub-surface snapshot contained 298 Actions runs: 297 logs were
+downloadable and scanned, and one had no downloadable log. Artifact and cache counts
 were zero. The collaboration inventory contained 135 issue/PR records, 52 pull
-requests, 76 issue comments, 23 branches, 19 labels, one reviewed webhook, and no
+requests, 76 issue comments, 22 branches, 19 labels, one reviewed webhook, and no
 release, tag, milestone, deployment, environment, pull-request comment, or commit
-comment. Gitleaks reported zero findings. TruffleHog's 42 unverified results were
-cross-field constructions from minified issue and pull-request metadata; no
-individual API field contained a candidate. No result remained unexplained.
+comment. Gitleaks and TruffleHog reported zero findings. No result remained
+unexplained. The evidence-only finalization diff and pull-request metadata were then
+scanned separately with no finding or prohibited private reference.
 
 ## Remaining publication gates
 
@@ -150,5 +151,7 @@ These gates are explained and owned; none is an unexplained remediation finding:
    one maintainer. Before a second maintainer receives merge access, require one
    approval and approval after the latest push.
 
-The repository must remain private, external workflows must remain unavailable, and
-publication must remain disabled while any applicable gate is unsatisfied.
+The repository must remain private except during the controlled visibility transition
+defined in [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md). External workflows,
+public collaboration, and publication remain disabled until every applicable gate is
+verified.

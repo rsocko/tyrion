@@ -57,8 +57,10 @@ Weekly version updates cover GitHub Actions, Python dependencies in
 
 GitHub secret scanning, push protection, and private vulnerability reporting are not
 available to this user-owned private repository under its current plan. API
-unavailability is not recorded as a disabled control. Before changing visibility or
-accepting external contributions, the owner must:
+unavailability is not recorded as a disabled control. During a controlled visibility
+transition, publication and external workflows remain disabled and no external
+contribution may be accepted. Immediately after the visibility change and before
+announcing or accepting public collaboration, the owner must:
 
 1. enable secret scanning and push protection;
 2. enable private vulnerability reporting;
