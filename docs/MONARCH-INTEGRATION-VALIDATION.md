@@ -14,6 +14,14 @@
 - Repository policy: no credentials, cookies, session material, private financial
   records, raw upstream payloads, or machine-specific session paths
 
+This validation establishes observed technical compatibility, not authorization from
+Monarch Money, Inc. Tyrion is independent and unofficial. The service terms reviewed
+on 2026-08-09 restrict programmatic access and related activity; see
+[`LICENSING-AND-PROVENANCE.md`](LICENSING-AND-PROVENANCE.md#monarch-terms-and-affiliation).
+Before live use, the account owner must review the then-current terms and decide
+whether to obtain written permission, accept the account/contract risk, or keep the
+bridge disabled.
+
 The repository intentionally contains synthetic structures only. A live operator may
 record pass/fail and the validation date, but must not record account identifiers,
 merchant names, balances, transaction values, response bodies, cookies, or tokens.

@@ -12,6 +12,12 @@ The authoritative architecture decision is
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Repository examples and fixtures are governed
 by the [`synthetic-data and public-disclosure certification`](docs/SYNTHETIC-DATA-CERTIFICATION.md).
 
+Tyrion is an independent project and is not affiliated with, endorsed by,
+sponsored by, or supported by Monarch Money, Inc. The connector uses an
+unofficial community client against a private upstream interface. Review the
+documented [terms risk and owner decision](docs/LICENSING-AND-PROVENANCE.md#monarch-terms-and-affiliation)
+before enabling live access.
+
 ## Product scope
 
 Tyrion owns:
@@ -61,3 +67,10 @@ Tyrion was extracted from a private predecessor experiment. The public repositor
 does not link to that repository's internal paths, revisions, issues, or pull
 requests. Stabilization of the extracted baseline is recorded in
 [`rsocko/tyrion#5`](https://github.com/rsocko/tyrion/pull/5).
+
+## License
+
+Original Tyrion content is available under the [MIT License](LICENSE).
+Dependencies, hosted fonts, base images, and third-party names retain their own
+terms; see [third-party notices](THIRD-PARTY-NOTICES.md) and the
+[licensing and provenance review](docs/LICENSING-AND-PROVENANCE.md).

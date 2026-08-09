@@ -356,11 +356,14 @@ test("production route tree contains no broad finance pages", async () => {
   assert.equal(root.headers.get("x-frame-options"), "DENY");
   const rootHtml = await root.text();
   assert.match(rootHtml, /Monarch connector/);
+  assert.match(rootHtml, /Not affiliated with/);
   assert.doesNotMatch(rootHtml, /Finance Dashboard|Transactions|Budgets|Bills|Chat/);
 
   const configuration = await fetch(`${uiUrl}/configuration`);
   assert.equal(configuration.status, 200);
-  assert.match(await configuration.text(), /Household policy|Loading policy configuration/);
+  const configurationHtml = await configuration.text();
+  assert.match(configurationHtml, /Household policy|Loading policy configuration/);
+  assert.match(configurationHtml, /independent and unofficial/);
 
   for (const path of ["/settings", "/triage", "/kids", "/bills", "/chat", "/transactions"]) {
     const response = await fetch(`${uiUrl}${path}`);

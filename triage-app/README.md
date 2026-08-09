@@ -6,6 +6,11 @@ profiles, attribution rules, limits, exception policy, policy versioning, and
 controlled re-attribution. Mission Control remains the daily finance shell, and
 Monarch remains the financial system of record.
 
+The Monarch connector is independent and unofficial. It is not affiliated with,
+endorsed by, sponsored by, or supported by Monarch Money, Inc. See the repository's
+[licensing, terms-risk, and provenance review](../docs/LICENSING-AND-PROVENANCE.md)
+before enabling live access.
+
 The production route tree must not expose transactions, accounts, categories,
 budgets, bills, dashboards, generic triage, chat, or reporting pages. The bridge
 proxy independently enforces the same boundary. See

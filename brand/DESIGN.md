@@ -8,7 +8,7 @@
 > The committed visual world. Codified with Impeccable (v3.5.0). Detector-clean.
 > Incumbent authority: `tyrion-brandkit.html`. Product truth: `PRODUCT.md`.
 
-## 1. POV — "The Master of Coin's ledger"
+## 1. POV — "The household ledger"
 A quiet, dark, precise interface with one warm metal running through it. Feels
 like a private counting-house: charcoal, hairlines, tabular figures — with gold
 reserved for identity and moments of worth. Wit lives in the **copy**, never in
@@ -35,7 +35,7 @@ loud chrome. The opposite of neon fintech.
 | `--error` | `#D2453D` | Overdue / duplicate |
 | `--info` | `#4F8FF7` | Pending / neutral notice |
 
-**Guardrail:** gold and `--warning` amber must never touch — they read alike.
+**Guardrail:** gold and `--warning` amber must never touch - they read alike.
 Charts use the category palette below, never status hues.
 
 ### Category palette (spending, desaturated to sit on charcoal)
@@ -76,8 +76,9 @@ Sans" below — treat as `--ui-font`; **current default is IBM Plex Sans**.
 
 ## 3. Logo & avatar — "The Coin"
 Gold reeded roundel (radial highlight top-left), embossed serif **T**, subtle
-inner ring. Wordmark: `Tyrion` in Cormorant with a gold period. **Never** a
-literal Lannister lion.
+inner ring. Wordmark: `Tyrion` in Cormorant with a gold period. Keep the mark
+limited to the original coin-and-letter geometry; do not add third-party
+characters, heraldry, or franchise references.
 
 **Three optical cuts (renderer picks by target size — silhouette constant):**
 | Cut | Size | Interior |
@@ -132,9 +133,9 @@ feed. Severity shown by the badge color + copy tone, not a colored side border.
 ## 7. Voice matrix
 | Context | Line |
 |---|---|
-| Hero | "I count, and I know things." |
-| Motto | "Always pays your debts." |
-| Onboarding | "A Lannister always pays his debts. Let's make sure you do too — on time, and exactly once." |
+| Hero | "Clear books. Clear decisions." |
+| Motto | "Every account, accounted for." |
+| Onboarding | "Let's keep every household decision traceable and every exception reviewable." |
 | All clear | "Every bill paid, once, on time. A rare and beautiful thing." |
 | Duplicate | "You paid Verizon twice this month. Generous. Shall I flag it for a refund?" |
 | Forecast | "At this pace you'll close the month about $840 ahead. Nicely done." |
@@ -145,10 +146,10 @@ Parchment `#F3ECDD` on `#15171C` ≈ 14:1. Never color-alone for status — pair
 with icon/label/pill text. Visible gold focus ring. Reduced-motion honored.
 Tabular figures for all money.
 
-## 9. The realm (family fit)
-Mission Control = the capital/small council (blue hub). OWL = the Maester
-(amber-on-navy, documents). Tyrion = the Master of Coin (gold-on-charcoal,
-money). Shared: dark-first, restrained, one accent, character-name-as-agent.
+## 9. The product family
+Mission Control is the blue user-facing hub. OWL is the amber-on-navy document
+specialist. Tyrion is the gold-on-charcoal household-finance domain. Shared:
+dark-first, restrained, one accent, and clear source attribution.
 
 ## 10. Impeccable status
 Detector: **clean** (`detect.mjs` → `[]`). Fixed: removed side-tab accent

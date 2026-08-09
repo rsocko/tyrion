@@ -326,8 +326,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Monarch Bridge",
     version=CONTRACT_VERSION,
-    description="Bridge service between Mission Control and Monarch Money. "
-                "Run with --demo flag for development without credentials.",
+    description="Independent, unofficial interoperability bridge between Mission "
+                "Control and Monarch Money. Run with --demo flag for development "
+                "without credentials.",
     lifespan=lifespan,
 )
 

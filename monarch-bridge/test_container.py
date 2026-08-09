@@ -127,6 +127,20 @@ def test_build_context_excludes_sensitive_and_non_runtime_content():
         assert excluded in dockerignore
 
 
+def test_images_include_repository_and_dependency_license_notices():
+    bridge_dockerfile = read_repository_file("Dockerfile")
+    ui_dockerfile = read_repository_file("triage-app/Dockerfile")
+    bridge_dockerignore = read_repository_file(".dockerignore")
+
+    notice_copy = (
+        "COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/"
+    )
+    assert notice_copy in bridge_dockerfile
+    assert notice_copy in ui_dockerfile
+    assert "!LICENSE" in bridge_dockerignore
+    assert "!THIRD-PARTY-NOTICES.md" in bridge_dockerignore
+
+
 def test_workflows_separate_untrusted_validation_from_trusted_publish():
     ci = read_repository_file(".github/workflows/ci.yml")
     publisher = read_repository_file(".github/workflows/build-and-push.yml")

@@ -31,6 +31,8 @@ triage-app
 docs
 brand
 *.md
+!LICENSE
+!THIRD-PARTY-NOTICES.md
 monarch-bridge/conftest.py
 monarch-bridge/test*.py
 monarch-bridge/requirements.txt

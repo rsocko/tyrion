@@ -143,8 +143,9 @@ export default function OperationsPage() {
           Monarch connector
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-          Set up and maintain the bridge-owned Monarch session. Day-to-day finance
-          work remains in Mission Control and Monarch.
+          Set up and maintain the bridge-owned Monarch session through an independent,
+          unofficial connector. Day-to-day finance work remains in Mission Control and
+          Monarch.
         </p>
       </header>
 
@@ -346,6 +347,11 @@ export default function OperationsPage() {
         {notice && <p className="text-sm text-success">{notice}</p>}
         {actionError && <p role="alert" className="text-sm text-error">{actionError}</p>}
       </div>
+      <footer className="mt-8 border-t border-hair pt-4 text-xs leading-5 text-dim">
+        Not affiliated with, endorsed by, sponsored by, or supported by Monarch Money,
+        Inc. Live use relies on an unofficial client and is subject to Monarch&apos;s
+        current terms.
+      </footer>
     </main>
   );
 }

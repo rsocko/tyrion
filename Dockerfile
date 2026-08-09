@@ -31,6 +31,7 @@ RUN groupadd --gid "${TYRION_GID}" tyrion \
     && install -d -m 0700 -o tyrion -g tyrion /app /var/lib/tyrion
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/
 COPY --chown=tyrion:tyrion monarch-bridge/bridge_runtime.py \
     monarch-bridge/contract.py \
     monarch-bridge/main.py \
