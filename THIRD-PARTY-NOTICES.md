@@ -33,8 +33,8 @@ authoritative source. Do not strip those files when producing a distribution.
 The complete 2026-08-09 Python runtime resolution also contains:
 
 - MIT: `annotated-doc`, `annotated-types`, `anyio`, `attrs`, `backoff`,
-  `h11`, `httptools`, `oathtool`, `path`, `PyYAML`, `typing-inspection`, and
-  `watchfiles`.
+  `h11`, `httptools`, `oathtool`, `path`, `PyYAML`, `typing-inspection`,
+  `uvloop`, and `watchfiles`.
 - BSD-3-Clause: `click`, `colorama`, `httpcore`, `idna`, `starlette`, and
   `websockets`.
 - Apache-2.0 or Apache-2.0/MIT: `aiosignal`, `frozenlist`, `multidict`,
