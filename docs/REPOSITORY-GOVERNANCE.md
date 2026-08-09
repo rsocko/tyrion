@@ -23,9 +23,9 @@ the required approval count must be raised to one and approval after the latest 
 must be enabled.
 
 Administrators are not configured as ruleset bypass actors. The previous classic
-branch protection must remain in place until the ruleset is API-verified against an
-actual pull request; it may then be removed only if the ruleset is equivalent or
-stronger.
+branch protection remained in place until the ruleset was API-verified against this
+governance pull request. It was then removed after the effective branch-rules API
+confirmed equivalent-or-stronger enforcement with no gap.
 
 Web-created commits require signoff. Cryptographic commit signatures are not required
 while the repository has one maintainer and no verified local signing workflow.
