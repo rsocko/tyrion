@@ -115,6 +115,12 @@ These gates are explained and owned; none is an unexplained remediation finding:
    the authenticated API reports zero open kid-engine alerts. The Python requirement
    updates are also present on `main`, with zero open Python alerts. The remaining 26
    alerts all belong to the triage UI lockfile: 11 high, 13 medium, and two low.
+   The required Next.js advisory floor is not available from the public npm registry
+   at this review point. A resolution visible only through an enterprise feed cannot
+   be used: repository policy correctly rejects non-public lockfile sources, no
+   private-feed lock may be published, and no migration pull request was created.
+   This remains an external publication blocker until a publicly available Next.js
+   version satisfies every applicable advisory.
    Dedicated dependency-update sessions own that changing queue. Issue #102 does not
    merge, close, or supersede those pull requests.
 2. **Visibility-dependent GitHub controls:** secret scanning, push protection, private
