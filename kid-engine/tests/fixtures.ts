@@ -1,3 +1,4 @@
+// Synthetic fixture: all people, relationships, records, identifiers, amounts, limits, dates, and entity associations are invented.
 import {
   KID_ATTRIBUTION_ENGINE_VERSION,
   TYRION_DOMAIN_CONTRACT_VERSION,

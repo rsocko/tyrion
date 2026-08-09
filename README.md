@@ -9,7 +9,8 @@ action, awareness, and assistant shell.**
 
 The authoritative architecture decision is
 [`docs/PRODUCT-BOUNDARY.md`](docs/PRODUCT-BOUNDARY.md), and delivery is tracked in
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+[`docs/ROADMAP.md`](docs/ROADMAP.md). Repository examples and fixtures are governed
+by the [`synthetic-data and public-disclosure certification`](docs/SYNTHETIC-DATA-CERTIFICATION.md).
 
 ## Product scope
 

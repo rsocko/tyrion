@@ -1,3 +1,4 @@
+// Synthetic mock: all people, relationships, records, identifiers, amounts, limits, dates, and entity associations are invented.
 import { KidProfile, TriageTransaction, RuleSuggestion } from './types';
 
 export const kids: KidProfile[] = [
