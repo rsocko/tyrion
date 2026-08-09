@@ -111,9 +111,12 @@ records the final published-head delta and post-push ref/surface counts.
 These gates are explained and owned; none is an unexplained remediation finding:
 
 1. **Dependency vulnerabilities:** unresolved Dependabot alerts block public
-   readiness. At the latest authenticated check, 26 alerts remained: 11 high, 13
-   medium, and two low. Dedicated dependency-update sessions own that changing queue.
-   Issue #102 does not merge, close, or supersede those pull requests.
+   readiness. Kid-engine remediation and its Node 24 typing follow-up are merged, and
+   the authenticated API reports zero open kid-engine alerts. The Python requirement
+   updates are also present on `main`, with zero open Python alerts. The remaining 26
+   alerts all belong to the triage UI lockfile: 11 high, 13 medium, and two low.
+   Dedicated dependency-update sessions own that changing queue. Issue #102 does not
+   merge, close, or supersede those pull requests.
 2. **Visibility-dependent GitHub controls:** secret scanning, push protection, private
    vulnerability reporting, and external-contributor workflow approval must be
    enabled and API-verified after the visibility or plan supports them and before
