@@ -109,26 +109,26 @@ records the final published-head delta and post-push ref/surface counts.
 ### Final closing snapshot
 
 After the dependency workstreams landed, the closing branch was rebased onto current
-`main` and the complete scan was repeated. The isolated mirror reconciled all 79
-advertised refs (22 branches, 51 pull-request heads, six pull-request merge refs, and
-no tags) with no missing or mismatched tip. It contained 170 commits, 386 trees, 599
+`main` and the complete scan was repeated. The isolated mirror reconciled all 80
+advertised refs (23 branches, 51 pull-request heads, six pull-request merge refs, and
+no tags) with no missing or mismatched tip. It contained 172 commits, 389 trees, 604
 reachable blobs, and 223 unique historical paths; every reachable blob was extracted.
 
 Gitleaks 8.30.1 again reported zero history findings. Its two exact-blob findings were
 public dependency-policy SHA-256 integrity and license metadata, not credentials.
-TruffleHog 3.96.0 reported 18 instances representing five distinct candidates, all
+TruffleHog 3.96.0 reported 19 instances representing five distinct candidates, all
 covered by the established deterministic-test and placeholder classifications.
 Targeted private-key, JWT, sensitive-path, generated-output, package-bound, and
 repository-hygiene checks found no unexplained sensitive content.
 
-The final GitHub-surface snapshot contained 288 Actions runs: 287 logs were
-downloadable and scanned, and one had no downloadable log. Artifact and cache counts
-were zero. The collaboration inventory contained 134 issue/PR records, 51 pull
-requests, 76 issue comments, 22 branches, 19 labels, one reviewed webhook, and no
+The final GitHub-surface snapshot contained 290 Actions runs: 288 logs were
+downloadable and scanned, and two had no downloadable log. Artifact and cache counts
+were zero. The collaboration inventory contained 135 issue/PR records, 52 pull
+requests, 76 issue comments, 23 branches, 19 labels, one reviewed webhook, and no
 release, tag, milestone, deployment, environment, pull-request comment, or commit
-comment. Gitleaks reported zero findings. TruffleHog's ten unverified results were
-cross-field constructions from minified pull-request metadata; no individual API
-field contained a candidate. No result remained unexplained.
+comment. Gitleaks reported zero findings. TruffleHog's 42 unverified results were
+cross-field constructions from minified issue and pull-request metadata; no
+individual API field contained a candidate. No result remained unexplained.
 
 ## Remaining publication gates
 
