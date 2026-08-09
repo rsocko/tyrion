@@ -38,6 +38,14 @@ The policy API fails closed until this integration and
 `TYRION_POLICY_AUTH_SECRET` agree. Connector operations continue to use only the
 bridge proxy contract.
 
+Mission Control batch attribution uses the UI container only as the Tyrion service
+runtime on private `tyrion-backend` DNS:
+`http://tyrion-operations-ui:3000/api/internal/v1/attribution/batch`. Both public
+Traefik routers explicitly exclude `/api/internal/`; do not add a public router for
+it. Configure the dedicated client, actor, household, HMAC key, internal host, and
+external replay directory shown in `compose.yaml`. Mission Control must sign the
+exact request body and must not install `kid-engine`.
+
 Controlled re-attribution additionally requires a protected internal implementation
 of the `ReattributionRepository` adapter plus `TYRION_REATTRIBUTION_URL` and
 `TYRION_REATTRIBUTION_TOKEN`. Leave both blank when that bounded operation is not

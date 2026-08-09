@@ -2,107 +2,96 @@
 
 **Contract version:** `1.0`
 **Engine version:** `1.0.0`
-**Package:** `@rsocko/tyrion-kid-engine`
+**Service:** `POST /api/internal/v1/attribution/batch`
 
 ## Boundary
 
-This package is the Tyrion-owned boundary between normalized connector ingestion,
-household policy, deterministic kid attribution, and Mission Control's operational
-surfaces. Monarch remains the financial system of record. The package never owns or
-loads Monarch credentials, cookies, sessions, raw upstream responses, or bridge
-transport.
+`kid-engine` is a private module owned and executed only by Tyrion. It connects
+normalized attribution facts, household policy, deterministic attribution, and the
+Tyrion UI/service runtime. It never owns or loads Monarch credentials, cookies,
+sessions, raw upstream responses, or bridge transport.
 
-Public entry points:
+Mission Control is an API consumer, not a code consumer. It must not install, copy,
+publish, or execute `@rsocko/tyrion-kid-engine`. The former private package artifact
+is obsolete; repository workflows cannot republish it. Package deletion is a
+separate maintainer operation and must not place credentials or artifact details in
+repository or PR content.
 
-| Import | Surface |
+The machine-readable service contract is
+[`attribution-service-v1.openapi.json`](./attribution-service-v1.openapi.json).
+Removing a field or changing its type or meaning requires a new major API version.
+
+## Protected batch service
+
+Mission Control sends pages in bounded groups to
+`POST /api/internal/v1/attribution/batch`; it must not call Tyrion once per
+transaction. The route is reachable only by private backend DNS and is excluded from
+the public `tyrion.socko.us` routers. It is not a Bridge endpoint and does not change
+Monarch Bridge v1 transport.
+
+The request is at most 64 KiB and contains 1-100 unique items. The only accepted
+transaction facts are:
+
+- Opaque consumer `sourceRef`
+- `occurredOn` calendar date and normalized `merchantName`
+- Nullable household-scoped irreversible `instrumentFingerprint`
+- `observedAt` timestamp and fixed `mission-control-normalized-v1` provenance
+- Optional structured manual action, kid reference, and decision timestamp
+
+The service rejects unknown fields. Raw Bridge pages, Monarch transaction/account
+identifiers, account masks, amounts, notes, tags, categories, session material,
+credentials, free-form manual explanations, and browser identity/permission claims
+are not accepted.
+
+Tyrion derives the actor, household, and sole `attribution:batch` permission from
+server configuration for the authenticated service client. It loads the current
+`PolicySnapshotV1` and evaluates the complete batch under one policy-version fence.
+An optional `expectedPolicyVersion` detects a consumer-observed conflict. Manual
+decisions are converted to the internal `AttributionInputV1` with a fixed safe
+explanation and retain precedence. Each internal `AttributionResultV1` is flattened
+to the strict API result containing only consumer source reference, assignment,
+confidence, method, bounded explanation, review state/reasons, decision source,
+policy version, engine version, and evaluation timestamp.
+
+### Service assertion
+
+The service signs the lowercase SHA-256 digest of the exact transmitted JSON bytes.
+Required headers are:
+
+| Header | Meaning |
 | --- | --- |
-| `@rsocko/tyrion-kid-engine` | Complete supported version 1 API |
-| `@rsocko/tyrion-kid-engine/contracts/v1` | Versioned DTOs and strict input parsers |
-| `@rsocko/tyrion-kid-engine/policy` | Policy service, repository port, authorization helpers, and secure file adapter |
+| `x-tyrion-service-client` | Configured least-privilege client ID |
+| `x-tyrion-service-timestamp` | Current Unix timestamp in seconds |
+| `x-tyrion-service-nonce` | Unique 22-128 character base64url nonce |
+| `x-tyrion-content-sha256` | Lowercase SHA-256 body digest |
+| `x-tyrion-service-signature` | Lowercase HMAC-SHA256 signature |
 
-Consumers must import these entry points rather than package internals. Removing a
-field or changing its meaning requires a new major contract version.
-The pre-contract prototype modules are not exported by the published package.
+The signed UTF-8 value is the newline-joined uppercase method, pathname, lowercase
+private host, client ID, timestamp, nonce, and body digest. Assertions expire after
+60 seconds. The external replay store atomically accepts each signed
+client/timestamp/nonce tuple once, and the route limits a configured client to 60
+requests per minute. Missing configuration returns `503`; missing or invalid
+assertions return `401`; replay returns `409`; rate exhaustion returns `429`.
 
-## Distribution and consumption
+### Failure semantics
 
-The supported production distribution is the restricted GitHub Packages npm package
-`@rsocko/tyrion-kid-engine`. A git dependency is not supported because the package
-lives below the repository root. Copying generated declarations or source files into
-a consumer is also unsupported.
+Stable errors use `{ "error": { "code": "...", "message": "..." } }` and include
+`invalid_request` (400), `attribution_auth_required` or
+`attribution_auth_invalid` (401), `attribution_forbidden` (403),
+`attribution_route_not_available` (404), `attribution_replay_detected` or
+`policy_conflict` (409), `payload_too_large` or `batch_too_large` (413),
+`unsupported_media_type` (415), `attribution_rate_limited` (429),
+`attribution_auth_not_configured`, `policy_unavailable`, or
+`attribution_service_unavailable` (503), and sanitized
+`attribution_operation_failed` (500).
 
-**Release status:** version `1.0.0` is not installable from GitHub Packages until the
-foundation PR is merged and the gated release tag below is pushed. Mission Control
-must not add the production dependency before that package version exists. The
-package consumer check builds a tarball, creates a clean temporary application with
-the exact `"@rsocko/tyrion-kid-engine": "1.0.0"` declaration, installs the tarball
-without changing that declaration, and imports all three public entry points. This
-verifies package contents and Node resolution without pretending the registry
-artifact has already been released.
-
-After a version change is merged to `main`, an authorized maintainer creates and
-pushes the exact tag `kid-engine-v<package version>`, such as
-`kid-engine-v1.0.0`. `.github/workflows/publish-kid-engine.yml` verifies that the tag
-matches `kid-engine/package.json`, verifies the tagged commit is contained in
-`origin/main`, reruns package tests and the built-package consumer check, then
-publishes with the repository-scoped `GITHUB_TOKEN`. The workflow has only
-`contents: read` and `packages: write` permissions.
-
-The package owner must grant the `rsocko/mission-control` repository Actions access
-to the GitHub Package once. Mission Control then uses its own repository-scoped
-`GITHUB_TOKEN` with `packages: read`; no long-lived package token is required in CI:
-
-```yaml
-permissions:
-  contents: read
-  packages: read
-
-steps:
-  - uses: actions/setup-node@v4
-    with:
-      node-version: "20"
-      registry-url: https://npm.pkg.github.com
-      scope: "@rsocko"
-  - run: npm ci
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-Mission Control declares the exact version without a range and commits its updated
-lockfile:
-
-```json
-{
-  "dependencies": {
-    "@rsocko/tyrion-kid-engine": "1.0.0"
-  }
-}
-```
-
-Application imports use the public entry points:
-
-```typescript
-import {
-  attributeTransactionV1,
-  createAttributionInputsFromBridgePageV1,
-} from '@rsocko/tyrion-kid-engine';
-import type {
-  AttributionInputV1,
-  AttributionResultV1,
-  PolicySnapshotV1,
-} from '@rsocko/tyrion-kid-engine/contracts/v1';
-```
-
-For local development, an operator may set `NODE_AUTH_TOKEN` in the current process
-to a GitHub token with `read:packages` and configure
-`@rsocko:registry=https://npm.pkg.github.com`. Tokens must never be placed in a
-tracked `.npmrc`, dependency URL, image layer, build argument, log, or lockfile.
-Production container builds pass package authentication as an ephemeral BuildKit or
-CI secret and omit it from the final image.
+Mission Control treats every non-200 response as an attribution-only failure. It
+persists transaction generation with pending review and retries attribution later;
+it never tombstones the synchronized transaction because attribution was unavailable.
 
 ## Normalized ingestion mapping
 
-The package exports
+The Tyrion-internal module exports
 `createAttributionInputFromBridgeTransactionV1(transaction, context)` and
 `createAttributionInputsFromBridgePageV1(page, householdId, recordContexts)`.
 They strictly validate the Monarch Bridge v1 transaction/page DTO before mapping it
@@ -115,17 +104,16 @@ The adapter deliberately copies only the normalized merchant name and calendar d
 from a bridge transaction. Amount, notes, tags, category, raw transaction ID, raw
 account ID, display name, mask, pending state, recurring state, logo, and pagination
 cursor are validated but never copied into attribution input, policy, explanation,
-or result. The consumer supplies:
+or result. Tyrion's internal adapter supplies:
 
-- `householdId`: caller-authorized Tyrion household scope.
+- `householdId`: server-authorized Tyrion household scope.
 - `sourceRef`: opaque stable consumer reference derived outside this package; never
   logged by the engine.
 - `instrumentFingerprint`: nullable, irreversible,
-  household-scoped fingerprint produced by the integration consumer. Tyrion policy
+  household-scoped fingerprint produced before the service call. Tyrion policy
   never stores raw account identifiers or reusable payment credentials.
-- `historicalAttributions`: minimum aggregate counts needed for deterministic
-  historical matching.
-- `existingManualDecision`: the persisted human decision, when present.
+- `historicalAttributions`: empty for the v1 service request.
+- `existingManualDecision`: safe structured manual context, when present.
 
 Runtime parsers reject unknown fields, invalid versions, unsupported identifiers,
 oversized collections, inconsistent manual decisions, dangling kid references,

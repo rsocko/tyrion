@@ -66,6 +66,12 @@ services:
       TYRION_POLICY_STORE_PATH: /var/lib/tyrion-policy/policies.json
       TYRION_POLICY_AUTH_SECRET: ${TYRION_POLICY_AUTH_SECRET:?Provision TYRION_POLICY_AUTH_SECRET as a Dockhand secret}
       TYRION_INSTRUMENT_FINGERPRINT_KEY: ${TYRION_INSTRUMENT_FINGERPRINT_KEY:?Provision TYRION_INSTRUMENT_FINGERPRINT_KEY as a Dockhand secret}
+      TYRION_ATTRIBUTION_CLIENT_ID: ${TYRION_ATTRIBUTION_CLIENT_ID:?Provision the Mission Control service client ID}
+      TYRION_ATTRIBUTION_ACTOR_ID: ${TYRION_ATTRIBUTION_ACTOR_ID:?Provision the server-derived service actor ID}
+      TYRION_ATTRIBUTION_HOUSEHOLD_ID: ${TYRION_ATTRIBUTION_HOUSEHOLD_ID:?Provision the authorized household ID}
+      TYRION_ATTRIBUTION_AUTH_SECRET: ${TYRION_ATTRIBUTION_AUTH_SECRET:?Provision TYRION_ATTRIBUTION_AUTH_SECRET as a Dockhand secret}
+      TYRION_ATTRIBUTION_INTERNAL_HOST: tyrion-operations-ui:3000
+      TYRION_ATTRIBUTION_REPLAY_STORE_PATH: /var/lib/tyrion-policy/attribution-replay
       TYRION_REATTRIBUTION_URL: ${TYRION_REATTRIBUTION_URL:-}
       TYRION_REATTRIBUTION_TOKEN: ${TYRION_REATTRIBUTION_TOKEN:-}
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "false"
@@ -73,10 +79,10 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.tyrion.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`)"
+      - "traefik.http.routers.tyrion.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`) && !PathPrefix(`/api/internal/`)"
       - "traefik.http.routers.tyrion.entrypoints=web"
       - "traefik.http.routers.tyrion.middlewares=trusted-private-networks@file,https-redirect@file"
-      - "traefik.http.routers.tyrion-secure.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`)"
+      - "traefik.http.routers.tyrion-secure.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`) && !PathPrefix(`/api/internal/`)"
       - "traefik.http.routers.tyrion-secure.entrypoints=websecure"
       - "traefik.http.routers.tyrion-secure.tls=true"
       - "traefik.http.routers.tyrion-secure.tls.certresolver=letsencrypt"

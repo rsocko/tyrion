@@ -92,6 +92,27 @@ HTTPS is required unless
 network HTTP. Re-attribution fails closed when this optional adapter is absent;
 policy CRUD and connector operations remain available.
 
+## Internal batch attribution service
+
+Mission Control calls `POST /api/internal/v1/attribution/batch` by private backend
+DNS. This is a Tyrion domain endpoint, not a Bridge proxy or browser route. The
+public `tyrion.socko.us` Traefik routers must exclude `/api/internal/`; the service
+also rejects any host other than `TYRION_ATTRIBUTION_INTERNAL_HOST`.
+
+The exact v1 request, response, header, status, and schema contract is
+[`../docs/attribution-service-v1.openapi.json`](../docs/attribution-service-v1.openapi.json).
+Requests are limited to 64 KiB and 100 unique items. A dedicated service assertion
+binds method, path, private host, configured client ID, Unix timestamp, random nonce,
+and lowercase SHA-256 body digest with HMAC-SHA256. Assertions expire after 60
+seconds, each nonce is accepted once through the external replay store, and the
+service permits 60 requests per minute per configured client.
+
+Actor ID, household ID, and the sole `attribution:batch` permission come from Tyrion
+server configuration; request headers and bodies cannot override them. Mission
+Control must treat any non-200 response as an attribution-only failure: persist the
+transaction with pending review, do not tombstone transaction generation, and retry
+according to the stable error code.
+
 For deterministic local development only, set `TYRION_POLICY_DEMO_MODE=true` while
 `NODE_ENV` is not `production`. Demo mode uses invented in-memory policy and record
 state, never contacts Monarch, and never loads developer auth state. Production
@@ -118,3 +139,9 @@ as UID/GID `10001`, and reports liveness at `GET /api/health`. Runtime configura
 | `TYRION_INSTRUMENT_FINGERPRINT_KEY` | Server-only household fingerprint HMAC key |
 | `TYRION_REATTRIBUTION_URL` | Optional protected internal re-attribution repository service |
 | `TYRION_REATTRIBUTION_TOKEN` | Optional server-only integration token |
+| `TYRION_ATTRIBUTION_CLIENT_ID` | Configured least-privilege Mission Control service client |
+| `TYRION_ATTRIBUTION_ACTOR_ID` | Server-derived service actor used for safe manual-decision provenance |
+| `TYRION_ATTRIBUTION_HOUSEHOLD_ID` | Household scope assigned to the service client |
+| `TYRION_ATTRIBUTION_AUTH_SECRET` | Server-only HMAC key shared with the one service client |
+| `TYRION_ATTRIBUTION_INTERNAL_HOST` | Private service authority accepted by the endpoint |
+| `TYRION_ATTRIBUTION_REPLAY_STORE_PATH` | External directory for short-lived atomic nonce records |

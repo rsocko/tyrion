@@ -53,13 +53,11 @@ jobs:
         working-directory: kid-engine
         run: npm ci --no-audit --no-fund
 
-      - name: Test Tyrion domain contracts
+      - name: Test and build Tyrion domain contracts
         working-directory: kid-engine
-        run: npm test
-
-      - name: Verify published Tyrion package surface
-        working-directory: kid-engine
-        run: npm run test:consumer
+        run: |
+          npm test
+          npm run build
 
       - name: Install UI dependencies
         working-directory: triage-app

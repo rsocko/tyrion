@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import {
   FilePolicyRepository,
+  AttributionBatchService,
   PolicyService,
   PolicyVersionConflictError,
   ReattributionService,
@@ -23,6 +24,7 @@ const INTEGRATION_TIMEOUT_MS = 10_000;
 export interface PolicyRuntime {
   mode: "demo" | "production";
   policyService: PolicyService;
+  attributionBatchService: AttributionBatchService;
   getReattributionService(): ReattributionService;
   fingerprintInstrument(householdId: string, instrumentReference: string): string;
 }
@@ -68,6 +70,7 @@ export function getPolicyRuntime(
   cachedRuntime = {
     mode: demo ? "demo" : "production",
     policyService: new PolicyService(policyRepository),
+    attributionBatchService: new AttributionBatchService(policyRepository),
     getReattributionService() {
       if (!reattributionService) {
         const repository: ReattributionRepository = demo

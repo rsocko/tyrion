@@ -31,7 +31,7 @@ matching. Those workflows should deep-link to Monarch.
 | Path | Role |
 | --- | --- |
 | `monarch-bridge/` | Monarch authentication, normalized API access, synchronization, and write-back |
-| `kid-engine/` | Versioned household policy, attribution, review, and re-attribution contracts and logic |
+| `kid-engine/` | Private Tyrion-internal household policy, attribution, review, and re-attribution logic |
 | `docs/` | Active boundary, roadmap, contracts, and historical design references |
 | `triage-app/` | Bounded Tyrion domain configuration, Monarch connector operations, and contract-validation console |
 | `mockups/` | UX and visual references; not deployment architecture |

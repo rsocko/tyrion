@@ -1,0 +1,360 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Tyrion Internal Batch Attribution Service",
+    "version": "1.0.0",
+    "description": "Private service-to-service contract. Mission Control sends only privacy-safe normalized attribution facts; Tyrion derives actor and household scope from the authenticated client."
+  },
+  "servers": [
+    {
+      "url": "http://tyrion-operations-ui:3000",
+      "description": "Private backend-network DNS only"
+    }
+  ],
+  "paths": {
+    "/api/internal/v1/attribution/batch": {
+      "post": {
+        "operationId": "attributeBatchV1",
+        "summary": "Attribute a bounded transaction batch using one current policy snapshot",
+        "description": "Maximum body size is 65536 bytes. The exact body bytes are SHA-256 hashed and included in the HMAC assertion. This route is excluded from the public operational UI router.",
+        "parameters": [
+          {
+            "name": "x-tyrion-service-client",
+            "in": "header",
+            "required": true,
+            "schema": { "$ref": "#/$defs/Identifier" }
+          },
+          {
+            "name": "x-tyrion-service-timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp in seconds; accepted for 60 seconds.",
+            "schema": { "type": "string", "pattern": "^[0-9]+$" }
+          },
+          {
+            "name": "x-tyrion-service-nonce",
+            "in": "header",
+            "required": true,
+            "description": "Unique base64url nonce accepted once.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{22,128}$"
+            }
+          },
+          {
+            "name": "x-tyrion-content-sha256",
+            "in": "header",
+            "required": true,
+            "description": "Lowercase SHA-256 digest of the exact request body.",
+            "schema": { "$ref": "#/$defs/HexDigest" }
+          },
+          {
+            "name": "x-tyrion-service-signature",
+            "in": "header",
+            "required": true,
+            "description": "Lowercase HMAC-SHA256 over uppercase method, pathname, lowercase private host, client ID, timestamp, nonce, and content digest, newline joined in that order.",
+            "schema": { "$ref": "#/$defs/HexDigest" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/$defs/AttributionBatchRequestV1" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The complete batch was evaluated deterministically.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/$defs/AttributionBatchResponseV1" }
+              }
+            }
+          },
+          "400": { "$ref": "#/$defs/InvalidRequestResponse" },
+          "401": { "$ref": "#/$defs/AuthResponse" },
+          "403": { "$ref": "#/$defs/ForbiddenResponse" },
+          "404": { "$ref": "#/$defs/RouteResponse" },
+          "409": { "$ref": "#/$defs/ConflictResponse" },
+          "413": { "$ref": "#/$defs/SizeResponse" },
+          "415": { "$ref": "#/$defs/MediaTypeResponse" },
+          "429": { "$ref": "#/$defs/RateResponse" },
+          "500": { "$ref": "#/$defs/OperationFailureResponse" },
+          "503": { "$ref": "#/$defs/UnavailableResponse" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "HexDigest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 20,
+      "maxLength": 35
+    },
+    "InstrumentFingerprint": {
+      "type": ["string", "null"],
+      "pattern": "^instrument-v1:[A-Za-z0-9_-]{43}$"
+    },
+    "ManualDecisionV1": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "kidId", "decidedAt"],
+          "properties": {
+            "action": { "const": "assign-kid" },
+            "kidId": { "$ref": "#/$defs/Identifier" },
+            "decidedAt": { "$ref": "#/$defs/Timestamp" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "kidId", "decidedAt"],
+          "properties": {
+            "action": { "const": "parent-expense" },
+            "kidId": { "type": "null" },
+            "decidedAt": { "$ref": "#/$defs/Timestamp" }
+          }
+        }
+      ]
+    },
+    "AttributionBatchItemV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRef",
+        "occurredOn",
+        "merchantName",
+        "instrumentFingerprint",
+        "observedAt",
+        "existingManualDecision"
+      ],
+      "properties": {
+        "sourceRef": { "$ref": "#/$defs/Identifier" },
+        "occurredOn": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "merchantName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "instrumentFingerprint": {
+          "$ref": "#/$defs/InstrumentFingerprint"
+        },
+        "observedAt": { "$ref": "#/$defs/Timestamp" },
+        "existingManualDecision": { "$ref": "#/$defs/ManualDecisionV1" }
+      }
+    },
+    "AttributionBatchRequestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "provenance",
+        "expectedPolicyVersion",
+        "items"
+      ],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "provenance": { "const": "mission-control-normalized-v1" },
+        "expectedPolicyVersion": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/AttributionBatchItemV1" }
+        }
+      }
+    },
+    "AttributionBatchResultV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "sourceRef",
+        "status",
+        "kidId",
+        "confidence",
+        "method",
+        "explanation",
+        "reviewStatus",
+        "reasons",
+        "decisionSource",
+        "policyVersion",
+        "engineVersion",
+        "evaluatedAt"
+      ],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "sourceRef": { "$ref": "#/$defs/Identifier" },
+        "status": {
+          "enum": ["attributed", "unassigned", "pending"]
+        },
+        "kidId": {
+          "oneOf": [
+            { "$ref": "#/$defs/Identifier" },
+            { "type": "null" }
+          ]
+        },
+        "confidence": { "enum": ["definite", "likely", "none"] },
+        "method": {
+          "enum": [
+            "manual",
+            "card-rule",
+            "merchant-rule",
+            "historical-pattern",
+            "unassigned",
+            "unavailable"
+          ]
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "reviewStatus": {
+          "enum": ["not-required", "pending", "resolved"]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "no-match",
+              "low-confidence",
+              "card-rule-conflict",
+              "merchant-rule-conflict",
+              "historical-attribution-tie",
+              "engine-unavailable",
+              "policy-unavailable",
+              "policy-version-mismatch"
+            ]
+          }
+        },
+        "decisionSource": {
+          "enum": ["manual", "automated", "fallback"]
+        },
+        "policyVersion": { "type": "integer", "minimum": 1 },
+        "engineVersion": { "const": "1.0.0" },
+        "evaluatedAt": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "AttributionBatchResponseV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "policyVersion",
+        "engineVersion",
+        "results"
+      ],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "policyVersion": { "type": "integer", "minimum": 1 },
+        "engineVersion": { "const": "1.0.0" },
+        "results": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/AttributionBatchResultV1" }
+        }
+      }
+    },
+    "ErrorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "string" },
+            "message": { "type": "string" }
+          }
+        }
+      }
+    },
+    "InvalidRequestResponse": {
+      "description": "invalid_request",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "AuthResponse": {
+      "description": "attribution_auth_required or attribution_auth_invalid",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "ForbiddenResponse": {
+      "description": "attribution_forbidden",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "RouteResponse": {
+      "description": "attribution_route_not_available",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "ConflictResponse": {
+      "description": "attribution_replay_detected or policy_conflict",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "SizeResponse": {
+      "description": "payload_too_large or batch_too_large",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "MediaTypeResponse": {
+      "description": "unsupported_media_type",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "RateResponse": {
+      "description": "attribution_rate_limited",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "OperationFailureResponse": {
+      "description": "attribution_operation_failed",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
+    "UnavailableResponse": {
+      "description": "attribution_auth_not_configured, policy_unavailable, or attribution_service_unavailable",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    }
+  }
+}
