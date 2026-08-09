@@ -42,6 +42,8 @@ RUN groupadd --gid "${TYRION_GID}" tyrion \
         --home-dir /home/tyrion --shell /usr/sbin/nologin tyrion \
     && install -d -m 0700 -o tyrion -g tyrion /var/lib/tyrion-policy
 
+COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/
+
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/standalone ./
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/static ./.next/static
 

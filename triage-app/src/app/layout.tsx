@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Tyrion | Money-domain configuration",
-  description: "Tyrion household policy and Monarch connector operations",
+  description: "Independent household policy and unofficial Monarch connector operations",
 };
 
 export default function RootLayout({

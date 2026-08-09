@@ -719,6 +719,10 @@ function ConfigurationShell({ children }: { children: React.ReactNode }) {
         </Link>
       </nav>
       {children}
+      <footer className="mt-8 border-t border-hair pt-4 text-xs leading-5 text-dim">
+        The Monarch connector is independent and unofficial. It is not affiliated with,
+        endorsed by, sponsored by, or supported by Monarch Money, Inc.
+      </footer>
     </main>
   );
 }

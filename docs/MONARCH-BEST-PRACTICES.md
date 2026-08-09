@@ -2,6 +2,12 @@
 
 A practical guide to setting up and maintaining Monarch Money so the automated finance layer works well.
 
+This is independent interoperability guidance, not Monarch Money documentation or
+endorsement. Product labels and behavior can change; verify current instructions in
+Monarch's own interface. Opt-in live connector use is subject to the dated owner
+risk acceptance in
+[`LICENSING-AND-PROVENANCE.md`](LICENSING-AND-PROVENANCE.md#monarch-terms-and-affiliation).
+
 ## Initial Setup Checklist
 
 ### 1. Connect All Accounts (Priority: Do This First)

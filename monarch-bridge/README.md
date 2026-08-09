@@ -4,6 +4,13 @@ The bridge is Tyrion's sole owner of Monarch authentication state. Mission Contr
 scheduled sync, the operational UI, and MCP tooling must call this service rather than
 creating or persisting separate Monarch sessions.
 
+This is an independent, unofficial interoperability service. It is not affiliated
+with, endorsed by, sponsored by, or supported by Monarch Money, Inc. The client uses
+a private upstream interface, not a supported Monarch SDK. On 2026-08-09, the owner
+accepted the documented account and contract risk and retained opt-in live mode for
+personal, non-commercial use. The client license does not authorize service access.
+See [`../docs/LICENSING-AND-PROVENANCE.md`](../docs/LICENSING-AND-PROVENANCE.md).
+
 ## Supported client
 
 `monarchmoneycommunity==1.5.2` is pinned in `requirements.txt`. Authentication,

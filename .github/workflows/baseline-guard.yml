@@ -20,6 +20,8 @@ jobs:
           python-version: "3.12"
       - name: Enforce Actions artifact policy
         run: python .github/scripts/check_actions_artifact_policy.py
+      - name: Enforce license and asset policy
+        run: python .github/scripts/check_license_policy.py
       - name: Reject unresolved conflicts
         shell: bash
         run: |
