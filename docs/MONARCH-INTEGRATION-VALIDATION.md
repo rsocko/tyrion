@@ -39,19 +39,22 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 
 ## Tyrion domain integration boundary
 
-`@rsocko/tyrion-kid-engine` contract version `1.0` consumes only normalized,
-consumer-mapped attribution inputs. It does not import `monarchmoneycommunity`, load
-a bridge session, call Monarch, or accept raw upstream response objects. The
-integration consumer maps a bridge transaction DTO to an opaque source reference,
-normalized merchant name, household-scoped payment-instrument fingerprint, and
-calendar date before invoking the engine.
+`kid-engine` is private Tyrion-internal code. Mission Control calls
+`POST /api/internal/v1/attribution/batch` on the private Tyrion service network and
+never installs or executes the engine. Each bounded request contains only an opaque
+consumer source reference, normalized merchant name, calendar date,
+household-scoped irreversible instrument fingerprint, observation timestamp, fixed
+provenance marker, and optional structured manual-decision context. It cannot carry
+Bridge pages, raw transaction/account identifiers, masks, amounts, notes, tags,
+categories, session material, or credentials.
 
-Attribution failure does not change bridge sync success. The consumer persists
-`createUnavailableAttributionResultV1(...)` with a pending review reason and
-continues the transaction generation. Existing manual decisions are supplied on the
-input and remain authoritative even when policy or engine evaluation is unavailable.
-No controlled live Monarch validation is required for changes confined to this
-domain package; its deterministic tests use invented structures only.
+The Tyrion service derives actor and household scope from its signed service-client
+configuration, loads the current policy snapshot server-side, and evaluates the
+whole batch under one policy-version fence. Attribution failure does not change
+bridge sync success: Mission Control persists the transaction with pending
+attribution review and retries later. No controlled live Monarch validation is
+required for attribution service changes; deterministic tests use invented
+structures only.
 
 ## Safe live procedure
 

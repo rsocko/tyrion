@@ -4,38 +4,25 @@ import { describe, expect, it } from 'vitest';
 interface PackageManifest {
   name: string;
   version: string;
-  repository: {
-    type: string;
-    url: string;
-    directory: string;
-  };
-  publishConfig: {
-    registry: string;
-    access: string;
-  };
+  private: boolean;
+  publishConfig?: unknown;
   exports: Record<string, unknown>;
-  files: string[];
+  scripts: Record<string, string>;
 }
 
-describe('published package manifest', () => {
-  it('pins the supported GitHub Packages distribution contract', async () => {
+describe('internal package manifest', () => {
+  it('cannot be published while preserving Tyrion-internal entry points', async () => {
     const manifest = JSON.parse(
       await readFile(new URL('../package.json', import.meta.url), 'utf8')
     ) as PackageManifest;
     expect(manifest).toMatchObject({
       name: '@rsocko/tyrion-kid-engine',
       version: '1.0.0',
-      repository: {
-        type: 'git',
-        url: 'git+https://github.com/rsocko/tyrion.git',
-        directory: 'kid-engine',
-      },
-      publishConfig: {
-        registry: 'https://npm.pkg.github.com',
-        access: 'restricted',
-      },
-      files: ['dist'],
+      private: true,
     });
+    expect(manifest.publishConfig).toBeUndefined();
+    expect(manifest.scripts.prepack).toBeUndefined();
+    expect(manifest.scripts['test:consumer']).toBeUndefined();
     expect(Object.keys(manifest.exports).sort()).toEqual([
       '.',
       './contracts/v1',

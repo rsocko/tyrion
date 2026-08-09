@@ -6,6 +6,8 @@
 > concepts below remain useful, but any UI belongs in Mission Control, source
 > records remain in Monarch and OWL/Document Intelligence, and the standalone
 > prototype is only a debug and UX-reference surface.
+> Cross-repository services integrate through protected APIs. Mission Control never
+> installs or executes Tyrion's internal attribution engine.
 
 ## Overview
 

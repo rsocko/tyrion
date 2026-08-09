@@ -16,7 +16,8 @@ export type PolicyPermissionV1 =
   | 'policy:read'
   | 'policy:write'
   | 'reattribution:preview'
-  | 'reattribution:apply';
+  | 'reattribution:apply'
+  | 'attribution:batch';
 
 export interface KidProfileV1 {
   id: string;
@@ -507,6 +508,7 @@ export function parsePolicyActorV1(value: unknown): PolicyActorV1 {
           'policy:write',
           'reattribution:preview',
           'reattribution:apply',
+          'attribution:batch',
         ] as const,
         `permissions[${index}]`
       )

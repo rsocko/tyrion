@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
@@ -14,12 +14,15 @@ import {
 } from "../src/lib/bridge-proxy-policy.mjs";
 import { connectionPresentation } from "../src/lib/operational-state.mjs";
 import { policyStatePresentation } from "../src/lib/policy-ui-state.mjs";
+import { FileAttributionReplayStore } from "../src/lib/attribution-replay-store.mjs";
 
 const appRoot = process.cwd();
 const serviceToken = "synthetic-test-service-token-value";
 const policyAuthSecret = "synthetic-policy-auth-secret-value-123456";
 const fingerprintKey = "synthetic-fingerprint-key-value-12345678";
 const reattributionToken = "synthetic-reattribution-token-value-1234";
+const attributionAuthSecret = "synthetic-attribution-auth-secret-value-123456";
+const attributionClientId = "mission-control-test";
 const policyActor = {
   actorId: "actor-synthetic",
   householdId: "household-synthetic",
@@ -198,6 +201,15 @@ before(async () => {
       TYRION_REATTRIBUTION_URL: fakeReattributionUrl,
       TYRION_REATTRIBUTION_TOKEN: reattributionToken,
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "true",
+      TYRION_ATTRIBUTION_CLIENT_ID: attributionClientId,
+      TYRION_ATTRIBUTION_ACTOR_ID: "mission-control-service",
+      TYRION_ATTRIBUTION_HOUSEHOLD_ID: policyActor.householdId,
+      TYRION_ATTRIBUTION_AUTH_SECRET: attributionAuthSecret,
+      TYRION_ATTRIBUTION_INTERNAL_HOST: `127.0.0.1:${port}`,
+      TYRION_ATTRIBUTION_REPLAY_STORE_PATH: resolve(
+        temporaryStateDirectory,
+        "attribution-replay"
+      ),
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
     },
@@ -524,6 +536,19 @@ test("policy API reports missing deployment authentication configuration", async
       (await response.json()).error.code,
       "policy_auth_not_configured"
     );
+    const attribution = await fetch(
+      `${url}/api/internal/v1/attribution/batch`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }
+    );
+    assert.equal(attribution.status, 503);
+    assert.equal(
+      (await attribution.json()).error.code,
+      "attribution_auth_not_configured"
+    );
   } finally {
     if (processWithoutPolicyAuth.exitCode === null) processWithoutPolicyAuth.kill();
   }
@@ -597,6 +622,221 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
   });
   assert.equal(stale.status, 409);
   assert.equal((await stale.json()).error.code, "policy_version_conflict");
+});
+
+test("batch attribution returns only strict normalized decisions", async () => {
+  const response = await attributionFetch({
+    contractVersion: "1.0",
+    provenance: "mission-control-normalized-v1",
+    expectedPolicyVersion: activePolicy.policyVersion,
+    items: [
+      attributionItem("consumer-source-one"),
+      {
+        ...attributionItem("consumer-source-manual"),
+        existingManualDecision: {
+          action: "assign-kid",
+          kidId: "kid-synthetic",
+          decidedAt: "2026-08-08T12:59:00Z",
+        },
+      },
+    ],
+  });
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert.doesNotMatch(
+    text,
+    /merchantName|instrumentFingerprint|occurredOn|observedAt|householdId|actorId/
+  );
+  const payload = JSON.parse(text);
+  assert.equal(payload.policyVersion, activePolicy.policyVersion);
+  assert.equal(payload.engineVersion, "1.0.0");
+  assert.deepEqual(
+    payload.results.map((result) => result.sourceRef),
+    ["consumer-source-one", "consumer-source-manual"]
+  );
+  assert.deepEqual(payload.results[0], {
+    contractVersion: "1.0",
+    sourceRef: "consumer-source-one",
+    status: "attributed",
+    kidId: "kid-synthetic",
+    confidence: "definite",
+    method: "merchant-rule",
+    explanation: "A configured merchant rule matched.",
+    reviewStatus: "not-required",
+    reasons: [],
+    decisionSource: "automated",
+    policyVersion: activePolicy.policyVersion,
+    engineVersion: "1.0.0",
+    evaluatedAt: payload.results[0].evaluatedAt,
+  });
+  assert.match(payload.results[0].evaluatedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(payload.results[1].method, "manual");
+  assert.equal(payload.results[1].reviewStatus, "resolved");
+});
+
+test("batch attribution fails closed for auth, host, body, replay, and policy conflicts", async () => {
+  const path = "/api/internal/v1/attribution/batch";
+  const body = attributionRequest([attributionItem("consumer-auth")]);
+  const missing = await fetch(`${uiUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  assert.equal(missing.status, 401);
+  assert.equal((await missing.json()).error.code, "attribution_auth_required");
+
+  const invalid = await attributionFetch(body, {
+    secret: "invalid-attribution-auth-secret-value-123456",
+  });
+  assert.equal(invalid.status, 401);
+  assert.equal((await invalid.json()).error.code, "attribution_auth_invalid");
+
+  const expired = await attributionFetch(body, {
+    timestampMilliseconds: Date.now() - 120_000,
+  });
+  assert.equal(expired.status, 401);
+  assert.equal((await expired.json()).error.code, "attribution_auth_invalid");
+
+  const wrongPath = await attributionFetch(body, {
+    signaturePath: "/api/internal/v1/attribution/other",
+  });
+  assert.equal(wrongPath.status, 401);
+  assert.equal((await wrongPath.json()).error.code, "attribution_auth_invalid");
+
+  const wrongBodyHash = await attributionFetch(body, {
+    requestHeaders: { "x-tyrion-content-sha256": "0".repeat(64) },
+  });
+  assert.equal(wrongBodyHash.status, 401);
+  assert.equal(
+    (await wrongBodyHash.json()).error.code,
+    "attribution_auth_invalid"
+  );
+
+  const publicHost = await attributionFetch(body, {
+    requestHeaders: { "x-forwarded-host": "tyrion.socko.us" },
+  });
+  assert.equal(publicHost.status, 404);
+  assert.equal(
+    (await publicHost.json()).error.code,
+    "attribution_route_not_available"
+  );
+
+  const nonce = randomUUID().replaceAll("-", "");
+  const first = await attributionFetch(body, { nonce });
+  assert.equal(first.status, 200);
+  const replay = await attributionFetch(body, { nonce });
+  assert.equal(replay.status, 409);
+  assert.equal(
+    (await replay.json()).error.code,
+    "attribution_replay_detected"
+  );
+
+  const conflict = await attributionFetch({
+    ...body,
+    expectedPolicyVersion: activePolicy.policyVersion + 1,
+    items: [attributionItem("consumer-conflict")],
+  });
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).error.code, "policy_conflict");
+});
+
+test("batch attribution rejects private fields and enforces size and rate bounds", async () => {
+  const privateField = await attributionFetch(
+    attributionRequest([
+      { ...attributionItem("consumer-private"), amount: 12 },
+    ])
+  );
+  assert.equal(privateField.status, 400);
+  assert.equal((await privateField.json()).error.code, "invalid_request");
+
+  const changedSourceRef = await attributionFetch(
+    attributionRequest([attributionItem(" consumer-whitespace ")])
+  );
+  assert.equal(changedSourceRef.status, 400);
+  assert.equal((await changedSourceRef.json()).error.code, "invalid_request");
+
+  const tooMany = await attributionFetch(
+    attributionRequest(
+      Array.from({ length: 101 }, (_, index) =>
+        attributionItem(`consumer-batch-${index}`)
+      )
+    )
+  );
+  assert.equal(tooMany.status, 413);
+  assert.equal((await tooMany.json()).error.code, "batch_too_large");
+
+  const oversized = await fetch(`${uiUrl}/api/internal/v1/attribution/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "x".repeat(64 * 1_024 + 1),
+  });
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error.code, "payload_too_large");
+
+  const replayDirectory = resolve(
+    temporaryStateDirectory,
+    "attribution-replay"
+  );
+  await mkdir(replayDirectory, { recursive: true });
+  await writeFile(
+    resolve(replayDirectory, `1-${"a".repeat(64)}.nonce`),
+    "",
+    "utf8"
+  );
+  const replayStore = new FileAttributionReplayStore(replayDirectory);
+  const concurrent = await Promise.all(
+    Array.from({ length: 12 }, (_, index) =>
+      replayStore.consume(
+        attributionClientId,
+        "100",
+        `nonce-concurrent-${index.toString().padStart(4, "0")}`,
+        220,
+        100
+      )
+    )
+  );
+  assert.deepEqual(concurrent, Array(12).fill(true));
+
+  await Promise.all(
+    Array.from({ length: 1_001 }, (_, index) =>
+      writeFile(
+        resolve(
+          replayDirectory,
+          `1-${index.toString(16).padStart(64, "0")}.nonce`
+        ),
+        "",
+        "utf8"
+      )
+    )
+  );
+  const recovered = await replayStore.consume(
+    attributionClientId,
+    "101",
+    "nonce-capacity-recovery",
+    221,
+    101
+  );
+  assert.equal(recovered, true);
+  assert.equal(
+    await replayStore.consume(
+      attributionClientId,
+      "101",
+      "nonce-capacity-recovery",
+      221,
+      101
+    ),
+    false
+  );
+
+  let limited;
+  for (let index = 0; index < 60; index += 1) {
+    limited = await attributionFetch(
+      attributionRequest([attributionItem(`consumer-rate-${index}`)])
+    );
+    if (limited.status === 429) break;
+  }
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).error.code, "attribution_rate_limited");
 });
 
 test("policy mutations reject cross-site requests and client-supplied permissions", async () => {
@@ -693,7 +933,7 @@ test("instrument references are fingerprinted server-side and never persisted ra
   assert.doesNotMatch(stored, /password|cookie|authorization|sessionPath/i);
 });
 
-test("container and homelab contracts wire policy storage and trusted auth", async () => {
+test("container and homelab contracts keep attribution private and protected", async () => {
   const dockerfile = await readFile(join(appRoot, "Dockerfile"), "utf8");
   assert.match(
     dockerfile,
@@ -710,6 +950,22 @@ test("container and homelab contracts wire policy storage and trusted auth", asy
   assert.match(compose, /PathPrefix\(`\/api\/policy`\)/);
   assert.match(compose, /tyrion-policy-auth\.forwardauth\.address/);
   assert.match(compose, /TYRION_POLICY_STORE_PATH: \/var\/lib\/tyrion-policy/);
+  assert.match(
+    compose,
+    /!PathPrefix\(`\/api\/internal\/`\)/
+  );
+  assert.doesNotMatch(
+    compose,
+    /routers\.[^.]*attribution[^=]*\.rule=.*PathPrefix/
+  );
+  assert.match(
+    compose,
+    /TYRION_ATTRIBUTION_INTERNAL_HOST: tyrion-operations-ui:3000/
+  );
+  assert.match(
+    compose,
+    /TYRION_ATTRIBUTION_REPLAY_STORE_PATH: \/var\/lib\/tyrion-policy\/attribution-replay/
+  );
 });
 
 test("re-attribution preview is bounded, aggregate-only, and requires separate permissions", async () => {
@@ -899,6 +1155,67 @@ function policyFetch(
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+function attributionFetch(body, options = {}) {
+  const path = "/api/internal/v1/attribution/batch";
+  const serialized = JSON.stringify(body);
+  const bytes = new TextEncoder().encode(serialized);
+  const timestamp = String(
+    Math.floor((options.timestampMilliseconds ?? Date.now()) / 1_000)
+  );
+  const nonce = options.nonce ?? randomUUID().replaceAll("-", "");
+  const host = new URL(uiUrl).host;
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const signature = createHmac(
+    "sha256",
+    options.secret ?? attributionAuthSecret
+  )
+    .update(
+      [
+        "POST",
+        options.signaturePath ?? path,
+        host,
+        attributionClientId,
+        timestamp,
+        nonce,
+        contentHash,
+      ].join("\n")
+    )
+    .digest("hex");
+  return fetch(`${uiUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-tyrion-service-client": attributionClientId,
+      "x-tyrion-service-timestamp": timestamp,
+      "x-tyrion-service-nonce": nonce,
+      "x-tyrion-content-sha256": contentHash,
+      "x-tyrion-service-signature": signature,
+      ...options.requestHeaders,
+    },
+    body: serialized,
+  });
+}
+
+function attributionRequest(items) {
+  return {
+    contractVersion: "1.0",
+    provenance: "mission-control-normalized-v1",
+    expectedPolicyVersion: activePolicy.policyVersion,
+    items,
+  };
+}
+
+function attributionItem(sourceRef) {
+  return {
+    sourceRef,
+    occurredOn: "2026-08-08",
+    merchantName: "Synthetic Store",
+    instrumentFingerprint: null,
+    observedAt: "2026-08-08T12:58:00Z",
+    existingManualDecision: null,
+  };
 }
 
 function policyAssertionHeaders(

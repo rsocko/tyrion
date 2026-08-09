@@ -33,6 +33,7 @@ reporting product, broad transaction browser, or separate assistant shell.
 | **Monarch** | Accounts, transactions, categories, budgets, recurring transactions, reports, goals, forecasts, investments, and ordinary receipt matching | Household-specific attribution, cross-system work prioritization, or Mission Control tasks |
 | **Mission Control** | Finance attention surfaces, exception review and actions, notifications, tasks, My Day, Houston, navigation, authentication, and shared interaction patterns | Tyrion policy CRUD, connector setup, a replacement ledger, budget manager, report suite, bills app, or second finance assistant |
 | **Tyrion domain** | Kid/profile configuration, card and merchant rules, limits, policy versions, per-kid attribution, exception detection, decision summaries, finance tools, and reconciliation orchestration | Authoritative copies of Monarch data or a general-purpose finance application |
+| **Tyrion attribution service** | Protected, household-scoped batch evaluation of privacy-safe normalized attribution facts against the current Tyrion policy | Bridge transport, browser access, raw transaction/account records, or executable engine distribution to consumers |
 | **Monarch Bridge** | Authenticated Monarch access, deterministic synchronization, normalized contracts, write-back, health, and observability | Product navigation, task ownership, broad reporting UI, or an assistant shell |
 | **Tyrion operations/configuration UI** | Tyrion-owned kid, rule, limit, policy, and connector configuration; connector reachability; authentication setup/status; logout; bounded sync/recheck; contract validation | Daily finance attention, ordinary transactions, accounts, budgets, bills, generic triage, dashboards, reporting, or chat |
 
@@ -44,6 +45,10 @@ connector operations UI. Connector browser calls use only allowlisted Next.js
 bridge remains privately routed with its own session storage and protected contract.
 Policy configuration uses a Tyrion-owned authenticated API and persistence boundary;
 it never stores or proxies reusable Monarch session material.
+Mission Control calls Tyrion's protected versioned batch attribution API over the
+private service network. It must not install, copy, or execute `kid-engine`; that
+module remains internal to Tyrion. The attribution route is not a Monarch Bridge
+endpoint and is explicitly excluded from the public `tyrion.socko.us` router.
 
 The production route tree and proxy allowlist must prevent access to transactions,
 accounts, categories, recurring items, cash flow, budgets, bills, broad kid-spending

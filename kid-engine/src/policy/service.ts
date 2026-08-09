@@ -135,6 +135,14 @@ export function authorizeReattribution(
   );
 }
 
+export function authorizeAttributionBatch(
+  actor: PolicyActorV1,
+  householdId: string
+): void {
+  const parsedActor = parsePolicyActorV1(actor);
+  authorize(parsedActor, householdId, 'attribution:batch');
+}
+
 export function authorizePolicy(
   actor: PolicyActorV1,
   householdId: string,

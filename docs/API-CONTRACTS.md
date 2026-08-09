@@ -19,6 +19,11 @@ surface.
 
 The OpenAPI document at `GET /openapi.json` is the executable schema.
 
+This document covers only Monarch Bridge v1 transport. Tyrion's protected batch
+attribution service is a separate domain API defined by
+[`attribution-service-v1.openapi.json`](./attribution-service-v1.openapi.json);
+it is not added to the bridge route tree.
+
 ## Common semantics
 
 ### Naming and nullability
