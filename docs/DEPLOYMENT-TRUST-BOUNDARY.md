@@ -69,11 +69,12 @@ and publication service, not in Tyrion.
 The publication workflow is disabled in GitHub and inert in the repository. Actions
 use a read-only default token, an explicit three-Action allowlist, and provider-side
 immutable commit enforcement. The protected default branch requires pull requests, the baseline and full validation
-jobs, resolved conversations, linear signed history, and current-branch checks.
+jobs, resolved conversations, linear history, and current-branch checks.
 Because this repository has one maintainer, it does not require an impossible
-self-review. Administrators cannot bypass the other protections, and force pushes and
-deletion are disabled. Existing Actions caches were removed; the workflows do not
-create replacements. Dependency alerts and security updates are enabled.
+self-review or commit-signing setup. Administrators cannot bypass the other
+protections, and force pushes and deletion are disabled. Existing Actions caches were
+removed; the workflows do not create replacements. Dependency alerts and security
+updates are enabled.
 
 The current private-repository plan does not expose secret scanning, push protection,
 private vulnerability reporting, or fork-contributor approval policy. Before changing
