@@ -119,7 +119,9 @@ These gates are explained and owned; none is an unexplained remediation finding:
    16.2.9 is available outside the vulnerable range. A GitHub-hosted migration using
    only the public npm registry is in progress. The authenticated alert API still
    reports its stale pre-migration UI count and must be rechecked after that pull
-   request lands.
+   request lands. The human-authored Actions policy replacement is merged, and its
+   superseded Dependabot pull request is closed. The separately owned Python policy
+   replacement remains pending.
    Dedicated dependency-update sessions own that changing queue. Issue #102 does not
    merge, close, or supersede those pull requests.
 2. **Visibility-dependent GitHub controls:** secret scanning, push protection, private
