@@ -51,10 +51,10 @@ are permissively licensed. Development-only exceptions include MPL-2.0,
 CC-BY-4.0, and CC0-1.0 packages; those terms are compatible with their use as
 tools or reference data and are not changed by Tyrion's MIT license.
 
-Next.js 16 adds sharp 0.34.5 and platform-conditional `@img/sharp-*` packages
+Next.js 16 adds sharp 0.35.3 and platform-conditional `@img/sharp-*` packages
 for supported production platforms. Those artifacts declare Apache-2.0 and,
 where they bundle or describe libvips, LGPL-3.0-or-later and MIT combinations.
-The corresponding `@img/sharp-libvips-*` 1.2.4 packages declare
+The corresponding `@img/sharp-libvips-*` 1.3.2 packages declare
 LGPL-3.0-or-later. Their installed license files and notices remain
 authoritative and are preserved in dependency and container layers.
 
