@@ -11,8 +11,8 @@ files and notices.
 | --- | --- | --- | --- |
 | Next.js | 16.3.0 | MIT | Copyright (c) Vercel, Inc.; [license](https://github.com/vercel/next.js/blob/v16.3.0/license.md) |
 | React and React DOM | 19.2.0 | MIT | Copyright (c) Meta Platforms, Inc. and affiliates; [license](https://github.com/facebook/react/blob/v19.2.0/LICENSE) |
-| sharp and `@img/sharp-*` platform packages | 0.35.3 | Apache-2.0, with LGPL-3.0-or-later and MIT terms where declared by platform packages | [sharp source and license](https://github.com/lovell/sharp/tree/v0.35.3); installed package license files remain authoritative |
-| `@img/sharp-libvips-*` platform packages | 1.3.2 | LGPL-3.0-or-later | [libvips source and license](https://github.com/libvips/libvips); installed platform package notices remain authoritative |
+| sharp and `@img/sharp-*` platform packages | 0.35.3 | Apache-2.0, with LGPL-3.0-or-later and MIT terms where declared by platform packages | [sharp source and license](https://github.com/lovell/sharp/tree/v0.35.3); installed package license files remain authoritative and are copied into `/licenses/npm-runtime` in the UI image |
+| `@img/sharp-libvips-*` platform packages | 1.3.2 | LGPL-3.0-or-later | [libvips source and license](https://github.com/libvips/libvips); package metadata is verified and the pinned Debian base image's canonical LGPL-3 text is copied into `/licenses/npm-runtime` when a platform package omits a license file |
 | PostCSS and nanoid | 8.5.25 and 3.3.18 | MIT | Package metadata and installed license files |
 | proper-lockfile and runtime dependencies | 4.1.2 | MIT | [package source and license](https://github.com/moxystudio/node-proper-lockfile/tree/v4.1.2) |
 | monarchmoneycommunity | 1.5.2 | MIT | Copyright (c) 2026 bradleyseanf; [license](https://github.com/bradleyseanf/monarchmoneycommunity/blob/v1.5.2/LICENSE) |

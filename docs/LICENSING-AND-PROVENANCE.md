@@ -55,8 +55,10 @@ Next.js 16 adds sharp 0.35.3 and platform-conditional `@img/sharp-*` packages
 for supported production platforms. Those artifacts declare Apache-2.0 and,
 where they bundle or describe libvips, LGPL-3.0-or-later and MIT combinations.
 The corresponding `@img/sharp-libvips-*` 1.3.2 packages declare
-LGPL-3.0-or-later. Their installed license files and notices remain
-authoritative and are preserved in dependency and container layers.
+LGPL-3.0-or-later. The container build copies installed license files where
+present. When a platform package omits one, it verifies that exact declared
+license and copies Debian's canonical LGPL-3 text from the pinned base image
+into `/licenses/npm-runtime` in the final UI image.
 
 The Python runtime and test graphs are resolved universally for Python 3.12 from
 exact direct inputs into marker-aware, hash-locked

@@ -25,6 +25,37 @@ COPY --from=dependencies /workspace/kid-engine /workspace/kid-engine
 COPY --from=dependencies /workspace/triage-app/node_modules ./node_modules
 COPY triage-app .
 RUN npm run build
+RUN set -eu; \
+    mkdir -p /workspace/runtime-licenses; \
+    sharp_count=0; \
+    platform_count=0; \
+    libvips_count=0; \
+    for package_dir in node_modules/sharp node_modules/@img/*; do \
+        [ -d "${package_dir}" ] || continue; \
+        case "${package_dir}" in \
+            node_modules/sharp) sharp_count=$((sharp_count + 1)) ;; \
+            node_modules/@img/sharp-libvips-*) libvips_count=$((libvips_count + 1)) ;; \
+            node_modules/@img/sharp-*) platform_count=$((platform_count + 1)) ;; \
+        esac; \
+        package_name="$(node -e "const p=require('./${package_dir}/package.json');process.stdout.write(p.name.replace(/^@/, '').replace('/', '--'))")"; \
+        install -d "/workspace/runtime-licenses/${package_name}"; \
+        license_count=0; \
+        for license_file in "${package_dir}"/LICENSE* "${package_dir}"/COPYING* "${package_dir}"/NOTICE*; do \
+            [ -f "${license_file}" ] || continue; \
+            cp "${license_file}" "/workspace/runtime-licenses/${package_name}/"; \
+            license_count=$((license_count + 1)); \
+        done; \
+        if [ "${license_count}" -eq 0 ] && [ "${package_dir#node_modules/@img/sharp-libvips-}" != "${package_dir}" ]; then \
+            package_license="$(node -e "const p=require('./${package_dir}/package.json');process.stdout.write(p.license)")"; \
+            [ "${package_license}" = "LGPL-3.0-or-later" ] || { echo "Unexpected libvips license for ${package_name}" >&2; exit 1; }; \
+            cp /usr/share/common-licenses/LGPL-3 "/workspace/runtime-licenses/${package_name}/LICENSE"; \
+            license_count=1; \
+        fi; \
+        [ "${license_count}" -gt 0 ] || { echo "Missing runtime license for ${package_name}" >&2; exit 1; }; \
+    done; \
+    [ "${sharp_count}" -eq 1 ] || { echo "Missing sharp runtime package" >&2; exit 1; }; \
+    [ "${platform_count}" -gt 0 ] || { echo "Missing sharp platform runtime package" >&2; exit 1; }; \
+    [ "${libvips_count}" -gt 0 ] || { echo "Missing libvips runtime package" >&2; exit 1; }
 
 FROM node:20.19.4-bookworm-slim@sha256:6db5e436948af8f0244488a1f658c2c8e55a3ae51ca2e1686ed042be8f25f70a AS runtime
 
@@ -43,6 +74,7 @@ RUN groupadd --gid "${TYRION_GID}" tyrion \
     && install -d -m 0700 -o tyrion -g tyrion /var/lib/tyrion-policy
 
 COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/
+COPY --from=builder --chown=tyrion:tyrion /workspace/runtime-licenses /licenses/npm-runtime
 
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/standalone ./
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/static ./triage-app/.next/static
