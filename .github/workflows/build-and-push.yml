@@ -42,6 +42,7 @@ jobs:
         with:
           clean: true
           fetch-depth: 1
+          persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Resolve immutable image tag
@@ -103,16 +104,19 @@ jobs:
         with:
           clean: true
           fetch-depth: 1
+          persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Check whether images are current main
         id: current
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           IMAGE_SHA="$(git rev-parse HEAD)"
           echo "sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
-          CURRENT_MAIN="$(git ls-remote origin "refs/heads/${{ github.event.repository.default_branch }}" | cut -f1)"
+          CURRENT_MAIN="$(curl --fail --silent --show-error --header "Authorization: Bearer ${GH_TOKEN}" --header "Accept: application/vnd.github+json" --header "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/${{ github.event.repository.default_branch }}" | python -c 'import json, sys; print(json.load(sys.stdin)["sha"])')"
           if [ "$CURRENT_MAIN" = "$IMAGE_SHA" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
