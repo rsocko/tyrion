@@ -133,12 +133,13 @@ npm run build
 npm test
 ```
 
-The production image is `registry.socko.us/tyrion-ui`, listens on port `3000`, runs
-as UID/GID `10001`, and reports liveness at `GET /api/health`. Runtime configuration:
+The production image listens on port `3000`, runs as UID/GID `10001`, and reports
+liveness at `GET /api/health`. Automated image publication is disabled pending the
+repository's deployment trust-boundary review. Runtime configuration:
 
 | Variable | Purpose |
 | --- | --- |
-| `BRIDGE_URL` | Private bridge URL, normally `http://tyrion-monarch-bridge:8100` |
+| `BRIDGE_URL` | Private server-side bridge endpoint |
 | `BRIDGE_API_TOKEN` | Shared server-only bridge token; required for protected operations |
 | `TYRION_POLICY_STORE_PATH` | External absolute policy/audit store path |
 | `TYRION_POLICY_AUTH_SECRET` | Shared HMAC key used only by trusted auth integration and Tyrion |
