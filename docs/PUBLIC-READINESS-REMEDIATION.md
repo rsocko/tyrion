@@ -31,6 +31,7 @@ pull-request refs cannot be completely purged by a repository rewrite.
 | #97 | Repository license | Repository owner | **Resolved.** Owner-authored content is MIT licensed. Third-party terms remain separate. | [`LICENSE`](../LICENSE), [`LICENSING-AND-PROVENANCE.md`](LICENSING-AND-PROVENANCE.md) |
 | #97 | Scaffold fonts and favicon | Repository maintainer | **Resolved.** Unused font binaries were removed and the scaffold favicon was replaced with an authored asset. | [`LICENSING-AND-PROVENANCE.md`](LICENSING-AND-PROVENANCE.md) |
 | #97 | Dependency, image, font, and notice obligations | Repository maintainer | **Resolved for the reviewed resolutions.** Material runtime and development terms, base images, hosted fonts, and required notices are recorded. Re-review is required when resolutions change. | [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md), license policy check |
+| #137 | Production image runtime license texts | Repository maintainer | **Resolved.** Authoritative sharp and libvips license texts are retained in the production image and verified by deterministic container tests. | [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md), container contract tests |
 | #97 | Monarch service terms and Tyrion naming risk | Repository owner | **Accepted owner risk.** Live mode remains opt-in, personal, non-commercial, and disabled in automated testing. Affiliation is disclaimed. Character references and third-party artwork remain excluded. | [`LICENSING-AND-PROVENANCE.md`](LICENSING-AND-PROVENANCE.md) |
 | #99 | Default-branch governance | Repository owner | **Resolved.** An active no-bypass ruleset requires pull requests, strict current checks, resolved conversations, linear history, and blocks deletion and force pushes. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md), authenticated ruleset API |
 | #99 | Actions permissions and supply-chain policy | Repository owner | **Resolved.** Tokens default read-only, Actions cannot approve pull requests, only the reviewed GitHub-owned allowlist is permitted, and immutable Action references are provider-enforced. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md), workflow policy tests, authenticated Actions APIs |
@@ -141,7 +142,9 @@ These gates are explained and owned; none is an unexplained remediation finding:
    UI remediation pull requests #132, #133, and #134 are merged. The UI now uses
    public-registry dependencies outside all applicable vulnerable ranges, and its
    lockfile contains only public-registry package sources. Post-merge Baseline guard
-   and CI passed on `main`. The authenticated Dependabot API reports zero open alerts.
+   and CI passed on `main`. Production-image license compliance follow-up #137 is also
+   merged with both hosted checks passing. The authenticated Dependabot API reports
+   zero open alerts.
 2. **Visibility-dependent GitHub controls:** secret scanning, push protection, private
    vulnerability reporting, and external-contributor workflow approval must be
    enabled and API-verified after the visibility or plan supports them and before
