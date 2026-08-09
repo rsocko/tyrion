@@ -25,7 +25,10 @@ jobs:
       - name: Enforce Actions artifact policy
         run: python .github/scripts/check_actions_artifact_policy.py
       - name: Enforce license and asset policy
-        run: python .github/scripts/check_license_policy.py
+        run: |
+          python .github/scripts/check_license_policy.py
+          python .github/scripts/check_npm_lock_policy.py
+          python .github/scripts/test_npm_lock_policy.py
       - name: Enforce Python dependency policy
         run: |
           python .github/scripts/check_python_dependency_policy.py

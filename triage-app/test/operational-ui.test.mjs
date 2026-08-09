@@ -86,7 +86,8 @@ async function waitForUi() {
 }
 
 before(async () => {
-  const standaloneServer = join(appRoot, ".next", "standalone", "server.js");
+  const standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
+  const standaloneServer = join(standaloneRoot, "server.js");
   assert.equal(existsSync(standaloneServer), true, "Run npm run build before npm test");
 
   fakeBridge = createServer((request, response) => {
@@ -190,7 +191,7 @@ before(async () => {
   const port = await freePort();
   uiUrl = `http://127.0.0.1:${port}`;
   uiProcess = spawn(process.execPath, [standaloneServer], {
-    cwd: join(appRoot, ".next", "standalone"),
+    cwd: standaloneRoot,
     env: {
       ...process.env,
       BRIDGE_URL: fakeBridgeUrl,
@@ -516,11 +517,12 @@ test("policy API fails closed without a valid trusted assertion", async () => {
 });
 
 test("policy API reports missing deployment authentication configuration", async () => {
-  const standaloneServer = join(appRoot, ".next", "standalone", "server.js");
+  const standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
+  const standaloneServer = join(standaloneRoot, "server.js");
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const processWithoutPolicyAuth = spawn(process.execPath, [standaloneServer], {
-    cwd: join(appRoot, ".next", "standalone"),
+    cwd: standaloneRoot,
     env: {
       ...process.env,
       BRIDGE_URL: fakeBridgeUrl,

@@ -272,7 +272,10 @@ function validHost(value: string): boolean {
 function externalAbsolutePath(value: string): boolean {
   if (!isAbsolute(value)) return false;
   const path = resolve(value);
-  const relation = relative(resolve(process.cwd()), path);
+  const relation = relative(
+    resolve(/* turbopackIgnore: true */ process.cwd()),
+    path
+  );
   return relation.startsWith("..") && !isAbsolute(relation);
 }
 

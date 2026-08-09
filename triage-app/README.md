@@ -129,13 +129,18 @@ rejects demo mode.
 ```powershell
 npm ci
 npm --prefix ../kid-engine run build
+npm run lint
+npm run typecheck
 npm run build
 npm test
 ```
 
-The production image listens on port `3000`, runs as UID/GID `10001`, and reports
-liveness at `GET /api/health`. Automated image publication is disabled pending the
-repository's deployment trust-boundary review. Runtime configuration:
+Next.js 16 requires Node.js 20.9 or newer. Development and production builds use
+Turbopack by default. The build retains standalone output rooted at the repository so
+the local Tyrion domain package is traced into the production image. The production
+image listens on port `3000`, runs as UID/GID `10001`, and reports liveness at
+`GET /api/health`. Automated image publication is disabled pending the repository's
+deployment trust-boundary review. Runtime configuration:
 
 | Variable | Purpose |
 | --- | --- |

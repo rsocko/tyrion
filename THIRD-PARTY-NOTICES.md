@@ -9,8 +9,11 @@ files and notices.
 
 | Component | Version or source | License | Required notice / source |
 | --- | --- | --- | --- |
-| Next.js | 14.2.35 | MIT | Copyright (c) 2024 Vercel, Inc.; [license](https://github.com/vercel/next.js/blob/v14.2.35/license.md) |
-| React and React DOM | 18.3.1 | MIT | Copyright (c) Meta Platforms, Inc. and affiliates; [license](https://github.com/facebook/react/blob/v18.3.1/LICENSE) |
+| Next.js | 16.3.0 | MIT | Copyright (c) Vercel, Inc.; [license](https://github.com/vercel/next.js/blob/v16.3.0/license.md) |
+| React and React DOM | 19.2.0 | MIT | Copyright (c) Meta Platforms, Inc. and affiliates; [license](https://github.com/facebook/react/blob/v19.2.0/LICENSE) |
+| sharp and `@img/sharp-*` platform packages | 0.35.3 | Apache-2.0, with LGPL-3.0-or-later and MIT terms where declared by platform packages | [sharp source and license](https://github.com/lovell/sharp/tree/v0.35.3); installed package license files remain authoritative |
+| `@img/sharp-libvips-*` platform packages | 1.3.2 | LGPL-3.0-or-later | [libvips source and license](https://github.com/libvips/libvips); installed platform package notices remain authoritative |
+| PostCSS and nanoid | 8.5.25 and 3.3.18 | MIT | Package metadata and installed license files |
 | proper-lockfile and runtime dependencies | 4.1.2 | MIT | [package source and license](https://github.com/moxystudio/node-proper-lockfile/tree/v4.1.2) |
 | monarchmoneycommunity | 1.5.2 | MIT | Copyright (c) 2026 bradleyseanf; [license](https://github.com/bradleyseanf/monarchmoneycommunity/blob/v1.5.2/LICENSE) |
 | monarchmoneycommunity upstream | hammem/monarchmoney | MIT | Copyright (c) 2023 hammem; [license](https://github.com/hammem/monarchmoney/blob/main/LICENSE) |
@@ -50,8 +53,10 @@ authoritative.
 The npm lockfiles also contain development-only packages under MIT, ISC,
 BSD-2-Clause, BSD-3-Clause, Apache-2.0, 0BSD, BlueOak-1.0.0, Python-2.0,
 MPL-2.0, CC0-1.0, and CC-BY-4.0. In particular, `axe-core` is MPL-2.0 and
-`caniuse-lite` is CC-BY-4.0. They are build or test inputs and are not copied
-into Tyrion's application source.
+`caniuse-lite` is CC-BY-4.0. The Next.js runtime graph also carries
+platform-conditional Apache-2.0 and LGPL-3.0-or-later sharp/libvips packages;
+only the matching runtime platform artifacts are installed into a production
+image. These packages are not copied into Tyrion's application source.
 
 The brand reference HTML loads, but does not redistribute, Cormorant Garamond,
 IBM Plex Sans, and JetBrains Mono from Google Fonts. Each family is distributed

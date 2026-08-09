@@ -45,9 +45,10 @@ RUN groupadd --gid "${TYRION_GID}" tyrion \
 COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/
 
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/standalone ./
-COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/static ./.next/static
+COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/static ./triage-app/.next/static
 
 VOLUME ["/var/lib/tyrion-policy"]
+WORKDIR /app/triage-app
 USER tyrion
 EXPOSE 3000
 

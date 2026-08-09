@@ -33,6 +33,7 @@ export default function OperationsPage() {
   const [notice, setNotice] = useState("");
 
   const refreshStatus = useCallback(async () => {
+    await Promise.resolve();
     setViewState("checking");
     setStatusError("");
     const health = await getHealth();
@@ -60,7 +61,8 @@ export default function OperationsPage() {
   }, []);
 
   useEffect(() => {
-    void refreshStatus();
+    const timeout = window.setTimeout(() => void refreshStatus(), 0);
+    return () => window.clearTimeout(timeout);
   }, [refreshStatus]);
 
   const handleLogin = async (event: FormEvent) => {

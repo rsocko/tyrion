@@ -42,7 +42,12 @@ export class FilePolicyRepository implements PolicyRepository {
       );
     }
     const resolved = resolve(filePath);
-    if (isWithin(resolve(process.cwd()), resolved)) {
+    if (
+      isWithin(
+        resolve(/* turbopackIgnore: true */ process.cwd()),
+        resolved
+      )
+    ) {
       throw new PolicyStoreConfigurationError(
         'Policy store path must be external to the application checkout'
       );
