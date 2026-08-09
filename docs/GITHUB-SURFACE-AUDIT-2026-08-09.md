@@ -3,8 +3,7 @@
 **Date:** 2026-08-09
 **Repository:** `rsocko/tyrion`
 **Issue:** [#104](https://github.com/rsocko/tyrion/issues/104)
-**Status:** In progress; GitHub Packages and the repository retention setting still
-require owner-level follow-up described below.
+**Status:** Complete; all inventoried surfaces have zero unexplained findings.
 
 This report is intentionally redacted. It records coverage, aggregate counts, and
 dispositions without preserving candidate values, raw logs, artifact contents,
@@ -34,6 +33,7 @@ artifacts.
 | Commit statuses | 0 across 85 API-enumerated commits |
 | Repository webhooks | 1 active hook; TLS verification enabled and no private-network target |
 | Branches, tags, milestones, and labels | 20 branches, 0 tags, 0 milestones, 17 labels |
+| GitHub Packages | 0, confirmed by the repository owner |
 
 Ten timeline cross-references originate from private repositories. GitHub
 permission-gates those events and does not expose their source details to users who
@@ -60,12 +60,11 @@ that any deleted artifact contained a live credential rather than a reference,
 that credential must still be revoked because deletion does not invalidate it.
 
 The baseline guard now detects any `actions/upload-artifact` reference in a
-repository workflow. Checkout steps also disable credential persistence. Because
-the repository does not currently enforce required checks on its default branch,
-this is a review signal rather than a preventive control: a workflow could upload
-an artifact before the concurrent guard fails. Any future artifact use requires an
-explicit policy change and security review rather than inheriting GitHub's default
-retention.
+repository workflow. Checkout steps also disable credential persistence. The
+default branch requires the baseline guard with strict status checks, including for
+administrators. Force pushes and branch deletion are disabled. Any future artifact
+use requires an explicit policy change and security review rather than inheriting
+GitHub's default retention.
 
 ## Collaboration review and remediation
 
@@ -80,28 +79,25 @@ two issue bodies were replaced with a redacted predecessor-repository marker.
 The follow-up scan found zero collaboration records containing an inaccessible
 repository link. No GitHub-hosted attachment was present.
 
-## Remaining owner follow-up
+## Repository settings and packages
 
-The current GitHub token does not have the `read:packages` scope, so it cannot
-enumerate repository-linked GitHub Packages or their versions. An owner must grant
-that read scope, inventory package visibility and versions, scan downloadable
-package metadata where applicable, and delete unnecessary packages before this
-audit can be closed.
+The repository's **Artifact and log retention** value is set to one day, the
+shortest supported value. The workflow guard continues to detect artifact-upload
+references independently of retention.
 
-GitHub does not expose the repository's **Artifact and log retention** setting
-through the repository data returned to this audit identity. In **Settings >
-Actions > General**, set the shortest supported retention period appropriate for
-this repository and record the selected value on issue #104. The workflow guard
-continues to detect artifact-upload references regardless of that setting.
+The audit token does not have the `read:packages` scope. The repository owner
+confirmed directly that the repository has zero GitHub Packages, so there are no
+package versions or assets to inspect or delete. This owner attestation closes the
+otherwise inaccessible package inventory without broadening token privileges.
 
-The default branch has no branch protection or ruleset requiring the baseline
-guard. Before changing visibility, enforce the baseline guard as a required check
-so the policy cannot be bypassed by merging a failing workflow change.
+The `main` branch now requires the `conflicts-and-python` baseline check with strict
+status checks and conversation resolution. Protection applies to administrators;
+force pushes and branch deletion are disabled.
 
 ## Current conclusion
 
-The scanned Actions and collaboration surfaces have zero unexplained findings.
-Releases, assets, attachments, wiki, projects, discussions, deployments,
-environments, and commit statuses have no retained content to remediate. Issue
-#104 remains open for the GitHub Packages inventory, confirmation of the
-repository-level retention value, and enforcement of the baseline guard.
+The complete GitHub-hosted surface inventory has zero unexplained findings.
+Actions history and collaboration metadata requiring remediation were removed or
+redacted. Releases, assets, packages, attachments, wiki, projects, discussions,
+deployments, environments, and commit statuses have no retained content to
+remediate. Retention and default-branch enforcement are intentionally configured.
