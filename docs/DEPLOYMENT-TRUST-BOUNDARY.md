@@ -9,6 +9,11 @@ protected services, mint deployment credentials, publish artifacts, or promote
 releases. The retained publication workflow is an inert manual placeholder that
 cannot run its job.
 
+Private infrastructure fail-closed hardening has landed outside this repository.
+That work removes the legacy publication path but does not establish the independent
+disposable-runner, workload-identity, approval, signing, or monitoring evidence
+required to enable publication.
+
 Pull requests and forks run only unprivileged validation on GitHub-hosted runners.
 They receive read-only repository permissions, do not persist checkout credentials,
 do not write shared caches, and cannot transfer artifacts into a later privileged
