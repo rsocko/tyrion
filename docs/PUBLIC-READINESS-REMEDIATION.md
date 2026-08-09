@@ -4,7 +4,7 @@
 
 **Review date:** 2026-08-09
 
-**Status:** Non-dependency remediation complete; blocked pending dependency remediation
+**Status:** Repository remediation complete; publication gates remain fail-closed
 
 This ledger maps the findings and owner decisions from issues #97, #99, #100,
 #101, #103, and #104 to terminal dispositions and redacted evidence. It does not
@@ -106,25 +106,39 @@ paths. No candidate remained unexplained.
 These counts establish the durable remediation snapshot. The closing pull request
 records the final published-head delta and post-push ref/surface counts.
 
+### Final closing snapshot
+
+After the dependency workstreams landed, the closing branch was rebased onto current
+`main` and the complete scan was repeated. The isolated mirror reconciled all 79
+advertised refs (22 branches, 51 pull-request heads, six pull-request merge refs, and
+no tags) with no missing or mismatched tip. It contained 170 commits, 386 trees, 599
+reachable blobs, and 223 unique historical paths; every reachable blob was extracted.
+
+Gitleaks 8.30.1 again reported zero history findings. Its two exact-blob findings were
+public dependency-policy SHA-256 integrity and license metadata, not credentials.
+TruffleHog 3.96.0 reported 18 instances representing five distinct candidates, all
+covered by the established deterministic-test and placeholder classifications.
+Targeted private-key, JWT, sensitive-path, generated-output, package-bound, and
+repository-hygiene checks found no unexplained sensitive content.
+
+The final GitHub-surface snapshot contained 288 Actions runs: 287 logs were
+downloadable and scanned, and one had no downloadable log. Artifact and cache counts
+were zero. The collaboration inventory contained 134 issue/PR records, 51 pull
+requests, 76 issue comments, 22 branches, 19 labels, one reviewed webhook, and no
+release, tag, milestone, deployment, environment, pull-request comment, or commit
+comment. Gitleaks reported zero findings. TruffleHog's ten unverified results were
+cross-field constructions from minified pull-request metadata; no individual API
+field contained a candidate. No result remained unexplained.
+
 ## Remaining publication gates
 
 These gates are explained and owned; none is an unexplained remediation finding:
 
-1. **Dependency vulnerabilities:** unresolved Dependabot alerts block public
-   readiness. Kid-engine remediation and its Node 24 typing follow-up are merged, and
-   the authenticated API reports zero open kid-engine alerts. The Python requirement
-   updates are also present on `main`, with zero open Python alerts. Safe UI lock
-   updates reduced the actionable UI set to one Next.js migration alert. Public
-   Next.js 15 releases stop below the required patched floor, but public Next.js
-   16.2.9 is available outside the vulnerable range. A GitHub-hosted migration using
-   only the public npm registry is in progress. The authenticated alert API still
-   reports its stale pre-migration UI count and must be rechecked after that pull
-   request lands. The human-authored Actions policy replacement is merged, and its
-   superseded Dependabot pull request is closed. The human-authored Python policy
-   replacement is also merged, and its three superseded Dependabot pull requests are
-   closed.
-   Dedicated dependency-update sessions own that changing queue. Issue #102 does not
-   merge, close, or supersede those pull requests.
+1. **Dependency vulnerabilities:** **Resolved.** Human-authored Actions, Python, and
+   UI remediation pull requests #132, #133, and #134 are merged. The UI now uses
+   public-registry dependencies outside all applicable vulnerable ranges, and its
+   lockfile contains only public-registry package sources. Post-merge Baseline guard
+   and CI passed on `main`. The authenticated Dependabot API reports zero open alerts.
 2. **Visibility-dependent GitHub controls:** secret scanning, push protection, private
    vulnerability reporting, and external-contributor workflow approval must be
    enabled and API-verified after the visibility or plan supports them and before
