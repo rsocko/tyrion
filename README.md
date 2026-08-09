@@ -15,8 +15,9 @@ by the [`synthetic-data and public-disclosure certification`](docs/SYNTHETIC-DAT
 Tyrion is an independent project and is not affiliated with, endorsed by,
 sponsored by, or supported by Monarch Money, Inc. The connector uses an
 unofficial community client against a private upstream interface. Review the
-documented [terms risk and owner decision](docs/LICENSING-AND-PROVENANCE.md#monarch-terms-and-affiliation)
-before enabling live access.
+documented [terms risk and dated owner acceptance](docs/LICENSING-AND-PROVENANCE.md#monarch-terms-and-affiliation).
+Live mode remains opt-in for personal, non-commercial use; the client license
+does not authorize access to Monarch's service.
 
 ## Product scope
 

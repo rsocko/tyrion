@@ -87,15 +87,23 @@ Engineering risk:
   limiting, bounded synchronization, normalized DTOs, and personal use reduce
   operational exposure but do not resolve the contractual question.
 
-Owner decision:
+Owner decisions recorded 2026-08-09:
 
-- Before enabling live access, the account owner must review the then-current
-  Monarch terms and decide whether to obtain written permission, accept the
-  account/contract risk, or keep the bridge disabled. Repository publication
-  and demo-mode use do not make that decision.
-- The name "Tyrion" has a well-known third-party fictional association. Direct
-  character references and catchphrases were removed, but external promotion
-  under that name still requires owner trademark/brand clearance or a rename.
+- The owner accepts the identified Monarch account and contract risk and
+  retains the existing opt-in live mode for personal, non-commercial use. This
+  acceptance does not assert that the community client's MIT license
+  authorizes access to Monarch's service. Live tests remain separately gated,
+  controlled, and disabled by default; demo mode remains the normal
+  development and automated-test path.
+- The owner accepts the identified trademark and brand risk and approves the
+  Tyrion name for public release. Direct fictional-character references,
+  catchphrases, artwork, and heraldry remain excluded. The repository license
+  does not grant rights in third-party names or marks.
+
+These are informed owner risk acceptances, not findings that the risks are
+absent or legal conclusions binding any third party. Future changes to
+Monarch's terms, the integration method, or the public brand require a fresh
+review.
 
 Tyrion is independent and is not affiliated with, endorsed by, sponsored by,
 or supported by Monarch Money, Inc.

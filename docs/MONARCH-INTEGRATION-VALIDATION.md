@@ -18,9 +18,11 @@ This validation establishes observed technical compatibility, not authorization 
 Monarch Money, Inc. Tyrion is independent and unofficial. The service terms reviewed
 on 2026-08-09 restrict programmatic access and related activity; see
 [`LICENSING-AND-PROVENANCE.md`](LICENSING-AND-PROVENANCE.md#monarch-terms-and-affiliation).
-Before live use, the account owner must review the then-current terms and decide
-whether to obtain written permission, accept the account/contract risk, or keep the
-bridge disabled.
+On 2026-08-09, the owner accepted the identified account and contract risk and
+retained the existing opt-in live mode for personal, non-commercial use. That
+decision does not treat the community client's license as authorization to access
+Monarch's service. Demo mode remains the default for development and automation;
+live tests remain disabled by default and subject to the controlled gates below.
 
 The repository intentionally contains synthetic structures only. A live operator may
 record pass/fail and the validation date, but must not record account identifiers,

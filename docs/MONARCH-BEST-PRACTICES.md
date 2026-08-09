@@ -4,7 +4,8 @@ A practical guide to setting up and maintaining Monarch Money so the automated f
 
 This is independent interoperability guidance, not Monarch Money documentation or
 endorsement. Product labels and behavior can change; verify current instructions in
-Monarch's own interface. Live connector use is subject to the owner decision in
+Monarch's own interface. Opt-in live connector use is subject to the dated owner
+risk acceptance in
 [`LICENSING-AND-PROVENANCE.md`](LICENSING-AND-PROVENANCE.md#monarch-terms-and-affiliation).
 
 ## Initial Setup Checklist
