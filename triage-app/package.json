@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@rsocko/tyrion-kid-engine": "file:../kid-engine",
-    "next": "14.2.35",
+    "next": "16.3.0",
     "react": "^18",
     "react-dom": "^18"
   },
