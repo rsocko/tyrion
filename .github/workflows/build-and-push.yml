@@ -116,7 +116,8 @@ jobs:
           set -euo pipefail
           IMAGE_SHA="$(git rev-parse HEAD)"
           echo "sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
-          CURRENT_MAIN="$(curl --fail --silent --show-error --header "Authorization: Bearer ${GH_TOKEN}" --header "Accept: application/vnd.github+json" --header "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/${{ github.event.repository.default_branch }}" | python -c 'import json, sys; print(json.load(sys.stdin)["sha"])')"
+          BASIC_AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          CURRENT_MAIN="$(git -c http.extraheader="Authorization: Basic $BASIC_AUTH" ls-remote origin "refs/heads/${{ github.event.repository.default_branch }}" | cut -f1)"
           if [ "$CURRENT_MAIN" = "$IMAGE_SHA" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
