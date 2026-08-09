@@ -9,13 +9,16 @@
 > and actions.
 
 **Reviewed:** August 7, 2026  
-**Scope:** Historical Tyrion design documents, mockups, and prototype UI now preserved in this repository; the current Mission Control implementation reviewed in `rsocko/mission-control`; OWL/Document Intelligence precedent; and current Monarch capabilities.
+**Scope:** Historical Tyrion design documents, mockups, and prototype UI now
+preserved in this repository; the current Mission Control implementation reviewed
+in an external private implementation repository; OWL/Document Intelligence
+precedent; and current Monarch capabilities.
 
-> **Provenance:** The Tyrion artifacts discussed below originated in
-> `rsocko/ideation/experiments/personal-automation/finance-management` and were later
-> extracted into this repository. Tyrion artifact paths are now repository-relative.
-> Mission Control implementation paths are external references relative to the
-> `rsocko/mission-control` repository as it existed when this review was performed.
+> **Provenance:** The Tyrion artifacts discussed below originated in a private
+> predecessor experiment and were later extracted into this repository. Tyrion
+> artifact paths are now repository-relative. Mission Control implementation paths
+> are external references relative to the private implementation repository as it
+> existed when this review was performed.
 
 ## Executive recommendation
 
@@ -471,8 +474,8 @@ This preserves Tyrion's distinctive identity without creating a second-rate copy
 
 ### Historical Tyrion artifacts
 
-These artifacts were reviewed in their original Ideation location and are now preserved
-at the following paths in this repository:
+These artifacts were reviewed in their original private predecessor location and are
+now preserved at the following paths in this repository:
 
 - [`README.md`](../README.md)
 - [`docs/DESIGN.md`](./DESIGN.md)
@@ -487,8 +490,8 @@ at the following paths in this repository:
 
 ### Mission Control implementation
 
-Reviewed from the external `rsocko/mission-control` repository as it existed on August 7,
-2026. These paths are relative to that repository, not to Tyrion:
+Reviewed from the external private implementation repository as it existed on
+August 7, 2026. These paths are relative to that repository, not to Tyrion:
 
 - `src/components/layout/NavRail.tsx`
 - `src/components/layout/MobileBottomNav.tsx`
