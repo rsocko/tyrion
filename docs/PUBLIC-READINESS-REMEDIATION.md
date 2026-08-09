@@ -113,14 +113,13 @@ These gates are explained and owned; none is an unexplained remediation finding:
 1. **Dependency vulnerabilities:** unresolved Dependabot alerts block public
    readiness. Kid-engine remediation and its Node 24 typing follow-up are merged, and
    the authenticated API reports zero open kid-engine alerts. The Python requirement
-   updates are also present on `main`, with zero open Python alerts. The remaining 26
-   alerts all belong to the triage UI lockfile: 11 high, 13 medium, and two low.
-   The required Next.js advisory floor is not available from the public npm registry
-   at this review point. A resolution visible only through an enterprise feed cannot
-   be used: repository policy correctly rejects non-public lockfile sources, no
-   private-feed lock may be published, and no migration pull request was created.
-   This remains an external publication blocker until a publicly available Next.js
-   version satisfies every applicable advisory.
+   updates are also present on `main`, with zero open Python alerts. Safe UI lock
+   updates reduced the actionable UI set to one Next.js migration alert. Public
+   Next.js 15 releases stop below the required patched floor, but public Next.js
+   16.2.9 is available outside the vulnerable range. A GitHub-hosted migration using
+   only the public npm registry is in progress. The authenticated alert API still
+   reports its stale pre-migration UI count and must be rechecked after that pull
+   request lands.
    Dedicated dependency-update sessions own that changing queue. Issue #102 does not
    merge, close, or supersede those pull requests.
 2. **Visibility-dependent GitHub controls:** secret scanning, push protection, private
