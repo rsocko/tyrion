@@ -107,16 +107,11 @@ can contain private transaction identifiers.
 
 ### Production container
 
-The repository publishes the private bridge image as
-`registry.socko.us/tyrion-bridge` and the separate operational UI image as
-`registry.socko.us/tyrion-ui`. A successful `CI` run on `main` publishes
-`sha-<full-commit>` for both and moves each image's `main` and `latest` tags. Pull
-requests build both images on a GitHub-hosted runner but never publish them. The
-trusted homelab builder uses runner-level registry authentication, so the workflow
-does not receive registry credentials as repository secrets. The homelab stack
-selects tags with `TYRION_BRIDGE_IMAGE_TAG` and `TYRION_UI_IMAGE_TAG`. Moving tags
-are promoted only after both immutable image builds succeed and both source
-manifests are verified for the same commit.
+CI builds both production containers without publishing them. Automated publication
+is disabled because this repository cannot prove the isolation of external runners,
+networks, credentials, or publication services. Any future publication path must
+satisfy [`docs/DEPLOYMENT-TRUST-BOUNDARY.md`](../docs/DEPLOYMENT-TRUST-BOUNDARY.md)
+through a separate private infrastructure review.
 
 The bridge image runs `main.py` as UID/GID `10001`, listens on container port `8100`, and
 checks `GET /health` over loopback. It contains only the bridge runtime and runtime

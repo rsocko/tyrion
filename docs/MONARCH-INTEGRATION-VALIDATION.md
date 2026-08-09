@@ -113,12 +113,10 @@ only the minimum structural shape with invented identifiers and values.
 
 ## Container deployment validation
 
-The production images are `registry.socko.us/tyrion-bridge` and
-`registry.socko.us/tyrion-ui`. CI builds both without credentials for pull requests;
-a successful `main` CI run publishes `sha-<full-commit>`, `main`, and `latest` for
-each from the trusted homelab builder. Existing SHA tags are never overwritten, and
-moving-tag promotion is serialized, rechecks the current `main` revision, and waits
-for both immutable builds before promoting both image families from the same commit.
+CI builds both production containers without credentials for pull requests and does
+not publish them. Automated publication is disabled. A future publication path must
+first satisfy the evidence and protected-environment requirements in
+[`DEPLOYMENT-TRUST-BOUNDARY.md`](./DEPLOYMENT-TRUST-BOUNDARY.md).
 
 The bridge container contract is port `8100`, public `GET /health`, non-root UID/GID
 `10001`, and a writable external mount at `/var/lib/tyrion` with

@@ -1,6 +1,6 @@
 services:
   tyrion-monarch-bridge:
-    image: registry.socko.us/tyrion-bridge:${TYRION_BRIDGE_IMAGE_TAG:-latest}
+    image: ${TYRION_BRIDGE_IMAGE:?Set TYRION_BRIDGE_IMAGE}:${TYRION_BRIDGE_IMAGE_TAG:-latest}
     container_name: tyrion-monarch-bridge
     restart: unless-stopped
     init: true
@@ -22,12 +22,12 @@ services:
     environment:
       BRIDGE_HOST: 0.0.0.0
       BRIDGE_PORT: "8100"
-      BRIDGE_ALLOWED_ORIGINS: ${BRIDGE_ALLOWED_ORIGINS:-https://mc.socko.us}
+      BRIDGE_ALLOWED_ORIGINS: ${BRIDGE_ALLOWED_ORIGINS:?Set BRIDGE_ALLOWED_ORIGINS}
       BRIDGE_REMOTE_TLS: "true"
       BRIDGE_LOAD_DOTENV: "false"
       DEFAULT_TRANSACTION_DAYS: "${DEFAULT_TRANSACTION_DAYS:-90}"
       SESSION_FILE: /var/lib/tyrion/monarch-session.json
-      BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a Dockhand secret}
+      BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a secret}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=5)"]
       interval: 30s
@@ -36,7 +36,7 @@ services:
       start_period: 30s
 
   tyrion-operations-ui:
-    image: registry.socko.us/tyrion-ui:${TYRION_UI_IMAGE_TAG:-latest}
+    image: ${TYRION_UI_IMAGE:?Set TYRION_UI_IMAGE}:${TYRION_UI_IMAGE_TAG:-latest}
     container_name: tyrion-operations-ui
     restart: unless-stopped
     init: true
@@ -62,14 +62,14 @@ services:
       - tyrion-policy:/var/lib/tyrion-policy
     environment:
       BRIDGE_URL: http://tyrion-monarch-bridge:8100
-      BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a Dockhand secret}
+      BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a secret}
       TYRION_POLICY_STORE_PATH: /var/lib/tyrion-policy/policies.json
-      TYRION_POLICY_AUTH_SECRET: ${TYRION_POLICY_AUTH_SECRET:?Provision TYRION_POLICY_AUTH_SECRET as a Dockhand secret}
-      TYRION_INSTRUMENT_FINGERPRINT_KEY: ${TYRION_INSTRUMENT_FINGERPRINT_KEY:?Provision TYRION_INSTRUMENT_FINGERPRINT_KEY as a Dockhand secret}
+      TYRION_POLICY_AUTH_SECRET: ${TYRION_POLICY_AUTH_SECRET:?Provision TYRION_POLICY_AUTH_SECRET as a secret}
+      TYRION_INSTRUMENT_FINGERPRINT_KEY: ${TYRION_INSTRUMENT_FINGERPRINT_KEY:?Provision TYRION_INSTRUMENT_FINGERPRINT_KEY as a secret}
       TYRION_ATTRIBUTION_CLIENT_ID: ${TYRION_ATTRIBUTION_CLIENT_ID:?Provision the Mission Control service client ID}
       TYRION_ATTRIBUTION_ACTOR_ID: ${TYRION_ATTRIBUTION_ACTOR_ID:?Provision the server-derived service actor ID}
       TYRION_ATTRIBUTION_HOUSEHOLD_ID: ${TYRION_ATTRIBUTION_HOUSEHOLD_ID:?Provision the authorized household ID}
-      TYRION_ATTRIBUTION_AUTH_SECRET: ${TYRION_ATTRIBUTION_AUTH_SECRET:?Provision TYRION_ATTRIBUTION_AUTH_SECRET as a Dockhand secret}
+      TYRION_ATTRIBUTION_AUTH_SECRET: ${TYRION_ATTRIBUTION_AUTH_SECRET:?Provision TYRION_ATTRIBUTION_AUTH_SECRET as a secret}
       TYRION_ATTRIBUTION_INTERNAL_HOST: tyrion-operations-ui:3000
       TYRION_ATTRIBUTION_REPLAY_STORE_PATH: /var/lib/tyrion-policy/attribution-replay
       TYRION_REATTRIBUTION_URL: ${TYRION_REATTRIBUTION_URL:-}
