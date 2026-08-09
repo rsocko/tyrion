@@ -948,6 +948,16 @@ test("container and homelab contracts keep attribution private and protected", a
     dockerfile.indexOf("/var/lib/tyrion-policy") <
       dockerfile.indexOf("USER tyrion")
   );
+  assert.match(dockerfile, /node_modules\/sharp node_modules\/@img\/\*/);
+  assert.match(dockerfile, /\[ "\$\{sharp_count\}" -eq 1 \]/);
+  assert.match(dockerfile, /\[ "\$\{platform_count\}" -gt 0 \]/);
+  assert.match(dockerfile, /\[ "\$\{libvips_count\}" -gt 0 \]/);
+  assert.match(dockerfile, /package_license.*LGPL-3\.0-or-later/);
+  assert.match(dockerfile, /\/usr\/share\/common-licenses\/LGPL-3/);
+  assert.match(
+    dockerfile,
+    /\/workspace\/runtime-licenses \/licenses\/npm-runtime/
+  );
   const compose = await readFile(
     resolve(appRoot, "..", "deploy", "homelab", "compose.yaml"),
     "utf8"
