@@ -50,13 +50,15 @@ are permissively licensed. Development-only exceptions include MPL-2.0,
 CC-BY-4.0, and CC0-1.0 packages; those terms are compatible with their use as
 tools or reference data and are not changed by Tyrion's MIT license.
 
-The Python runtime graph was resolved from
-`monarch-bridge/requirements-runtime.txt`. Direct dependencies use MIT or
-BSD-3-Clause terms. Material transitives include Apache-2.0/MIT `aiohttp`,
-MIT `gql`, LGPL-3.0-only `autocommand`, and the MPL-2.0 Mozilla CA bundle
-distributed by `certifi`. Python dependencies are not fully pinned, so this is
-a dated review rather than a promise about future resolutions. Re-run the
-review whenever requirements or lockfiles change.
+The Python runtime and test graphs are resolved universally for Python 3.12 from
+exact direct inputs into marker-aware, hash-locked
+`monarch-bridge/requirements-runtime.txt` and `monarch-bridge/requirements.txt`.
+Their reviewed versions and SPDX expressions are recorded in
+`monarch-bridge/dependency-policy.json`; CI rejects graph, marker, hash, license,
+public-index provenance, and known-advisory-floor drift. Direct dependencies use MIT
+or BSD-3-Clause terms. Material transitives include Apache-2.0/MIT `aiohttp`, MIT
+`gql`, LGPL-3.0-only `autocommand`, and the MPL-2.0 Mozilla CA bundle distributed by
+`certifi`. Re-run the review whenever an input or generated lock changes.
 
 The production Dockerfiles use digest-pinned official Node.js and Python
 images based on Debian Bookworm. Their package-level copyright files must

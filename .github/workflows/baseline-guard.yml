@@ -26,6 +26,10 @@ jobs:
         run: python .github/scripts/check_actions_artifact_policy.py
       - name: Enforce license and asset policy
         run: python .github/scripts/check_license_policy.py
+      - name: Enforce Python dependency policy
+        run: |
+          python .github/scripts/check_python_dependency_policy.py
+          python .github/scripts/test_python_dependency_policy.py
       - name: Reject unresolved conflicts
         shell: bash
         run: |

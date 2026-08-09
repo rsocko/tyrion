@@ -35,6 +35,8 @@ def test_image_contains_only_runtime_bridge_dependencies():
 
     assert "requirements-runtime.txt" in dockerfile
     assert dockerfile.count("python:3.12.11-slim-bookworm@sha256:") == 2
+    assert "--index-url https://pypi.org/simple" in dockerfile
+    assert "--require-hashes" in dockerfile
     assert "requirements.txt" not in dockerfile.replace(
         "requirements-runtime.txt", ""
     )

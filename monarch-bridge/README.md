@@ -13,9 +13,31 @@ See [`../docs/LICENSING-AND-PROVENANCE.md`](../docs/LICENSING-AND-PROVENANCE.md)
 
 ## Supported client
 
-`monarchmoneycommunity==1.5.2` is pinned in `requirements.txt`. Authentication,
-transaction pagination, and category mutation signatures are covered by deterministic
-tests. Upgrade the pin only with a contract-test and controlled live-validation run.
+`monarchmoneycommunity==1.5.2` is pinned in `requirements-runtime.in` and the
+hash-locked runtime resolution. Authentication, transaction pagination, and category
+mutation signatures are covered by deterministic tests. Upgrade the pin only with a
+contract-test and controlled live-validation run.
+
+All direct dependencies are exact in `requirements-runtime.in` and
+`requirements-test.in`. The generated `requirements-runtime.txt` and
+`requirements.txt` locks contain universal Python 3.12 runtime and test graphs with
+platform markers and public PyPI hashes. Production installs only the runtime lock; CI
+installs the test lock. `dependency-policy.json` records the reviewed versions,
+markers, license expressions, and known security floors.
+
+Regenerate locks only with Python 3.12 and the public index:
+
+```powershell
+python -m pip install uv==0.12.2
+$env:PIP_INDEX_URL = "https://pypi.org/simple"
+uv pip compile requirements-runtime.in --python-version 3.12 --universal --generate-hashes --index-url https://pypi.org/simple -o requirements-runtime.txt
+uv pip compile requirements-test.in --python-version 3.12 --universal --generate-hashes --index-url https://pypi.org/simple -o requirements.txt
+python ..\.github\scripts\check_python_dependency_policy.py
+```
+
+Review every changed package and license, update `dependency-policy.json`, and confirm
+advisory floors before accepting regenerated output. Never resolve or retain a private
+package-index URL in repository files.
 
 ## Local setup
 
