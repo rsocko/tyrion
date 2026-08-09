@@ -32,13 +32,16 @@ published remediation branch is covered by the follow-up scan recorded on issue
 | Reachable Git objects | 868 |
 | Reachable blobs | 429 |
 | Reachable blobs omitted from the scan set | 0 |
-| Unique historical paths | 195 |
+| Unique historical file paths | 151 |
+| Unique historical directory paths | 45 |
 | Commit messages and identities | 91 |
 
 The scan covered every client-visible branch, tag, pull-request ref, reachable
-commit, commit message, path, and blob. Five blobs reachable only through merge
-commits were extracted and scanned separately because Gitleaks Git history mode
-examines patches rather than merge snapshots.
+commit, commit message, path, and blob. Five blobs never appear on either side of
+a non-merge commit diff. They were extracted and scanned separately because
+Gitleaks Git history mode examines patches and therefore skips merge commits
+entirely. Of those five, three are reachable only through pull-request merge refs
+and two are reachable through merge commits on branch and pull-request head refs.
 
 ### Published remediation verification
 
@@ -58,8 +61,10 @@ audit was repeated from a fresh advertised-ref inventory and isolated mirror.
 | Reachable trees | 350 |
 | Reachable blobs | 432 |
 | Reachable blobs omitted from the scan set | 0 |
-| Unique historical paths | 196 |
-| Merge-only blobs scanned separately | 5 |
+| Unique historical file paths | 152 |
+| Unique historical directory paths | 45 |
+| Blobs absent from every non-merge commit diff (scanned separately) | 5 |
+| Blobs contributed only by pull-request merge refs | 3 |
 
 These counts describe the published first remediation commit. The issue records
 the final verification after this report correction.
@@ -104,6 +109,10 @@ on scanner signatures:
 4. Credential-named assignment review using structure-only representations.
 5. Commit-message and author/committer identity review.
 6. Exact reconciliation of reachable blob object IDs against the scanned set.
+
+Path counts are the union of `git ls-tree -r` over every reachable commit, not
+`rev-list --objects`, which binds a shared blob to a single name. Merge-only blob
+counts use source and destination blob IDs from non-merge diffs.
 
 ## Redacted classification
 
