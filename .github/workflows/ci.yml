@@ -61,11 +61,20 @@ jobs:
           npm test
           npm run build
 
-      - name: Install UI dependencies
+      - name: Validate public UI lock portability
+        run: python .github/scripts/check_npm_lock_policy.py
+
+      - name: Cold-install UI dependencies from committed public lock
         working-directory: triage-app
         run: npm ci --no-audit --no-fund
 
-      - name: Build operational UI
+      - name: Lint and type-check operational UI
+        working-directory: triage-app
+        run: |
+          npm run lint
+          npm run typecheck
+
+      - name: Build operational UI with Turbopack
         working-directory: triage-app
         run: npm run build
 
@@ -77,3 +86,7 @@ jobs:
         run: |
           docker build --tag tyrion-bridge:ci .
           docker build --file triage-app/Dockerfile --tag tyrion-ui:ci .
+
+      - name: Enforce operational UI advisory policy
+        working-directory: triage-app
+        run: npm audit --audit-level=high

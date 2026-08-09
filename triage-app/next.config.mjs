@@ -1,7 +1,15 @@
+import { fileURLToPath } from "node:url";
+
+const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  outputFileTracingRoot: repositoryRoot,
   poweredByHeader: false,
+  turbopack: {
+    root: repositoryRoot,
+  },
   async headers() {
     return [
       {

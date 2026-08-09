@@ -72,6 +72,7 @@ export default function ConfigurationPage() {
   const alertRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
+    await Promise.resolve();
     setLoadState("loading");
     setError("");
     setConflict(false);
@@ -94,7 +95,8 @@ export default function ConfigurationPage() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    const timeout = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(timeout);
   }, [refresh]);
 
   useEffect(() => {

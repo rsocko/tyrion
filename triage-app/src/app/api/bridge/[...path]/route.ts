@@ -7,7 +7,7 @@ import {
 const BRIDGE_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_BODY_BYTES = 16_384;
 
-type RouteContext = { params: { path: string[] } };
+type BridgeRouteContext = RouteContext<"/api/bridge/[...path]">;
 
 function jsonError(status: number, code: string, message: string) {
   return NextResponse.json(
@@ -61,10 +61,11 @@ async function readBoundedBody(request: NextRequest) {
   return { body: new TextDecoder().decode(body) };
 }
 
-async function proxyRequest(request: NextRequest, context: RouteContext) {
+async function proxyRequest(request: NextRequest, context: BridgeRouteContext) {
+  const { path } = await context.params;
   const policy = evaluateBridgeRequest(
     request.method,
-    context.params.path,
+    path,
     request.nextUrl.searchParams
   );
   if (!policy.allowed) {
@@ -165,22 +166,22 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
 
 export const dynamic = "force-dynamic";
 
-export function GET(request: NextRequest, context: RouteContext) {
+export function GET(request: NextRequest, context: BridgeRouteContext) {
   return proxyRequest(request, context);
 }
 
-export function POST(request: NextRequest, context: RouteContext) {
+export function POST(request: NextRequest, context: BridgeRouteContext) {
   return proxyRequest(request, context);
 }
 
-export function PUT(request: NextRequest, context: RouteContext) {
+export function PUT(request: NextRequest, context: BridgeRouteContext) {
   return proxyRequest(request, context);
 }
 
-export function PATCH(request: NextRequest, context: RouteContext) {
+export function PATCH(request: NextRequest, context: BridgeRouteContext) {
   return proxyRequest(request, context);
 }
 
-export function DELETE(request: NextRequest, context: RouteContext) {
+export function DELETE(request: NextRequest, context: BridgeRouteContext) {
   return proxyRequest(request, context);
 }

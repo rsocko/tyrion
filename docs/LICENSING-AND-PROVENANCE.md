@@ -39,9 +39,10 @@ grant rights in third-party packages, services, data, names, or marks.
 | Fixtures and examples | Invented structures certified in `SYNTHETIC-DATA-CERTIFICATION.md` | Retained; never substitute live data |
 | Historical franchise-linked brand explorations | Obsolete exploratory material included character names and catchphrases that were unnecessary to the accepted product boundary | Removed; active copy now uses original finance-domain language |
 
-Generated package locks are retained as dependency-resolution records. The
-`kid-engine` lockfile was normalized to the public npm registry so it does not
-publish a development-environment mirror hostname.
+Generated package locks are retained as dependency-resolution records. CI
+accepts absent registry `resolved` fields and otherwise requires HTTPS URLs
+from `registry.npmjs.org` with integrity metadata. This keeps locks portable
+without publishing a development-environment mirror hostname.
 
 ## Dependency review
 
@@ -49,6 +50,13 @@ The npm lockfiles were reviewed by declared SPDX expression. Runtime packages
 are permissively licensed. Development-only exceptions include MPL-2.0,
 CC-BY-4.0, and CC0-1.0 packages; those terms are compatible with their use as
 tools or reference data and are not changed by Tyrion's MIT license.
+
+Next.js 16 adds sharp 0.34.5 and platform-conditional `@img/sharp-*` packages
+for supported production platforms. Those artifacts declare Apache-2.0 and,
+where they bundle or describe libvips, LGPL-3.0-or-later and MIT combinations.
+The corresponding `@img/sharp-libvips-*` 1.2.4 packages declare
+LGPL-3.0-or-later. Their installed license files and notices remain
+authoritative and are preserved in dependency and container layers.
 
 The Python runtime and test graphs are resolved universally for Python 3.12 from
 exact direct inputs into marker-aware, hash-locked
