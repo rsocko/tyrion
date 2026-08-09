@@ -1,8 +1,8 @@
 # Homelab deployment parity
 
 `compose.yaml` and `.env.example` document the target contract for the authoritative
-deployment in `rsocko/homelab-config`. That repository remains the deployment source
-of truth and must implement this change separately.
+deployment in an external private infrastructure repository. That repository remains
+the deployment source of truth and must implement this change separately.
 
 The stack separates two processes:
 

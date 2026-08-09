@@ -40,6 +40,30 @@ commit, commit message, path, and blob. Five blobs reachable only through merge
 commits were extracted and scanned separately because Gitleaks Git history mode
 examines patches rather than merge snapshots.
 
+### Published remediation verification
+
+After the first remediation commit was published as pull request #105, the entire
+audit was repeated from a fresh advertised-ref inventory and isolated mirror.
+
+| Coverage dimension | Result |
+| --- | ---: |
+| Advertised symbolic refs | 1 |
+| Advertised concrete refs | 47 |
+| Branch refs | 20 |
+| Pull-request head refs | 22 |
+| Pull-request merge refs | 5 |
+| Tag refs | 0 |
+| Missing, extra, or mismatched mirror refs | 0 |
+| Reachable commits | 93 |
+| Reachable trees | 350 |
+| Reachable blobs | 432 |
+| Reachable blobs omitted from the scan set | 0 |
+| Unique historical paths | 196 |
+| Merge-only blobs scanned separately | 5 |
+
+These counts describe the published first remediation commit. The issue records
+the final verification after this report correction.
+
 Git clients cannot enumerate objects that are unreachable from every advertised
 ref, such as overwritten commits that GitHub no longer exposes through a branch
 or pull-request ref. GitHub secret scanning is the required complementary control
@@ -97,7 +121,10 @@ on scanner signatures:
 | Git object names in commit metadata | 100 tokens | False positive |
 | Git author and committer identities | 91 commits | Intentionally public Git metadata |
 | Demo child and card-rule dataset | 1 dataset, repeated in examples and tests | False positive; repository owner confirmed every person, issuer association, and last-four value is fabricated |
-| Private predecessor links and revision details | 3 current sections plus historical copies | Confirmed low-risk metadata disclosure; removed from current documentation. It grants no access and contains no credential or private record |
+| Private predecessor links and revision details | Historical refs and blobs | Intentionally public low-risk provenance metadata by explicit owner decision; removed from current documentation and grants no access |
+| Historical predecessor package identifier | Historical refs and blobs | Intentionally public low-risk provenance metadata by explicit owner decision; not a credential or published package |
+| External private implementation repository name | Historical refs and blobs | Intentionally public low-risk provenance metadata by explicit owner decision; removed from current documentation and grants no access |
+| External private deployment repository name | Historical refs and blobs | Intentionally public low-risk provenance metadata by explicit owner decision; removed from current documentation and grants no access |
 | Shared editor configuration | 2 files | False positive; plugin settings only, with per-user state ignored |
 
 All findings are explained. No candidate remains unclassified or uncertain.
@@ -114,14 +141,17 @@ or government identifiers were found.
 
 - **Credential rotation or revocation:** None required. No confirmed or uncertain
   credential was found.
-- **History rewrite:** Not required. The only confirmed disclosure is
-  non-authenticating provenance metadata. Removing it from all current
-  documentation is sufficient; rewriting all pull-request refs would add
-  destructive risk without reducing credential or financial-data exposure.
+- **History rewrite:** Not required. The repository owner explicitly accepts the
+  historical private-repository and package identifiers as intentionally public,
+  low-risk provenance metadata. They grant no access and contain no credential or
+  private financial record. Pull-request refs cannot be rewritten by the repository
+  owner; a complete purge would require GitHub Support or publication through a
+  fresh repository, adding destructive risk without reducing credential or
+  financial-data exposure.
 - **Remote-ref cleanup:** Not applicable because no history rewrite occurred.
-- **Current-tree cleanup:** Private predecessor URLs, internal paths, issue
-  references, and pinned revision details were removed from `README.md` and
-  `docs/TYRION-UI-ARCHITECTURE-REVIEW.md`.
+- **Current-tree cleanup:** Private repository URLs and names, internal paths,
+  issue references, and pinned revision details were removed from `README.md`,
+  `docs/TYRION-UI-ARCHITECTURE-REVIEW.md`, and `deploy/homelab/README.md`.
 
 ## Ongoing controls
 
