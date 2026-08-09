@@ -120,8 +120,9 @@ These gates are explained and owned; none is an unexplained remediation finding:
    only the public npm registry is in progress. The authenticated alert API still
    reports its stale pre-migration UI count and must be rechecked after that pull
    request lands. The human-authored Actions policy replacement is merged, and its
-   superseded Dependabot pull request is closed. The separately owned Python policy
-   replacement remains pending.
+   superseded Dependabot pull request is closed. The human-authored Python policy
+   replacement is also merged, and its three superseded Dependabot pull requests are
+   closed.
    Dedicated dependency-update sessions own that changing queue. Issue #102 does not
    merge, close, or supersede those pull requests.
 2. **Visibility-dependent GitHub controls:** secret scanning, push protection, private
