@@ -4,7 +4,7 @@
 
 **Review date:** 2026-08-09
 
-**Status:** Repository remediation complete; publication gates remain fail-closed
+**Status:** Non-dependency remediation complete; blocked pending dependency remediation
 
 This ledger maps the findings and owner decisions from issues #97, #99, #100,
 #101, #103, and #104 to terminal dispositions and redacted evidence. It does not
