@@ -58,12 +58,14 @@ provenance marker, and optional structured manual-decision context. It cannot ca
 Bridge pages, raw transaction/account identifiers, masks, amounts, notes, tags,
 categories, session material, or credentials.
 
-The Tyrion service derives actor and household scope from its signed service-client
-configuration, loads the current policy snapshot server-side, and evaluates the
-whole batch under one policy-version fence. Attribution failure does not change
-bridge sync success: Mission Control persists the transaction with pending
-attribution review and retries later. No controlled live Monarch validation is
-required for attribution service changes; deterministic tests use invented
+Mission Control authenticates with the existing server-only
+`BRIDGE_API_TOKEN`/finance-manager bearer credential on the private Docker network.
+Tyrion derives the fixed `mission-control-finance-manager` actor and
+`homelab-household` scope internally, loads the current policy snapshot server-side,
+and evaluates the whole batch under one policy-version fence. Attribution failure
+does not change bridge sync success: Mission Control persists the transaction with
+pending attribution review and retries later. No controlled live Monarch validation
+is required for attribution service changes; deterministic tests use invented
 structures only.
 
 ## Safe live procedure

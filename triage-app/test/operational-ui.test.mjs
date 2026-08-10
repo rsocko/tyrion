@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { createHash, createHmac, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer, request as httpRequest } from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,18 +13,14 @@ import {
 } from "../src/lib/bridge-proxy-policy.mjs";
 import { connectionPresentation } from "../src/lib/operational-state.mjs";
 import { policyStatePresentation } from "../src/lib/policy-ui-state.mjs";
-import { FileAttributionReplayStore } from "../src/lib/attribution-replay-store.mjs";
 
 const appRoot = process.cwd();
 const serviceToken = "synthetic-test-service-token-value";
-const policyAuthSecret = "synthetic-policy-auth-secret-value-123456";
-const fingerprintKey = "synthetic-fingerprint-key-value-12345678";
 const reattributionToken = "synthetic-reattribution-token-value-1234";
-const attributionAuthSecret = "synthetic-attribution-auth-secret-value-123456";
-const attributionClientId = "mission-control-test";
+const internalAttributionHost = "tyrion-operations-ui:3000";
 const policyActor = {
-  actorId: "actor-synthetic",
-  householdId: "household-synthetic",
+  actorId: "local-operator",
+  householdId: "homelab-household",
   permissions: [
     "policy:read",
     "policy:write",
@@ -196,21 +191,10 @@ before(async () => {
       ...process.env,
       BRIDGE_URL: fakeBridgeUrl,
       BRIDGE_API_TOKEN: serviceToken,
-      TYRION_POLICY_AUTH_SECRET: policyAuthSecret,
       TYRION_POLICY_STORE_PATH: policyStorePath,
-      TYRION_INSTRUMENT_FINGERPRINT_KEY: fingerprintKey,
       TYRION_REATTRIBUTION_URL: fakeReattributionUrl,
       TYRION_REATTRIBUTION_TOKEN: reattributionToken,
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "true",
-      TYRION_ATTRIBUTION_CLIENT_ID: attributionClientId,
-      TYRION_ATTRIBUTION_ACTOR_ID: "mission-control-service",
-      TYRION_ATTRIBUTION_HOUSEHOLD_ID: policyActor.householdId,
-      TYRION_ATTRIBUTION_AUTH_SECRET: attributionAuthSecret,
-      TYRION_ATTRIBUTION_INTERNAL_HOST: `127.0.0.1:${port}`,
-      TYRION_ATTRIBUTION_REPLAY_STORE_PATH: resolve(
-        temporaryStateDirectory,
-        "attribution-replay"
-      ),
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
     },
@@ -485,77 +469,76 @@ test("proxy converts invalid upstream responses to a stable sanitized error", as
   assert.doesNotMatch(text, /synthetic upstream detail/);
 });
 
-test("policy API fails closed without a valid trusted assertion", async () => {
+test("policy API uses a fixed trusted-homelab identity", async () => {
   const missing = await fetch(`${uiUrl}/api/policy`);
-  assert.equal(missing.status, 401);
-  assert.equal((await missing.json()).error.code, "policy_auth_required");
-
-  const invalidHeaders = policyAssertionHeaders(
-    "GET",
-    "/api/policy",
-    policyActor,
-    "invalid-policy-auth-secret-value-123456"
-  );
-  const invalid = await fetch(`${uiUrl}/api/policy`, {
-    headers: invalidHeaders,
+  assert.equal(missing.status, 200);
+  const payload = await missing.json();
+  assert.equal(payload.policy, null);
+  assert.deepEqual(payload.capabilities, {
+    write: true,
+    previewReattribution: true,
+    applyReattribution: true,
   });
-  assert.equal(invalid.status, 401);
-  assert.equal((await invalid.json()).error.code, "policy_auth_invalid");
 
-  const expiredHeaders = policyAssertionHeaders(
-    "GET",
-    "/api/policy",
-    policyActor,
-    policyAuthSecret,
-    Date.now() - 120_000
-  );
-  const expired = await fetch(`${uiUrl}/api/policy`, {
-    headers: expiredHeaders,
+  const spoofed = await fetch(`${uiUrl}/api/policy`, {
+    headers: {
+      "x-tyrion-actor": "untrusted-actor",
+      "x-tyrion-household": "untrusted-household",
+      "x-tyrion-permissions": "",
+    },
   });
-  assert.equal(expired.status, 401);
-  assert.equal((await expired.json()).error.code, "policy_auth_invalid");
+  assert.equal(spoofed.status, 200);
+  assert.equal((await spoofed.json()).policy, null);
 });
 
-test("policy API reports missing deployment authentication configuration", async () => {
+test("policy and attribution fail closed without the shared backend credential", async () => {
   const standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
   const standaloneServer = join(standaloneRoot, "server.js");
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
-  const processWithoutPolicyAuth = spawn(process.execPath, [standaloneServer], {
-    cwd: standaloneRoot,
-    env: {
-      ...process.env,
-      BRIDGE_URL: fakeBridgeUrl,
-      BRIDGE_API_TOKEN: serviceToken,
-      TYRION_POLICY_AUTH_SECRET: "",
-      HOSTNAME: "127.0.0.1",
-      PORT: String(port),
-    },
-    stdio: "ignore",
-  });
+  let processWithoutBackendCredential;
   try {
-    await waitForServer(url, processWithoutPolicyAuth);
+    processWithoutBackendCredential = spawn(
+      process.execPath,
+      [standaloneServer],
+      {
+        cwd: standaloneRoot,
+        env: {
+          ...process.env,
+          BRIDGE_URL: fakeBridgeUrl,
+          BRIDGE_API_TOKEN: "",
+          TYRION_POLICY_STORE_PATH: resolve(
+            temporaryStateDirectory,
+            "missing-token-policies.json"
+          ),
+          HOSTNAME: "127.0.0.1",
+          PORT: String(port),
+        },
+        stdio: "ignore",
+      }
+    );
+    await waitForServer(url, processWithoutBackendCredential);
     const response = await fetch(`${url}/api/policy`);
     assert.equal(response.status, 503);
     assert.equal(
       (await response.json()).error.code,
-      "policy_auth_not_configured"
+      "policy_runtime_not_configured"
     );
-    const attribution = await fetch(
-      `${url}/api/internal/v1/attribution/batch`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      }
-    );
+    const attribution = await rawAttributionFetch(url, "{}", {
+      Authorization: ["Bearer", serviceToken].join(" "),
+    });
     assert.equal(attribution.status, 503);
     assert.equal(
       (await attribution.json()).error.code,
       "attribution_auth_not_configured"
     );
   } finally {
-    if (processWithoutPolicyAuth.exitCode === null) processWithoutPolicyAuth.kill();
+    if (
+      processWithoutBackendCredential &&
+      processWithoutBackendCredential.exitCode === null
+    ) {
+      processWithoutBackendCredential.kill();
+    }
   }
 });
 
@@ -679,46 +662,20 @@ test("batch attribution returns only strict normalized decisions", async () => {
   assert.equal(payload.results[1].reviewStatus, "resolved");
 });
 
-test("batch attribution fails closed for auth, host, body, replay, and policy conflicts", async () => {
-  const path = "/api/internal/v1/attribution/batch";
+test("batch attribution fails closed for auth, host, body, and policy conflicts", async () => {
   const body = attributionRequest([attributionItem("consumer-auth")]);
-  const missing = await fetch(`${uiUrl}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const missing = await rawAttributionFetch(uiUrl, JSON.stringify(body));
   assert.equal(missing.status, 401);
   assert.equal((await missing.json()).error.code, "attribution_auth_required");
 
   const invalid = await attributionFetch(body, {
-    secret: "invalid-attribution-auth-secret-value-123456",
+    token: "invalid-attribution-auth-token-value-123456",
   });
   assert.equal(invalid.status, 401);
   assert.equal((await invalid.json()).error.code, "attribution_auth_invalid");
 
-  const expired = await attributionFetch(body, {
-    timestampMilliseconds: Date.now() - 120_000,
-  });
-  assert.equal(expired.status, 401);
-  assert.equal((await expired.json()).error.code, "attribution_auth_invalid");
-
-  const wrongPath = await attributionFetch(body, {
-    signaturePath: "/api/internal/v1/attribution/other",
-  });
-  assert.equal(wrongPath.status, 401);
-  assert.equal((await wrongPath.json()).error.code, "attribution_auth_invalid");
-
-  const wrongBodyHash = await attributionFetch(body, {
-    requestHeaders: { "x-tyrion-content-sha256": "0".repeat(64) },
-  });
-  assert.equal(wrongBodyHash.status, 401);
-  assert.equal(
-    (await wrongBodyHash.json()).error.code,
-    "attribution_auth_invalid"
-  );
-
   const publicHost = await attributionFetch(body, {
-    requestHeaders: { "x-forwarded-host": "tyrion.socko.us" },
+    requestHeaders: { Host: "tyrion.socko.us" },
   });
   assert.equal(publicHost.status, 404);
   assert.equal(
@@ -726,14 +683,44 @@ test("batch attribution fails closed for auth, host, body, replay, and policy co
     "attribution_route_not_available"
   );
 
-  const nonce = randomUUID().replaceAll("-", "");
-  const first = await attributionFetch(body, { nonce });
-  assert.equal(first.status, 200);
-  const replay = await attributionFetch(body, { nonce });
-  assert.equal(replay.status, 409);
+  const malformedPublicHost = await rawAttributionFetch(uiUrl, "not-json", {
+    Host: "tyrion.socko.us",
+  });
+  assert.equal(malformedPublicHost.status, 404);
   assert.equal(
-    (await replay.json()).error.code,
-    "attribution_replay_detected"
+    (await malformedPublicHost.json()).error.code,
+    "attribution_route_not_available"
+  );
+
+  const oversizedPublicHost = await rawAttributionFetch(
+    uiUrl,
+    "x".repeat(64 * 1_024 + 1),
+    { Host: "tyrion.socko.us" }
+  );
+  assert.equal(oversizedPublicHost.status, 404);
+  assert.equal(
+    (await oversizedPublicHost.json()).error.code,
+    "attribution_route_not_available"
+  );
+
+  const forwardedPublicHost = await attributionFetch(body, {
+    requestHeaders: { "x-forwarded-host": "tyrion.socko.us" },
+  });
+  assert.equal(forwardedPublicHost.status, 404);
+  assert.equal(
+    (await forwardedPublicHost.json()).error.code,
+    "attribution_route_not_available"
+  );
+
+  const mixedForwardedHosts = await attributionFetch(body, {
+    requestHeaders: {
+      "x-forwarded-host": `${internalAttributionHost}, tyrion.socko.us`,
+    },
+  });
+  assert.equal(mixedForwardedHosts.status, 404);
+  assert.equal(
+    (await mixedForwardedHosts.json()).error.code,
+    "attribution_route_not_available"
   );
 
   const conflict = await attributionFetch({
@@ -745,7 +732,7 @@ test("batch attribution fails closed for auth, host, body, replay, and policy co
   assert.equal((await conflict.json()).error.code, "policy_conflict");
 });
 
-test("batch attribution rejects private fields and enforces size and rate bounds", async () => {
+test("batch attribution rejects private fields and enforces size bounds", async () => {
   const privateField = await attributionFetch(
     attributionRequest([
       { ...attributionItem("consumer-private"), amount: 12 },
@@ -770,81 +757,16 @@ test("batch attribution rejects private fields and enforces size and rate bounds
   assert.equal(tooMany.status, 413);
   assert.equal((await tooMany.json()).error.code, "batch_too_large");
 
-  const oversized = await fetch(`${uiUrl}/api/internal/v1/attribution/batch`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "x".repeat(64 * 1_024 + 1),
-  });
+  const oversized = await rawAttributionFetch(
+    uiUrl,
+    "x".repeat(64 * 1_024 + 1),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
   assert.equal(oversized.status, 413);
   assert.equal((await oversized.json()).error.code, "payload_too_large");
-
-  const replayDirectory = resolve(
-    temporaryStateDirectory,
-    "attribution-replay"
-  );
-  await mkdir(replayDirectory, { recursive: true });
-  await writeFile(
-    resolve(replayDirectory, `1-${"a".repeat(64)}.nonce`),
-    "",
-    "utf8"
-  );
-  const replayStore = new FileAttributionReplayStore(replayDirectory);
-  const concurrent = await Promise.all(
-    Array.from({ length: 12 }, (_, index) =>
-      replayStore.consume(
-        attributionClientId,
-        "100",
-        `nonce-concurrent-${index.toString().padStart(4, "0")}`,
-        220,
-        100
-      )
-    )
-  );
-  assert.deepEqual(concurrent, Array(12).fill(true));
-
-  await Promise.all(
-    Array.from({ length: 1_001 }, (_, index) =>
-      writeFile(
-        resolve(
-          replayDirectory,
-          `1-${index.toString(16).padStart(64, "0")}.nonce`
-        ),
-        "",
-        "utf8"
-      )
-    )
-  );
-  const recovered = await replayStore.consume(
-    attributionClientId,
-    "101",
-    "nonce-capacity-recovery",
-    221,
-    101
-  );
-  assert.equal(recovered, true);
-  assert.equal(
-    await replayStore.consume(
-      attributionClientId,
-      "101",
-      "nonce-capacity-recovery",
-      221,
-      101
-    ),
-    false
-  );
-
-  let limited;
-  for (let index = 0; index < 60; index += 1) {
-    limited = await attributionFetch(
-      attributionRequest([attributionItem(`consumer-rate-${index}`)])
-    );
-    if (limited.status === 429) break;
-  }
-  assert.equal(limited.status, 429);
-  assert.equal((await limited.json()).error.code, "attribution_rate_limited");
 });
 
-test("policy mutations reject cross-site requests and client-supplied permissions", async () => {
+test("policy mutations reject cross-site requests and ignore client identity headers", async () => {
   const crossSite = await policyFetch(
     "/api/policy",
     "PUT",
@@ -852,13 +774,11 @@ test("policy mutations reject cross-site requests and client-supplied permission
       expectedPolicyVersion: activePolicy.policyVersion,
       policy: policyDraft(activePolicy),
     },
-    policyActor,
     "https://untrusted.example"
   );
   assert.equal(crossSite.status, 403);
   assert.equal((await crossSite.json()).error.code, "cross_site_request_rejected");
 
-  const reader = { ...policyActor, permissions: ["policy:read"] };
   const forbidden = await policyFetch(
     "/api/policy",
     "PUT",
@@ -866,27 +786,33 @@ test("policy mutations reject cross-site requests and client-supplied permission
       expectedPolicyVersion: activePolicy.policyVersion,
       policy: policyDraft(activePolicy),
       permissions: ["policy:write"],
-    },
-    reader
+    }
   );
   assert.equal(forbidden.status, 400);
   assert.equal((await forbidden.json()).error.code, "invalid_request");
 
-  const actualForbidden = await policyFetch(
+  const spoofed = await policyFetch(
     "/api/policy",
     "PUT",
     {
       expectedPolicyVersion: activePolicy.policyVersion,
       policy: policyDraft(activePolicy),
     },
-    reader
+    uiUrl,
+    {
+      "x-tyrion-actor": "untrusted-actor",
+      "x-tyrion-household": "untrusted-household",
+      "x-tyrion-permissions": "policy:read",
+    }
   );
-  assert.equal(actualForbidden.status, 403);
-  assert.equal((await actualForbidden.json()).error.code, "policy_forbidden");
+  assert.equal(spoofed.status, 200);
+  activePolicy = (await spoofed.json()).policy;
+  assert.equal(activePolicy.householdId, policyActor.householdId);
 });
 
 test("instrument references are fingerprinted server-side and never persisted raw", async () => {
   const instrumentReference = "opaque-integration-reference-synthetic";
+  const previousPolicyVersion = activePolicy.policyVersion;
   const bypass = await policyFetch("/api/policy", "PUT", {
     expectedPolicyVersion: activePolicy.policyVersion,
     policy: {
@@ -915,6 +841,50 @@ test("instrument references are fingerprinted server-side and never persisted ra
   assert.doesNotMatch(fingerprintText, new RegExp(instrumentReference));
   const fingerprint = JSON.parse(fingerprintText).instrumentFingerprint;
   assert.match(fingerprint, /^instrument-v1:[A-Za-z0-9_-]{43}$/);
+  const persistedKey = await readFile(
+    `${policyStorePath}.fingerprint-key`,
+    "utf8"
+  );
+  assert.match(persistedKey, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(persistedKey, new RegExp(instrumentReference));
+
+  const standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
+  const standaloneServer = join(standaloneRoot, "server.js");
+  const rotatedPort = await freePort();
+  const rotatedUrl = `http://127.0.0.1:${rotatedPort}`;
+  const rotatedProcess = spawn(process.execPath, [standaloneServer], {
+    cwd: standaloneRoot,
+    env: {
+      ...process.env,
+      BRIDGE_URL: fakeBridgeUrl,
+      BRIDGE_API_TOKEN: "rotated-synthetic-service-token-value",
+      TYRION_POLICY_STORE_PATH: policyStorePath,
+      HOSTNAME: "127.0.0.1",
+      PORT: String(rotatedPort),
+    },
+    stdio: "ignore",
+  });
+  try {
+    await waitForServer(rotatedUrl, rotatedProcess);
+    const afterRotation = await fetch(
+      `${rotatedUrl}/api/policy/instruments/fingerprint`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: rotatedUrl,
+        },
+        body: JSON.stringify({ instrumentReference }),
+      }
+    );
+    assert.equal(afterRotation.status, 200);
+    assert.equal(
+      (await afterRotation.json()).instrumentFingerprint,
+      fingerprint
+    );
+  } finally {
+    if (rotatedProcess.exitCode === null) rotatedProcess.kill();
+  }
 
   const updatedDraft = policyDraft(activePolicy);
   updatedDraft.cardRules = [
@@ -932,7 +902,7 @@ test("instrument references are fingerprinted server-side and never persisted ra
   });
   assert.equal(updated.status, 200);
   activePolicy = (await updated.json()).policy;
-  assert.equal(activePolicy.policyVersion, 2);
+  assert.equal(activePolicy.policyVersion, previousPolicyVersion + 1);
   const stored = await readFile(policyStorePath, "utf8");
   assert.doesNotMatch(stored, new RegExp(instrumentReference));
   assert.doesNotMatch(stored, /password|cookie|authorization|sessionPath/i);
@@ -962,9 +932,11 @@ test("container and homelab contracts keep attribution private and protected", a
     resolve(appRoot, "..", "deploy", "homelab", "compose.yaml"),
     "utf8"
   );
-  assert.match(compose, /PathPrefix\(`\/api\/policy`\)/);
-  assert.match(compose, /tyrion-policy-auth\.forwardauth\.address/);
+  assert.doesNotMatch(compose, /PathPrefix\(`\/api\/policy`\)/);
+  assert.match(compose, /trusted-private-networks@file/);
+  assert.doesNotMatch(compose, /forwardauth|TYRION_POLICY_AUTH/i);
   assert.match(compose, /TYRION_POLICY_STORE_PATH: \/var\/lib\/tyrion-policy/);
+  assert.match(compose, /BRIDGE_API_TOKEN: \$\{BRIDGE_API_TOKEN:/);
   assert.match(
     compose,
     /!PathPrefix\(`\/api\/internal\/`\)/
@@ -973,17 +945,13 @@ test("container and homelab contracts keep attribution private and protected", a
     compose,
     /routers\.[^.]*attribution[^=]*\.rule=.*PathPrefix/
   );
-  assert.match(
+  assert.doesNotMatch(
     compose,
-    /TYRION_ATTRIBUTION_INTERNAL_HOST: tyrion-operations-ui:3000/
-  );
-  assert.match(
-    compose,
-    /TYRION_ATTRIBUTION_REPLAY_STORE_PATH: \/var\/lib\/tyrion-policy\/attribution-replay/
+    /TYRION_(INSTRUMENT_FINGERPRINT_KEY|ATTRIBUTION_)/
   );
 });
 
-test("re-attribution preview is bounded, aggregate-only, and requires separate permissions", async () => {
+test("re-attribution preview is bounded and aggregate-only", async () => {
   const tooMany = await policyFetch(
     "/api/policy/reattribution/preview",
     "POST",
@@ -997,22 +965,6 @@ test("re-attribution preview is bounded, aggregate-only, and requires separate p
     (await tooMany.json()).error.code,
     "invalid_reattribution_selection"
   );
-
-  const writerOnly = {
-    ...policyActor,
-    permissions: ["policy:read", "policy:write"],
-  };
-  const forbidden = await policyFetch(
-    "/api/policy/reattribution/preview",
-    "POST",
-    {
-      expectedPolicyVersion: activePolicy.policyVersion,
-      sourceRefs: ["record-synthetic"],
-    },
-    writerOnly
-  );
-  assert.equal(forbidden.status, 403);
-  assert.equal((await forbidden.json()).error.code, "policy_forbidden");
 
   const response = await policyFetch(
     "/api/policy/reattribution/preview",
@@ -1030,23 +982,6 @@ test("re-attribution preview is bounded, aggregate-only, and requires separate p
   assert.equal(preview.selectedCount, 2);
   assert.equal(preview.summary["would-update"], 1);
   assert.equal(preview.summary["manual-preserved"], 1);
-
-  const previewOnly = {
-    ...policyActor,
-    permissions: ["policy:read", "reattribution:preview"],
-  };
-  const applyForbidden = await policyFetch(
-    "/api/policy/reattribution/apply",
-    "POST",
-    {
-      previewId: preview.previewId,
-      expectedPolicyVersion: preview.policyVersion,
-      confirm: true,
-    },
-    previewOnly
-  );
-  assert.equal(applyForbidden.status, 403);
-  assert.equal((await applyForbidden.json()).error.code, "policy_forbidden");
 
   const applied = await policyFetch(
     "/api/policy/reattribution/apply",
@@ -1157,10 +1092,10 @@ function policyFetch(
   path,
   method = "GET",
   body,
-  actor = policyActor,
-  origin = uiUrl
+  origin = uiUrl,
+  requestHeaders = {}
 ) {
-  const headers = policyAssertionHeaders(method, path, actor, policyAuthSecret);
+  const headers = new Headers(requestHeaders);
   if (body !== undefined) {
     headers.set("Content-Type", "application/json");
     headers.set("Origin", origin);
@@ -1173,43 +1108,43 @@ function policyFetch(
 }
 
 function attributionFetch(body, options = {}) {
-  const path = "/api/internal/v1/attribution/batch";
   const serialized = JSON.stringify(body);
-  const bytes = new TextEncoder().encode(serialized);
-  const timestamp = String(
-    Math.floor((options.timestampMilliseconds ?? Date.now()) / 1_000)
-  );
-  const nonce = options.nonce ?? randomUUID().replaceAll("-", "");
-  const host = new URL(uiUrl).host;
-  const contentHash = createHash("sha256").update(bytes).digest("hex");
-  const signature = createHmac(
-    "sha256",
-    options.secret ?? attributionAuthSecret
-  )
-    .update(
-      [
-        "POST",
-        options.signaturePath ?? path,
-        host,
-        attributionClientId,
-        timestamp,
-        nonce,
-        contentHash,
-      ].join("\n")
-    )
-    .digest("hex");
-  return fetch(`${uiUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-tyrion-service-client": attributionClientId,
-      "x-tyrion-service-timestamp": timestamp,
-      "x-tyrion-service-nonce": nonce,
-      "x-tyrion-content-sha256": contentHash,
-      "x-tyrion-service-signature": signature,
-      ...options.requestHeaders,
-    },
-    body: serialized,
+  return rawAttributionFetch(uiUrl, serialized, {
+    Authorization: ["Bearer", options.token ?? serviceToken].join(" "),
+    ...options.requestHeaders,
+  });
+}
+
+function rawAttributionFetch(baseUrl, body, requestHeaders = {}) {
+  const target = new URL("/api/internal/v1/attribution/batch", baseUrl);
+  return new Promise((resolvePromise, reject) => {
+    const request = httpRequest(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: target.pathname,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Host: internalAttributionHost,
+          ...requestHeaders,
+        },
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolvePromise({
+            status: response.statusCode,
+            text: async () => text,
+            json: async () => JSON.parse(text),
+          });
+        });
+      }
+    );
+    request.on("error", reject);
+    request.end(body);
   });
 }
 
@@ -1231,36 +1166,6 @@ function attributionItem(sourceRef) {
     observedAt: "2026-08-08T12:58:00Z",
     existingManualDecision: null,
   };
-}
-
-function policyAssertionHeaders(
-  method,
-  pathname,
-  actor,
-  secret,
-  timestampMilliseconds = Date.now()
-) {
-  const timestamp = String(Math.floor(timestampMilliseconds / 1_000));
-  const permissions = actor.permissions.join(",");
-  const signature = createHmac("sha256", secret)
-    .update(
-      [
-        method,
-        pathname,
-        actor.actorId,
-        actor.householdId,
-        permissions,
-        timestamp,
-      ].join("\n")
-    )
-    .digest("hex");
-  return new Headers({
-    "x-tyrion-actor": actor.actorId,
-    "x-tyrion-household": actor.householdId,
-    "x-tyrion-permissions": permissions,
-    "x-tyrion-auth-timestamp": timestamp,
-    "x-tyrion-auth-signature": signature,
-  });
 }
 
 function policyDraft(policy) {

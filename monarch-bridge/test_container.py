@@ -250,10 +250,13 @@ def test_homelab_contract_routes_only_ui_through_traefik():
     assert "TYRION_IMAGE_TAG=latest" in environment
     assert "IMAGE_DIGEST" not in environment
     environment_lines = environment.splitlines()
-    for secret in (
-        "BRIDGE_API_TOKEN",
-        "TYRION_POLICY_AUTH_SECRET",
-        "TYRION_INSTRUMENT_FINGERPRINT_KEY",
-        "TYRION_REATTRIBUTION_TOKEN",
-    ):
+    for secret in ("BRIDGE_API_TOKEN", "TYRION_REATTRIBUTION_TOKEN"):
         assert f"{secret}=" in environment_lines
+    for removed_setting in (
+        "TYRION_POLICY_AUTH_SECRET",
+        "TYRION_POLICY_AUTH_URL",
+        "TYRION_INSTRUMENT_FINGERPRINT_KEY",
+        "TYRION_ATTRIBUTION_",
+    ):
+        assert removed_setting not in compose
+        assert removed_setting not in environment

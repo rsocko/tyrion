@@ -4,7 +4,7 @@ import {
   parsePolicyDraftV1,
   policyDraftFromSnapshotV1,
 } from "@rsocko/tyrion-kid-engine/contracts/v1";
-import { resolvePolicyActor } from "@/lib/policy-auth";
+import { resolveHomelabPolicyActor } from "@/lib/homelab-identity";
 import {
   handlePolicyRouteError,
   policyJson,
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const actor = resolvePolicyActor(request);
+    const actor = resolveHomelabPolicyActor();
     const runtime = getPolicyRuntime();
     const policy = await runtime.policyService.getPolicy(actor, actor.householdId);
     return policyJson({
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     validatePolicyMutationOrigin(request);
-    const actor = resolvePolicyActor(request);
+    const actor = resolveHomelabPolicyActor();
     const runtime = getPolicyRuntime();
     const body = strictObject(await readPolicyJson(request), [
       "expectedPolicyVersion",
