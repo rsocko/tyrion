@@ -112,7 +112,8 @@ awareness and action.
 - [ ] Reconcile task state when Monarch or a source document resolves the issue.
 - [ ] Deliver a weekly decision summary focused on changes and required actions.
 - [ ] Add read-only Tyrion tools to Houston for summaries, transaction search,
-  kid totals, pending exceptions, and obligations.
+  kid totals, pending exceptions, and obligations, following the
+  [Monarch data-access and Houston tools design](./MONARCH-DATA-ACCESS-AND-HOUSTON-TOOLS.md).
 - [ ] Add confirmed category and kid-assignment mutations only after read tooling
   and audit behavior are stable.
 
