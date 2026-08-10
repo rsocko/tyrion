@@ -24,6 +24,58 @@ attribution service is a separate domain API defined by
 [`attribution-service-v1.openapi.json`](./attribution-service-v1.openapi.json);
 it is not added to the bridge route tree.
 
+## Mission Control connector gateway
+
+Mission Control may consume a strict subset of this contract through:
+
+```text
+https://tyrion.socko.us/api/connector/v1
+```
+
+Every gateway request requires `Authorization: Bearer <BRIDGE_API_TOKEN>`, including
+health and contract. The configured token must be at least 32 characters. Validation
+uses a constant-time digest comparison. The credential is forwarded only after the
+caller is authenticated and the route, method, query, and body pass the gateway
+allowlist. Requests carrying browser `Origin` or `Sec-Fetch-Site` metadata are
+rejected; the gateway sends no CORS permission. Browser code must use the separate
+bounded `/api/bridge/...` operations proxy, which never exposes finance datasets.
+
+The gateway strips `/api/connector/v1` and forwards these exact Bridge v1 operations
+to private `BRIDGE_URL`:
+
+| Method | Gateway path | Bounds |
+| --- | --- | --- |
+| `GET` | `/contract` | No query or body |
+| `GET` | `/health` | No query or body |
+| `GET` | `/transactions` | The v1 transaction query allowlist and bounds below |
+| `GET` | `/transactions/{id}` | ID 1-512 normalized characters; no query or body |
+| `GET` | `/transactions/{id}/splits` | ID 1-512 normalized characters; no query or body |
+| `PATCH` | `/transactions/{id}/category` | JSON `{ "categoryId": "..." }` only; 1 KiB maximum |
+| `GET` | `/accounts` | No query or body |
+| `GET` | `/category-groups` | No query or body |
+| `GET` | `/categories` | No query or body |
+| `GET` | `/tags` | No query or body |
+| `GET` | `/recurring` | No query or body |
+| `GET` | `/budgets` | No query or body |
+| `POST` | `/sync?days=1..365` | One optional `days` value; no body; default 90 |
+
+Unknown routes, methods, parameters, duplicate singleton parameters, malformed values,
+and request bodies on bodyless operations fail before a bridge call. `/auth/*`,
+login/cookie/logout/session operations, `/cashflow`, `/openapi.json`, docs, raw
+upstream routes, `/api/policy/*`, and `/api/internal/*` are not gateway operations.
+Transaction query validation additionally limits the request to 32 parameter pairs,
+20 tag values, 512-character IDs, a 120-normalized-character merchant query, a
+128-character cursor, 1-500 items, signed two-decimal values within
+`999999999.99`, exact lowercase booleans, valid ISO calendar dates, and at most 366
+inclusive days.
+
+Successful and Bridge-generated error responses preserve the Bridge status, JSON body,
+`Content-Type`, `X-Monarch-Contract-Version`, and `Retry-After` where present. The
+gateway forces `Cache-Control: no-store` and enforces an 8 MiB response limit.
+Network, timeout, non-JSON, malformed JSON, and oversized responses become stable
+sanitized gateway errors. Authorization values, request or response bodies, sensitive
+URLs, identifiers, and upstream exception text are not logged.
+
 ## Common semantics
 
 ### Naming and nullability

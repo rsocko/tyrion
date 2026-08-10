@@ -52,6 +52,19 @@ connector operations UI. Connector browser calls use only allowlisted Next.js
 bridge remains privately routed with its own session storage and protected contract.
 Policy configuration uses a Tyrion-owned authenticated API and persistence boundary;
 it never stores or proxies reusable Monarch session material.
+
+Mission Control server and worker processes may call the separately allowlisted
+`https://tyrion.socko.us/api/connector/v1` gateway with the existing server-only
+finance-manager bearer credential. This is an accepted backend transport exception to
+the otherwise private bridge boundary, not a browser or product surface. The gateway
+exposes only bounded Bridge v1 health, contract, transaction read/detail/split/category
+mutation, account, category-group, category, tag, recurring, budget, and sync
+operations. It authenticates every request, rejects browser-originated requests, and
+does not expose auth setup, logout, session state, raw upstream routes, arbitrary
+passthrough, cash flow, OpenAPI/docs, policy, or attribution operations. The raw
+Monarch Bridge, its reusable session material, and its auth/session setup remain
+private.
+
 Mission Control calls Tyrion's protected versioned batch attribution API over the
 private service network. It must not install, copy, or execute `kid-engine`; that
 module remains internal to Tyrion. The attribution route is not a Monarch Bridge
@@ -60,12 +73,14 @@ accepts the fixed private Docker authority only, rejects any different forwarded
 authority, and uses the existing server-only bridge/finance-manager token as its
 bearer credential.
 
-The production route tree and proxy allowlist must prevent access to transactions,
-accounts, categories, recurring items, cash flow, budgets, bills, broad kid-spending
-dashboards, chat, generic triage, or other finance product pages. Configuration-only
-kid, attribution-rule, limit, policy, and connector routes are permitted. Mission
-Control remains the day-to-day shell, and Monarch remains the comprehensive finance
-workspace.
+The production browser route tree and `/api/bridge/...` proxy allowlist must prevent
+access to transactions, accounts, categories, recurring items, cash flow, budgets,
+bills, broad kid-spending dashboards, chat, generic triage, or other finance product
+pages. The bearer-protected `/api/connector/v1` backend gateway is the sole narrow
+exception for Mission Control connector transport. Configuration-only kid,
+attribution-rule, limit, policy, and connector routes are otherwise permitted.
+Mission Control remains the day-to-day shell, and Monarch remains the comprehensive
+finance workspace.
 
 ## Supported Mission Control surfaces
 

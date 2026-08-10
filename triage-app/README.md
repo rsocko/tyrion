@@ -45,6 +45,29 @@ npm run dev -- --hostname 127.0.0.1 --port 3098
 All other bridge paths, methods, and query expansion are rejected before an upstream
 call. Proxy failures use stable sanitized JSON and never return connection exceptions.
 
+## Mission Control connector gateway
+
+Mission Control server and worker processes use
+`https://tyrion.socko.us/api/connector/v1`, not `/api/bridge/...`. Every request,
+including health and contract, must carry the same server-only `BRIDGE_API_TOKEN` as a
+Bearer credential. The token must be at least 32 characters and must never enter
+browser code. Requests with browser-origin metadata are rejected even when they carry
+the credential.
+
+The gateway exposes only `GET /health`, `GET /contract`, bounded transaction
+list/detail/splits, `PATCH` category mutation, account/category-group/category/tag/
+recurring/budget reads, and `POST /sync?days=1..365`. It rejects `/auth/*`, cash flow,
+OpenAPI/docs, policy, internal attribution, arbitrary passthrough, unknown methods,
+query expansion, bodies on bodyless operations, request bodies above 1 KiB, and
+responses above 8 MiB. Bridge JSON bodies, status, and safe contract headers are
+preserved after validation; proxy and invalid-response failures are sanitized.
+
+The production Traefik contract routes `/api/connector/v1/` separately over TLS
+without the UI's private-network middleware. All other UI routes retain that
+middleware, and every public router continues to exclude `/api/internal/`. Traefik
+enumerates the connector paths and stamps an internal marker; the Next.js proxy checks
+that marker after URL normalization to block encoded traversal into any private API.
+
 ## Policy security and persistence
 
 The supported production boundary is one trusted, single-household homelab, not a
@@ -159,7 +182,7 @@ Runtime configuration:
 | Variable | Purpose |
 | --- | --- |
 | `BRIDGE_URL` | Private server-side bridge endpoint |
-| `BRIDGE_API_TOKEN` | Shared server-only bridge/finance-manager token; also domain-separates fingerprinting and authenticates private attribution |
+| `BRIDGE_API_TOKEN` | Shared server-only bridge/finance-manager token (minimum 32 characters); authenticates the public connector gateway and private attribution, and domain-separates fingerprinting |
 | `TYRION_POLICY_STORE_PATH` | External absolute policy/audit store path |
 | `TYRION_REATTRIBUTION_URL` | Optional protected internal re-attribution repository service |
 | `TYRION_REATTRIBUTION_TOKEN` | Optional server-only integration token |

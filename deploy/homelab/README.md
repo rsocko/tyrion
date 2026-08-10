@@ -22,6 +22,11 @@ no registry credential belongs in the deployment.
 
 The bridge must remain private, the browser must use only the allowlisted server-side
 proxy, and reusable session material must stay on access-restricted external storage.
+The sole public finance-data transport is the backend-only
+`https://tyrion.socko.us/api/connector/v1` gateway. It requires the shared bearer
+credential on every request and has its own strict route/query/body allowlist. The
+Traefik example exposes that path over TLS without the UI private-network middleware;
+all UI routes keep the middleware and all public routers exclude `/api/internal/`.
 For local/demo development, run the bridge with `python main.py --demo` and the UI with
 `npm run dev`; the homelab compose file is the production contract, not the local
 development launcher.

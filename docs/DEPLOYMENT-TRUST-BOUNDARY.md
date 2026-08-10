@@ -139,3 +139,38 @@ Repository owners can still change workflows, branch rules, package visibility, 
 Actions settings. Account protection, ruleset monitoring, and review of changes to this
 workflow remain operator responsibilities. This publication path does not deploy the
 images, receive runtime secrets, inspect runtime state, or exercise live Monarch access.
+
+## Runtime ingress boundary
+
+The raw Monarch Bridge has no host port or Traefik router. Its authentication setup,
+cookie/session lifecycle, complete contract, and reusable session material remain on
+the isolated `tyrion-backend` network.
+
+The UI container owns the existing `https://tyrion.socko.us` origin with two disjoint
+Traefik surfaces:
+
+- `/api/connector/v1/` is reachable over public TLS for Mission Control backend and
+  worker calls. It does not use the browser/UI `trusted-private-networks` middleware
+  because the bearer-protected gateway authenticates every request itself. Its router
+  enumerates the exact connector paths instead of accepting an unrestricted prefix,
+  and stamps an internal ingress marker. Next.js verifies that marker after URL
+  normalization so encoded traversal cannot fall into a private API tree. HTTP only
+  redirects to HTTPS.
+- Every other public UI route excludes both `/api/internal/` and
+  `/api/connector/v1/`, retains `trusted-private-networks`, and reaches the bounded
+  operations/configuration UI and `/api/bridge/...` browser proxy.
+
+The connector router targets the UI container, not the bridge container. The Next.js
+gateway accepts only its documented Bridge v1 route/method/query/body allowlist,
+rejects browser-origin metadata and missing/invalid credentials, then forwards to
+private `BRIDGE_URL`. `/auth/*`, raw bridge routes, policy routes, and attribution
+routes are unavailable through it. `/api/internal/` remains excluded from every
+public router and the attribution handler independently enforces its private Docker
+authority.
+
+Mission Control configures
+`FINANCE_MANAGER_URL=https://tyrion.socko.us/api/connector/v1` and
+`FINANCE_MANAGER_API_TOKEN` equal to Tyrion's minimum-32-character
+`BRIDGE_API_TOKEN`. Its host and token-origin allowlists must contain only
+`tyrion.socko.us` and `https://tyrion.socko.us`, respectively. Tokens are attached
+only by backend processes and never forwarded across redirects.

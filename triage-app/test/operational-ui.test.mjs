@@ -11,6 +11,13 @@ import {
   evaluateBridgeRequest,
   resolveBridgeConfiguration,
 } from "../src/lib/bridge-proxy-policy.mjs";
+import {
+  authenticateConnectorRequest,
+  evaluateConnectorRequest,
+  MAX_CONNECTOR_RESPONSE_BYTES,
+  parseCategoryMutation,
+  resolveConnectorBridgeUrl,
+} from "../src/lib/connector-gateway-policy.mjs";
 import { connectionPresentation } from "../src/lib/operational-state.mjs";
 import { policyStatePresentation } from "../src/lib/policy-ui-state.mjs";
 
@@ -94,11 +101,37 @@ before(async () => {
         method: request.method,
         authorized: request.headers.authorization === `Bearer ${serviceToken}`,
         hasBody: chunks.length > 0,
+        body: Buffer.concat(chunks).toString("utf8"),
       });
 
       if (bridgeResponseMode === "invalid") {
         response.writeHead(502, { "Content-Type": "text/plain" });
         response.end("synthetic upstream detail that must not escape");
+        return;
+      }
+      if (bridgeResponseMode === "network") {
+        request.socket.destroy();
+        return;
+      }
+      if (bridgeResponseMode === "oversized") {
+        const payload = JSON.stringify({
+          contractVersion: "1.0",
+          value: "x".repeat(MAX_CONNECTOR_RESPONSE_BYTES),
+        });
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(payload);
+        return;
+      }
+      if (bridgeResponseMode === "rate-limited") {
+        response.writeHead(429, {
+          "Content-Type": "application/json",
+          "Retry-After": "17",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          error: { code: "upstream_rate_limited", message: "Retry later" },
+        }));
         return;
       }
 
@@ -125,7 +158,10 @@ before(async () => {
                 ? { contractVersion: "1.0", status: "complete" }
                 : { contractVersion: "1.0", status: "success", message: "Authenticated", email: null };
 
-      response.writeHead(200, { "Content-Type": "application/json" });
+      response.writeHead(200, {
+        "Content-Type": "application/json",
+        "X-Monarch-Contract-Version": "1.0",
+      });
       response.end(JSON.stringify(payload));
     });
   });
@@ -295,6 +331,202 @@ test("proxy configuration fails closed for missing tokens and unsafe URLs", () =
   );
   assert.equal(publicHealth.configured, true);
   assert.equal(publicHealth.token, undefined);
+});
+
+test("connector authentication is bearer-only, minimum-length, and fail-closed", () => {
+  const missingConfiguration = authenticateConnectorRequest(
+    `Bearer ${serviceToken}`,
+    "too-short"
+  );
+  assert.equal(missingConfiguration.allowed, false);
+  assert.equal(missingConfiguration.status, 503);
+
+  for (const authorization of [
+    null,
+    serviceToken,
+    `bearer ${serviceToken}`,
+    "Bearer wrong-synthetic-service-token-value",
+    `Bearer ${serviceToken} extra`,
+  ]) {
+    const result = authenticateConnectorRequest(authorization, serviceToken);
+    assert.equal(result.allowed, false);
+    assert.equal(result.status, 401);
+  }
+  assert.deepEqual(
+    authenticateConnectorRequest(`Bearer ${serviceToken}`, serviceToken),
+    { allowed: true, token: serviceToken }
+  );
+});
+
+test("connector policy exposes exactly the Mission Control bridge operations", () => {
+  const allowed = [
+    ["GET", "contract"],
+    ["GET", "health"],
+    ["GET", "transactions"],
+    ["GET", "transactions/invented-transaction"],
+    ["GET", "transactions/invented-transaction/splits"],
+    ["PATCH", "transactions/invented-transaction/category"],
+    ["GET", "accounts"],
+    ["GET", "category-groups"],
+    ["GET", "categories"],
+    ["GET", "tags"],
+    ["GET", "recurring"],
+    ["GET", "budgets"],
+    ["POST", "sync"],
+  ];
+  for (const [method, path] of allowed) {
+    const result = evaluateConnectorRequest(
+      method,
+      path.split("/"),
+      new URLSearchParams()
+    );
+    assert.equal(result.allowed, true, `${method} ${path}`);
+  }
+
+  for (const [method, path] of allowed) {
+    const wrongMethod = method === "GET" ? "POST" : "GET";
+    const result = evaluateConnectorRequest(
+      wrongMethod,
+      path.split("/"),
+      new URLSearchParams()
+    );
+    assert.equal(result.allowed, false, `${wrongMethod} ${path}`);
+    assert.equal(result.status, 405);
+  }
+
+  for (const path of [
+    "auth/status",
+    "auth/login",
+    "auth/login-with-cookies",
+    "auth/logout",
+    "cashflow",
+    "openapi.json",
+    "api/internal/v1/attribution/batch",
+    "unknown",
+    "transactions/invented-transaction/unknown",
+  ]) {
+    const result = evaluateConnectorRequest(
+      "GET",
+      path.split("/"),
+      new URLSearchParams()
+    );
+    assert.equal(result.allowed, false, path);
+    assert.equal(result.status, 404);
+  }
+});
+
+test("connector policy strictly bounds and canonicalizes transaction queries", () => {
+  const validQuery = new URLSearchParams([
+    ["start_date", "2026-01-01"],
+    ["end_date", "2026-12-31"],
+    ["account_id", " invented-account "],
+    ["category_id", "invented-category"],
+    ["merchant_query", "  Invented   Merchant "],
+    ["tag_id", "invented-tag-one"],
+    ["tag_id", "invented-tag-two"],
+    ["min_amount", "-999999999.99"],
+    ["max_amount", "999999999.99"],
+    ["is_pending", "false"],
+    ["is_recurring", "true"],
+    ["limit", "500"],
+    ["cursor", "NTAw"],
+  ]);
+  const valid = evaluateConnectorRequest("GET", ["transactions"], validQuery);
+  assert.equal(valid.allowed, true);
+  const upstream = new URL(valid.upstreamPath, "http://bridge.invalid");
+  assert.equal(upstream.searchParams.get("account_id"), "invented-account");
+  assert.equal(upstream.searchParams.get("merchant_query"), "Invented Merchant");
+  assert.deepEqual(upstream.searchParams.getAll("tag_id"), [
+    "invented-tag-one",
+    "invented-tag-two",
+  ]);
+
+  const invalidQueries = [
+    "unknown=value",
+    "limit=0",
+    "limit=501",
+    "limit=1&limit=2",
+    "start_date=2026-02-30",
+    "start_date=2025-01-01&end_date=2026-01-02",
+    "start_date=2026-02-02&end_date=2026-02-01",
+    "account_id=",
+    `category_id=${"x".repeat(513)}`,
+    "merchant_query=%20%20",
+    `merchant_query=${"x".repeat(121)}`,
+    Array.from({ length: 21 }, (_, index) => `tag_id=tag-${index}`).join("&"),
+    "min_amount=1.001",
+    "max_amount=1000000000",
+    "min_amount=2&max_amount=1",
+    "is_pending=1",
+    "is_recurring=True",
+    `cursor=${"x".repeat(129)}`,
+  ];
+  for (const query of invalidQueries) {
+    const result = evaluateConnectorRequest(
+      "GET",
+      ["transactions"],
+      new URLSearchParams(query)
+    );
+    assert.equal(result.allowed, false, query);
+    assert.equal(result.status, 422);
+  }
+});
+
+test("connector policy bounds sync, identifiers, category bodies, and bridge URLs", () => {
+  assert.equal(
+    evaluateConnectorRequest(
+      "POST",
+      ["sync"],
+      new URLSearchParams("days=365")
+    ).upstreamPath,
+    "/sync?days=365"
+  );
+  for (const query of ["days=0", "days=366", "days=1.5", "days=1&days=2", "x=1"]) {
+    assert.equal(
+      evaluateConnectorRequest(
+        "POST",
+        ["sync"],
+        new URLSearchParams(query)
+      ).allowed,
+      false
+    );
+  }
+  for (const path of [
+    ["transactions", ""],
+    ["transactions", " x "],
+    ["transactions", "x".repeat(513)],
+  ]) {
+    assert.equal(
+      evaluateConnectorRequest("GET", path, new URLSearchParams()).allowed,
+      false
+    );
+  }
+
+  assert.deepEqual(parseCategoryMutation({ categoryId: " invented-category " }), {
+    allowed: true,
+    body: '{"categoryId":"invented-category"}',
+  });
+  for (const body of [
+    null,
+    [],
+    {},
+    { categoryId: "" },
+    { categoryId: "x".repeat(513) },
+    { categoryId: "invented", extra: true },
+  ]) {
+    assert.equal(parseCategoryMutation(body).allowed, false);
+  }
+
+  assert.equal(resolveConnectorBridgeUrl("http://bridge:8100").configured, true);
+  for (const url of [
+    undefined,
+    "file:///private",
+    "http://user:password@bridge:8100",
+    "http://bridge:8100/private",
+    "http://bridge:8100/?query=value",
+  ]) {
+    assert.equal(resolveConnectorBridgeUrl(url).configured, false);
+  }
 });
 
 test("all required authentication states have operator guidance", () => {
@@ -469,6 +701,192 @@ test("proxy converts invalid upstream responses to a stable sanitized error", as
   assert.doesNotMatch(text, /synthetic upstream detail/);
 });
 
+test("public connector gateway forwards every allowlisted operation with caller auth", async () => {
+  const requests = [
+    ["GET", "/api/connector/v1/contract"],
+    ["GET", "/api/connector/v1/health"],
+    ["GET", "/api/connector/v1/transactions?limit=25&tag_id=invented-tag"],
+    ["GET", "/api/connector/v1/transactions/invented-transaction"],
+    ["GET", "/api/connector/v1/transactions/invented-transaction/splits"],
+    ["GET", "/api/connector/v1/accounts"],
+    ["GET", "/api/connector/v1/category-groups"],
+    ["GET", "/api/connector/v1/categories"],
+    ["GET", "/api/connector/v1/tags"],
+    ["GET", "/api/connector/v1/recurring"],
+    ["GET", "/api/connector/v1/budgets"],
+    ["POST", "/api/connector/v1/sync?days=365"],
+    [
+      "PATCH",
+      "/api/connector/v1/transactions/invented-transaction/category",
+      { categoryId: "invented-category" },
+    ],
+  ];
+
+  for (const [method, path, body] of requests) {
+    const response = await fetch(`${uiUrl}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${serviceToken}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    assert.equal(response.status, 200, `${method} ${path}`);
+    assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(receivedRequests.at(-1).authorized, true);
+  }
+  assert.equal(
+    receivedRequests.at(-1).body,
+    '{"categoryId":"invented-category"}'
+  );
+});
+
+test("connector gateway requires independent auth and rejects browser use before forwarding", async () => {
+  for (const request of [
+    {},
+    { headers: { Authorization: "Bearer invalid-synthetic-token-value-123456" } },
+    {
+      headers: {
+        Authorization: `Bearer ${serviceToken}`,
+        Origin: uiUrl,
+        "Sec-Fetch-Site": "same-origin",
+      },
+    },
+  ]) {
+    const beforeCount = receivedRequests.length;
+    const response = await fetch(
+      `${uiUrl}/api/connector/v1/transactions`,
+      request
+    );
+    assert.equal(response.status, request.headers?.Origin ? 403 : 401);
+    assert.equal(receivedRequests.length, beforeCount);
+    const text = await response.text();
+    assert.doesNotMatch(text, new RegExp(serviceToken));
+  }
+
+  const uiProxy = await fetch(`${uiUrl}/api/bridge/transactions`, {
+    headers: { Authorization: `Bearer ${serviceToken}` },
+  });
+  assert.equal(uiProxy.status, 404);
+  assert.equal((await uiProxy.json()).error.code, "bridge_route_not_available");
+});
+
+test("connector gateway blocks route, method, query, and body expansion before forwarding", async () => {
+  const cases = [
+    ["GET", "/api/connector/v1/auth/status"],
+    ["POST", "/api/connector/v1/transactions"],
+    ["GET", "/api/connector/v1/transactions?unknown=value"],
+    ["GET", "/api/connector/v1/accounts?include=private"],
+    ["DELETE", "/api/connector/v1/transactions/invented-transaction"],
+    ["GET", "/api/connector/v1/unknown"],
+    ["GET", "/api/connector/v1/../internal/v1/attribution/batch"],
+  ];
+  for (const [method, path] of cases) {
+    const beforeCount = receivedRequests.length;
+    const response = await fetch(`${uiUrl}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${serviceToken}` },
+    });
+    assert.ok([404, 405, 422].includes(response.status), `${method} ${path}`);
+    assert.equal(receivedRequests.length, beforeCount);
+  }
+
+  for (const body of [
+    "not-json",
+    JSON.stringify({ categoryId: "" }),
+    JSON.stringify({ categoryId: "invented", extra: true }),
+  ]) {
+    const beforeCount = receivedRequests.length;
+    const response = await fetch(
+      `${uiUrl}/api/connector/v1/transactions/invented-transaction/category`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${serviceToken}`,
+          "Content-Type": "application/json",
+        },
+        body,
+      }
+    );
+    assert.equal(response.status, 400);
+    assert.equal(receivedRequests.length, beforeCount);
+  }
+});
+
+test("public ingress marker blocks encoded traversal into private API trees", async () => {
+  const paths = [
+    "/api/connector/v1/%2e%2e/%2e%2e/bridge/auth/logout",
+    "/api/connector/v1/%2e%2e/%2e%2e/policy",
+    "/api/connector/v1/%2e%2e/%2e%2e/internal/v1/attribution/batch",
+  ];
+  for (const path of paths) {
+    const beforeCount = receivedRequests.length;
+    const response = await rawHttpFetch(path, "POST", {
+      "X-Tyrion-Public-Connector": "1",
+    });
+    assert.equal(response.status, 404, path);
+    assert.equal(
+      (await response.json()).error.code,
+      "connector_route_not_available"
+    );
+    assert.equal(receivedRequests.length, beforeCount);
+  }
+});
+
+test("connector gateway bounds request and response bodies", async () => {
+  const oversizedRequest = await fetch(
+    `${uiUrl}/api/connector/v1/transactions/invented-transaction/category`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${serviceToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ categoryId: "x".repeat(2_000) }),
+    }
+  );
+  assert.equal(oversizedRequest.status, 413);
+  assert.equal((await oversizedRequest.json()).error.code, "payload_too_large");
+
+  bridgeResponseMode = "oversized";
+  const oversizedResponse = await fetch(`${uiUrl}/api/connector/v1/accounts`, {
+    headers: { Authorization: `Bearer ${serviceToken}` },
+  });
+  assert.equal(oversizedResponse.status, 502);
+  assert.equal(
+    (await oversizedResponse.json()).error.code,
+    "invalid_bridge_response"
+  );
+});
+
+test("connector gateway preserves bridge status and safe contract headers", async () => {
+  bridgeResponseMode = "rate-limited";
+  const response = await fetch(`${uiUrl}/api/connector/v1/transactions`, {
+    headers: { Authorization: `Bearer ${serviceToken}` },
+  });
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "17");
+  assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
+  assert.deepEqual(await response.json(), {
+    contractVersion: "1.0",
+    error: { code: "upstream_rate_limited", message: "Retry later" },
+  });
+});
+
+test("connector gateway sanitizes invalid and network bridge failures", async () => {
+  for (const mode of ["invalid", "network"]) {
+    bridgeResponseMode = mode;
+    const response = await fetch(`${uiUrl}/api/connector/v1/accounts`, {
+      headers: { Authorization: `Bearer ${serviceToken}` },
+    });
+    assert.equal(response.status, 502);
+    const text = await response.text();
+    assert.doesNotMatch(text, /synthetic upstream detail|ECONN|127\.0\.0\.1/);
+    assert.match(text, /invalid_bridge_response|bridge_unavailable/);
+  }
+});
+
 test("policy API uses a fixed trusted-homelab identity", async () => {
   const missing = await fetch(`${uiUrl}/api/policy`);
   assert.equal(missing.status, 200);
@@ -531,6 +949,14 @@ test("policy and attribution fail closed without the shared backend credential",
     assert.equal(
       (await attribution.json()).error.code,
       "attribution_auth_not_configured"
+    );
+    const connector = await fetch(`${url}/api/connector/v1/health`, {
+      headers: { Authorization: `Bearer ${serviceToken}` },
+    });
+    assert.equal(connector.status, 503);
+    assert.equal(
+      (await connector.json()).error.code,
+      "connector_auth_not_configured"
     );
   } finally {
     if (
@@ -908,7 +1334,7 @@ test("instrument references are fingerprinted server-side and never persisted ra
   assert.doesNotMatch(stored, /password|cookie|authorization|sessionPath/i);
 });
 
-test("container and homelab contracts keep attribution private and protected", async () => {
+test("container and homelab contracts separate public connector and private attribution", async () => {
   const dockerfile = await readFile(join(appRoot, "Dockerfile"), "utf8");
   assert.match(
     dockerfile,
@@ -940,6 +1366,26 @@ test("container and homelab contracts keep attribution private and protected", a
   assert.match(
     compose,
     /!PathPrefix\(`\/api\/internal\/`\)/
+  );
+  assert.match(
+    compose,
+    /!PathPrefix\(`\/api\/connector\/v1\/`\)/
+  );
+  assert.match(
+    compose,
+    /routers\.tyrion-connector-secure\.rule=.*Path\(`\/api\/connector\/v1\/health`\).*\^\/api\/connector\/v1\/transactions\//
+  );
+  assert.match(
+    compose,
+    /routers\.tyrion-connector-secure\.middlewares=tyrion-public-connector-marker,compression@file,security-headers@file/
+  );
+  assert.doesNotMatch(
+    compose,
+    /routers\.tyrion-connector-secure\.middlewares=[^\r\n]*trusted-private-networks/
+  );
+  assert.match(
+    compose,
+    /middlewares\.tyrion-public-connector-marker\.headers\.customrequestheaders\.X-Tyrion-Public-Connector=1/
   );
   assert.doesNotMatch(
     compose,
@@ -1145,6 +1591,35 @@ function rawAttributionFetch(baseUrl, body, requestHeaders = {}) {
     );
     request.on("error", reject);
     request.end(body);
+  });
+}
+
+function rawHttpFetch(path, method = "GET", requestHeaders = {}) {
+  const target = new URL(uiUrl);
+  return new Promise((resolvePromise, reject) => {
+    const request = httpRequest(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path,
+        method,
+        headers: requestHeaders,
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolvePromise({
+            status: response.statusCode,
+            text: async () => text,
+            json: async () => JSON.parse(text),
+          });
+        });
+      }
+    );
+    request.on("error", reject);
+    request.end();
   });
 }
 
