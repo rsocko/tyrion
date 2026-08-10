@@ -18,6 +18,10 @@ import {
   parseCategoryMutation,
   resolveConnectorBridgeUrl,
 } from "../src/lib/connector-gateway-policy.mjs";
+import {
+  composeConnectorHealth,
+  CONNECTOR_HEALTH_RESPONSE_BYTES,
+} from "../src/lib/connector-health.mjs";
 import { connectionPresentation } from "../src/lib/operational-state.mjs";
 import { policyStatePresentation } from "../src/lib/policy-ui-state.mjs";
 
@@ -45,7 +49,10 @@ let temporaryStateDirectory;
 let policyStorePath;
 let receivedRequests = [];
 let bridgeResponseMode = "normal";
+let bridgePathResponseModes = new Map();
 let authState = "connected";
+let healthPayloadOverride;
+let authStatusPayloadOverride;
 let previews = new Map();
 let expireNextPreview = false;
 let reattributionResponseMode = "normal";
@@ -104,25 +111,86 @@ before(async () => {
         body: Buffer.concat(chunks).toString("utf8"),
       });
 
-      if (bridgeResponseMode === "invalid") {
+      const responseMode =
+        bridgePathResponseModes.get(request.url) ?? bridgeResponseMode;
+      if (responseMode === "invalid") {
         response.writeHead(502, { "Content-Type": "text/plain" });
         response.end("synthetic upstream detail that must not escape");
         return;
       }
-      if (bridgeResponseMode === "network") {
+      if (responseMode === "non-json") {
+        response.writeHead(200, {
+          "Content-Type": "text/plain",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end("synthetic upstream detail that must not escape");
+        return;
+      }
+      if (responseMode === "network") {
         request.socket.destroy();
         return;
       }
-      if (bridgeResponseMode === "oversized") {
+      if (responseMode === "oversized") {
         const payload = JSON.stringify({
           contractVersion: "1.0",
-          value: "x".repeat(MAX_CONNECTOR_RESPONSE_BYTES),
+          value: "x".repeat(
+            request.url === "/health" || request.url === "/auth/status"
+              ? CONNECTOR_HEALTH_RESPONSE_BYTES
+              : MAX_CONNECTOR_RESPONSE_BYTES
+          ),
         });
-        response.writeHead(200, { "Content-Type": "application/json" });
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
         response.end(payload);
         return;
       }
-      if (bridgeResponseMode === "rate-limited") {
+      if (responseMode === "malformed-json") {
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end("{");
+        return;
+      }
+      if (responseMode === "non-2xx") {
+        response.writeHead(503, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          error: {
+            code: "synthetic_private_failure",
+            message: "synthetic upstream detail that must not escape",
+          },
+        }));
+        return;
+      }
+      if (responseMode === "mismatched-version") {
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "2.0",
+        });
+        response.end(JSON.stringify({ contractVersion: "2.0" }));
+        return;
+      }
+      if (responseMode === "malformed-shape") {
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          authenticated: "yes",
+          authState: "connected",
+          email: null,
+          mode: "live",
+        }));
+        return;
+      }
+      if (responseMode === "rate-limited") {
         response.writeHead(429, {
           "Content-Type": "application/json",
           "Retry-After": "17",
@@ -138,7 +206,7 @@ before(async () => {
       const common = { contractVersion: "1.0", mode: "live" };
       const payload =
         request.url === "/health"
-          ? {
+          ? healthPayloadOverride ?? {
               ...common,
               status: "ok",
               reachable: true,
@@ -146,7 +214,7 @@ before(async () => {
               authState,
             }
           : request.url === "/auth/status"
-            ? {
+            ? authStatusPayloadOverride ?? {
                 ...common,
                 authenticated: authState === "connected",
                 authState,
@@ -257,7 +325,10 @@ after(async () => {
 beforeEach(() => {
   receivedRequests = [];
   bridgeResponseMode = "normal";
+  bridgePathResponseModes = new Map();
   authState = "connected";
+  healthPayloadOverride = undefined;
+  authStatusPayloadOverride = undefined;
   expireNextPreview = false;
   reattributionResponseMode = "normal";
 });
@@ -740,6 +811,182 @@ test("public connector gateway forwards every allowlisted operation with caller 
     receivedRequests.at(-1).body,
     '{"categoryId":"invented-category"}'
   );
+});
+
+test("connector health composes every verified authentication state", async () => {
+  for (const state of [
+    "connected",
+    "unauthenticated",
+    "expired",
+    "degraded",
+  ]) {
+    authState = state;
+    healthPayloadOverride = {
+      contractVersion: "1.0",
+      status: state === "connected" || state === "unauthenticated" ? "ok" : "degraded",
+      mode: "live",
+      reachable: true,
+      authenticated: state === "connected",
+      authState: state,
+    };
+    const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
+      headers: { Authorization: `Bearer ${serviceToken}` },
+    });
+    assert.equal(response.status, 200, state);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
+    assert.deepEqual(await response.json(), {
+      contractVersion: "1.0",
+      status: healthPayloadOverride.status,
+      mode: "live",
+      reachable: true,
+      authenticated: state === "connected",
+      authState: state,
+    });
+  }
+});
+
+test("connector health uses live auth status without exposing auth details", async () => {
+  healthPayloadOverride = {
+    contractVersion: "1.0",
+    status: "degraded",
+    mode: "demo",
+    reachable: true,
+    authenticated: false,
+    authState: "degraded",
+  };
+  authStatusPayloadOverride = {
+    contractVersion: "1.0",
+    authenticated: true,
+    authState: "connected",
+    email: "invented@example.invalid",
+    mode: "live",
+  };
+
+  const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
+    headers: { Authorization: `Bearer ${serviceToken}` },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    contractVersion: "1.0",
+    status: "degraded",
+    mode: "live",
+    reachable: true,
+    authenticated: true,
+    authState: "connected",
+  });
+  assert.deepEqual(
+    receivedRequests.map(({ path, method, authorized, hasBody }) => ({
+      path,
+      method,
+      authorized,
+      hasBody,
+    })),
+    [
+      { path: "/health", method: "GET", authorized: true, hasBody: false },
+      {
+        path: "/auth/status",
+        method: "GET",
+        authorized: true,
+        hasBody: false,
+      },
+    ]
+  );
+});
+
+test("connector health fails closed for each invalid auth-status response", async () => {
+  const cases = [
+    ["non-2xx", 502, "bridge_health_check_failed"],
+    ["non-json", 502, "invalid_bridge_response"],
+    ["malformed-json", 502, "invalid_bridge_response"],
+    ["oversized", 502, "invalid_bridge_response"],
+    ["malformed-shape", 502, "invalid_bridge_response"],
+    ["mismatched-version", 502, "bridge_contract_mismatch"],
+    ["network", 502, "bridge_unavailable"],
+  ];
+  for (const [mode, status, code] of cases) {
+    bridgePathResponseModes.set("/auth/status", mode);
+    const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
+      headers: { Authorization: `Bearer ${serviceToken}` },
+    });
+    assert.equal(response.status, status, mode);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
+    const text = await response.text();
+    assert.deepEqual(JSON.parse(text), {
+      contractVersion: "1.0",
+      error: {
+        code,
+        message:
+          code === "bridge_health_check_failed"
+            ? "Bridge health check failed"
+            : code === "bridge_contract_mismatch"
+              ? "Bridge contract version is incompatible"
+              : code === "bridge_unavailable"
+                ? "Bridge unavailable"
+                : "Bridge returned an invalid response",
+      },
+    });
+    assert.doesNotMatch(
+      text,
+      /synthetic upstream detail|ECONN|127\.0\.0\.1|invented@example/
+    );
+    bridgePathResponseModes.clear();
+  }
+});
+
+test("connector health bounds both private responses", async () => {
+  for (const path of ["/health", "/auth/status"]) {
+    bridgePathResponseModes.set(path, "oversized");
+    const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
+      headers: { Authorization: `Bearer ${serviceToken}` },
+    });
+    assert.equal(response.status, 502, path);
+    assert.equal(
+      (await response.json()).error.code,
+      "invalid_bridge_response"
+    );
+    bridgePathResponseModes.clear();
+  }
+});
+
+test("connector health maps bounded timeouts without leaking failures", async () => {
+  const calls = [];
+  const result = await composeConnectorHealth({
+    baseUrl: new URL("https://bridge.invalid/"),
+    token: serviceToken,
+    timeoutMs: 5,
+    fetchImpl: (url, options) => {
+      calls.push({
+        url: url.href,
+        method: options.method,
+        authorization: options.headers.get("authorization"),
+      });
+      return new Promise((resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(new Error("private")));
+      });
+    },
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    status: 504,
+    error: {
+      code: "bridge_timeout",
+      message: "Bridge health check timed out",
+    },
+  });
+  assert.deepEqual(calls, [
+    {
+      url: "https://bridge.invalid/health",
+      method: "GET",
+      authorization: `Bearer ${serviceToken}`,
+    },
+    {
+      url: "https://bridge.invalid/auth/status",
+      method: "GET",
+      authorization: `Bearer ${serviceToken}`,
+    },
+  ]);
 });
 
 test("connector gateway requires independent auth and rejects browser use before forwarding", async () => {

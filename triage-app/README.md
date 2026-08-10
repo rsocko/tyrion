@@ -62,6 +62,16 @@ query expansion, bodies on bodyless operations, request bodies above 1 KiB, and
 responses above 8 MiB. Bridge JSON bodies, status, and safe contract headers are
 preserved after validation; proxy and invalid-response failures are sanitized.
 
+Connector `GET /health` is composed rather than passed through. The server calls
+private Bridge `/health` and protected `/auth/status` with `BRIDGE_API_TOKEN`, bounds
+each response to 4 KiB, validates both explicit v1 shapes and contract versions, then
+returns only `contractVersion`, `status`, `mode`, `reachable`, `authenticated`, and
+`authState`. Verified auth status owns the latter three authentication fields and
+mode; health owns service status and reachability. Email is never returned.
+Non-2xx, timeout/network, invalid, oversized, and contract-mismatch failures are
+sanitized non-success responses. `/api/connector/v1/auth/status` remains blocked by
+both route policy and Traefik.
+
 The production Traefik contract routes `/api/connector/v1/` separately over TLS
 without the UI's private-network middleware. All other UI routes retain that
 middleware, and every public router continues to exclude `/api/internal/`. Traefik

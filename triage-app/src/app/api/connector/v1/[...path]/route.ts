@@ -8,6 +8,10 @@ import {
   parseCategoryMutation,
   resolveConnectorBridgeUrl,
 } from "@/lib/connector-gateway-policy.mjs";
+import {
+  composeConnectorHealth,
+  MONARCH_CONTRACT_VERSION,
+} from "@/lib/connector-health.mjs";
 
 const BRIDGE_TIMEOUT_MS = 30_000;
 const FORWARDED_RESPONSE_HEADERS = [
@@ -24,6 +28,28 @@ function jsonError(status: number, code: string, message: string) {
     { error: { code, message } },
     { status, headers: { "Cache-Control": "no-store" } }
   );
+}
+
+function connectorHealthJson(
+  body:
+    | {
+        contractVersion: "1.0";
+        status: "ok" | "degraded";
+        mode: "demo" | "live";
+        reachable: boolean;
+        authenticated: boolean;
+        authState: "unauthenticated" | "connected" | "expired" | "degraded";
+      }
+    | { contractVersion: "1.0"; error: { code: string; message: string } },
+  status: number
+) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      "X-Monarch-Contract-Version": MONARCH_CONTRACT_VERSION,
+    },
+  });
 }
 
 async function readBoundedBody(request: NextRequest, maximumBytes: number) {
@@ -199,6 +225,23 @@ async function proxyConnectorRequest(
         "This connector operation does not accept a body"
       );
     }
+  }
+
+  if (policy.upstreamPath === "/health") {
+    const health = await composeConnectorHealth({
+      baseUrl: bridge.baseUrl,
+      token: authentication.token,
+    });
+    if (!health.ok) {
+      return connectorHealthJson(
+        {
+          contractVersion: MONARCH_CONTRACT_VERSION,
+          error: health.error,
+        },
+        health.status
+      );
+    }
+    return connectorHealthJson(health.body, 200);
   }
 
   const headers = new Headers({
