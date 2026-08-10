@@ -40,7 +40,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Logout | In-memory and persisted state removal | Completed 2026-08-08; state and external session removal verified |
 | Health/auth state | All four auth states and public reachability | `test_live_auth_health` |
 | Transactions/filter/detail | Mission Control strict DTO parity, 1-500 page bound, bounded opaque cursor, filters, detail, empty/error shapes, malformed upstream rejection | Read contract completed 2026-08-08 |
-| Accounts/categories/recurring/cashflow/budgets | Normalized synthetic current-upstream structures | Completed 2026-08-08 |
+| Accounts/category groups/categories/transaction tags/recurring/cashflow/budgets | Normalized synthetic current-upstream structures; stable reference IDs; additive transaction tag references; explicit budget period; authoritative-empty, malformed, and dataset-bound behavior | Accounts/categories/recurring/cashflow/budgets completed 2026-08-08; category groups, transaction tags, additive category/tag identity, and explicit budget periods require the next controlled read-only validation |
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
@@ -105,6 +105,12 @@ structures only.
   authentication rejection produces `expired` and removes persisted state.
 - Category updates are non-transactional upstream. Live validation always reads back
   the change and restores the original category.
+- Reference and current-snapshot reads are complete-or-error. The bridge accepts an
+  authoritative empty collection, rejects missing/non-array/invalid/oversized
+  collections as sanitized `502 upstream_error`, and never publishes a truncated
+  success. Deterministic limits are 1,000 accounts, 250 category groups, 2,000
+  categories, 1,000 transaction tags, 5,000 recurring obligations, and 5,000 current
+  budget rows.
 
 ## Contract refresh
 
@@ -112,6 +118,12 @@ When upgrading `monarchmoneycommunity`, pin the exact version, verify method
 signatures, update synthetic normalizer inputs, run deterministic tests, then perform
 the controlled live matrix. Never capture a real response as a fixture. Reconstruct
 only the minimum structural shape with invented identifiers and values.
+
+The next controlled read-only matrix must call `/category-groups`, `/tags`, and
+`/budgets`; verify stable IDs, category `groupId`, transaction `tagReferences`,
+explicit full-month `periodStart`/`periodEnd`, empty shapes, and the documented bounds;
+and record only pass/fail plus date. It must not capture identifiers or response
+payloads.
 
 ## Container deployment validation
 

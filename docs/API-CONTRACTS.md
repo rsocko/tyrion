@@ -73,6 +73,26 @@ Data responses contain:
 
 Pass `nextCursor` unchanged as the next request's `cursor`. `null` means there is no next page. Cursors have no client-visible structure and must not be persisted indefinitely.
 
+### Dataset bounds and completeness
+
+Reference and current-snapshot endpoints return one complete, authoritative collection
+or fail. An empty collection is a successful complete response. The bridge rejects a
+missing collection, a non-array collection, an invalid item, a missing required stable
+ID/name, or a collection above its endpoint limit as `502 upstream_error`; it never
+returns a truncated or partially normalized success.
+
+| Endpoint | Maximum items |
+| --- | ---: |
+| `GET /accounts` | 1,000 |
+| `GET /category-groups` | 250 |
+| `GET /categories` | 2,000 |
+| `GET /tags` | 1,000 |
+| `GET /recurring` | 5,000 |
+| `GET /budgets` | 5,000 |
+
+These are bridge response-safety bounds, not retention promises. Consumers must also
+apply their own model-facing item and byte limits.
+
 ### Service authentication
 
 Non-loopback deployments require `Authorization: Bearer <service-token>` on
@@ -191,7 +211,10 @@ the optional `account_id` and `category_id` filters.
       "isPending": false,
       "isRecurring": false,
       "notes": null,
-      "tags": []
+      "tags": ["Household"],
+      "tagReferences": [
+        { "id": "tag-household", "name": "Household" }
+      ]
     }
   ],
   "total": 1,
@@ -200,6 +223,9 @@ the optional `account_id` and `category_id` filters.
 ```
 
 `category` is nullable. `merchant.logoUrl`, `account.mask`, and `notes` are nullable.
+The existing `tags` display-name array remains for v1 compatibility.
+`tagReferences` is the additive stable identity used for reference joins and tag
+filters. It is empty when a transaction has no tags.
 
 `GET /transactions/{transaction_id}` returns the same transaction DTO under `transaction`, plus `contractVersion` and `provenance`.
 
@@ -252,14 +278,59 @@ Request: `{ "categoryId": "cat-shopping" }`
     {
       "id": "cat-shopping",
       "name": "Shopping",
+      "groupId": "group-discretionary",
       "group": "Discretionary",
-      "icon": null
+      "icon": null,
+      "isActive": true
     }
   ]
 }
 ```
 
-`group` and `icon` are nullable.
+`groupId`, `group`, and `icon` are nullable. The existing `group` display name remains
+for v1 compatibility; consumers use `groupId` for stable joins. `isActive` is false
+when Monarch marks the category disabled.
+
+### Category groups
+
+`GET /category-groups`
+
+```json
+{
+  "contractVersion": "1.0",
+  "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
+  "categoryGroups": [
+    {
+      "id": "group-discretionary",
+      "name": "Discretionary",
+      "isActive": true
+    }
+  ]
+}
+```
+
+### Transaction tags
+
+`GET /tags`
+
+```json
+{
+  "contractVersion": "1.0",
+  "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
+  "tags": [
+    {
+      "id": "tag-household",
+      "name": "Household",
+      "isActive": true
+    }
+  ]
+}
+```
+
+The returned reference set supplies the stable IDs used by transaction
+`tagReferences` and by bounded tag filters. A returned group or tag is active unless
+Monarch explicitly marks it disabled; disappearance from a later complete response is
+handled by the consumer's reference-deactivation policy.
 
 ### Recurring obligations
 
@@ -293,6 +364,8 @@ Request: `{ "categoryId": "cat-shopping" }`
 {
   "contractVersion": "1.0",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
+  "periodStart": "2026-08-01",
+  "periodEnd": "2026-08-31",
   "budgets": [
     {
       "category": { "id": "cat-groceries", "name": "Groceries" },
@@ -305,7 +378,10 @@ Request: `{ "categoryId": "cat-shopping" }`
 }
 ```
 
-`percentUsed` is nullable when `budgeted` is zero.
+`periodStart` and `periodEnd` are the explicit inclusive boundaries of the current
+calendar-month snapshot requested from Monarch. Consumers must key and label the
+snapshot from these fields rather than infer a month from fetch time. `percentUsed`
+is nullable when `budgeted` is zero.
 
 ### Cash flow
 

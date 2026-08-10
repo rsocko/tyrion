@@ -57,7 +57,15 @@ async def test_live_read_and_sync_contracts(live_bridge):
         detail = await live_bridge.get(f"/transactions/{transaction_rows[0]['id']}")
         assert_success(detail)
 
-    for path in ("/accounts", "/categories", "/recurring", "/cashflow", "/budgets"):
+    for path in (
+        "/accounts",
+        "/category-groups",
+        "/categories",
+        "/tags",
+        "/recurring",
+        "/cashflow",
+        "/budgets",
+    ):
         assert_success(await live_bridge.get(path))
     assert_success(await live_bridge.post("/sync?days=7"))
 
