@@ -60,11 +60,18 @@ and each v1 permission.
 
 `TYRION_POLICY_STORE_PATH` must be an absolute access-restricted path outside the
 application checkout. The file adapter provides atomic replacement, a cross-process
-lease, metadata-only audit events, and compare-and-swap policy versions.
+lease, metadata-only audit events, and compare-and-swap policy versions. On first
+access it atomically adopts a sole policy and its audit events from the superseded
+configurable household ID into `homelab-household`.
 Raw integration references are accepted only by the protected fingerprint endpoint.
-Tyrion derives a domain-separated HMAC key from the required server-only
-`BRIDGE_API_TOKEN`, fingerprints each reference with household scope, then discards
-the raw value without returning or persisting it.
+On first startup, Tyrion derives a domain-separated HMAC key from the required
+server-only `BRIDGE_API_TOKEN` and persists only that derived key beside the protected
+policy store with restrictive permissions. Later bridge-token rotation reuses the
+derived key, so current card rules remain stable. Tyrion fingerprints each reference
+with household scope, then discards the raw value without returning or persisting it.
+Existing card-rule fingerprints created with the superseded standalone fingerprint
+key remain private but cannot be converted; re-enroll those card rules once during
+this contract transition.
 
 Policy browser endpoints are:
 

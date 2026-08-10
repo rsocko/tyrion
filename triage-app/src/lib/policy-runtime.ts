@@ -1,5 +1,12 @@
 import { createHmac } from "node:crypto";
 import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
+import {
   FilePolicyRepository,
   AttributionBatchService,
   PolicyService,
@@ -64,12 +71,7 @@ export function getPolicyRuntime(
   const policyRepository: PolicyRepository = demo
     ? new MemoryPolicyRepository()
     : createFilePolicyRepository(environment);
-  const fingerprintRootKey = demo
-    ? "deterministic-demo-fingerprint-key-not-for-production"
-    : requireSecret(environment.BRIDGE_API_TOKEN);
-  const fingerprintKey = createHmac("sha256", fingerprintRootKey)
-    .update(FINGERPRINT_KEY_DOMAIN)
-    .digest();
+  const fingerprintKey = loadFingerprintKey(environment, demo);
 
   let reattributionService: ReattributionService | undefined;
   cachedRuntime = {
@@ -116,7 +118,9 @@ function createFilePolicyRepository(
 ): FilePolicyRepository {
   const path = environment.TYRION_POLICY_STORE_PATH;
   if (!path) throw new PolicyRuntimeConfigurationError();
-  return new FilePolicyRepository(path);
+  return new FilePolicyRepository(path, {
+    canonicalHouseholdId: HOMELAB_HOUSEHOLD_ID,
+  });
 }
 
 function requireSecret(value: string | undefined): string {
@@ -124,6 +128,72 @@ function requireSecret(value: string | undefined): string {
     throw new PolicyRuntimeConfigurationError();
   }
   return value;
+}
+
+function loadFingerprintKey(
+  environment: NodeJS.ProcessEnv,
+  demo: boolean
+): Buffer {
+  const rootKey = demo
+    ? "deterministic-demo-fingerprint-key-not-for-production"
+    : requireSecret(environment.BRIDGE_API_TOKEN);
+  const derivedKey = createHmac("sha256", rootKey)
+    .update(FINGERPRINT_KEY_DOMAIN)
+    .digest();
+  if (demo) return derivedKey;
+
+  const policyStorePath = environment.TYRION_POLICY_STORE_PATH;
+  if (!policyStorePath) throw new PolicyRuntimeConfigurationError();
+  const keyPath = `${policyStorePath}.fingerprint-key`;
+  const keyDirectory = dirname(keyPath);
+  try {
+    mkdirSync(keyDirectory, { recursive: true, mode: 0o700 });
+    chmodSync(keyDirectory, 0o700);
+  } catch {
+    throw new PolicyRuntimeConfigurationError();
+  }
+  try {
+    return readFingerprintKey(keyPath);
+  } catch (error) {
+    if (nodeErrorCode(error) !== "ENOENT") {
+      throw new PolicyRuntimeConfigurationError();
+    }
+  }
+  try {
+    writeFileSync(keyPath, derivedKey.toString("hex"), {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    return derivedKey;
+  } catch (error) {
+    if (nodeErrorCode(error) === "EEXIST") {
+      try {
+        return readFingerprintKey(keyPath);
+      } catch {
+        throw new PolicyRuntimeConfigurationError();
+      }
+    }
+    throw new PolicyRuntimeConfigurationError();
+  }
+}
+
+function readFingerprintKey(path: string): Buffer {
+  const value = readFileSync(path, "utf8");
+  if (!/^[a-f0-9]{64}$/.test(value)) {
+    throw new PolicyRuntimeConfigurationError();
+  }
+  chmodSync(path, 0o600);
+  return Buffer.from(value, "hex");
+}
+
+function nodeErrorCode(error: unknown): string | undefined {
+  return typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+    ? error.code
+    : undefined;
 }
 
 class MemoryPolicyRepository implements PolicyRepository {

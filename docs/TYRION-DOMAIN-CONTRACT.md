@@ -151,7 +151,15 @@ version comparison and application.
 - Returns stable sanitized errors without paths or persisted content
 
 The file adapter stores policy and audit data only. Its state path must be external,
-access-restricted, backed up, and mounted by only one application deployment.
+access-restricted, backed up, and mounted by only one application deployment. When
+the fixed homelab identity first opens a store containing exactly one policy under
+the superseded configurable household ID, the adapter atomically rewrites that
+policy and its audit household scope to `homelab-household`. Existing card-rule
+fingerprints cannot be converted after removal of the standalone fingerprint key;
+the operator must re-enroll those rules once after the transition. New deployments
+derive the replacement key once from a domain-separated use of `BRIDGE_API_TOKEN`,
+persist only that derived key beside the access-restricted policy store, and reuse it
+across later bearer-token rotation.
 
 ## Attribution result and precedence
 

@@ -683,6 +683,26 @@ test("batch attribution fails closed for auth, host, body, and policy conflicts"
     "attribution_route_not_available"
   );
 
+  const malformedPublicHost = await rawAttributionFetch(uiUrl, "not-json", {
+    Host: "tyrion.socko.us",
+  });
+  assert.equal(malformedPublicHost.status, 404);
+  assert.equal(
+    (await malformedPublicHost.json()).error.code,
+    "attribution_route_not_available"
+  );
+
+  const oversizedPublicHost = await rawAttributionFetch(
+    uiUrl,
+    "x".repeat(64 * 1_024 + 1),
+    { Host: "tyrion.socko.us" }
+  );
+  assert.equal(oversizedPublicHost.status, 404);
+  assert.equal(
+    (await oversizedPublicHost.json()).error.code,
+    "attribution_route_not_available"
+  );
+
   const forwardedPublicHost = await attributionFetch(body, {
     requestHeaders: { "x-forwarded-host": "tyrion.socko.us" },
   });
@@ -739,7 +759,8 @@ test("batch attribution rejects private fields and enforces size bounds", async 
 
   const oversized = await rawAttributionFetch(
     uiUrl,
-    "x".repeat(64 * 1_024 + 1)
+    "x".repeat(64 * 1_024 + 1),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
   );
   assert.equal(oversized.status, 413);
   assert.equal((await oversized.json()).error.code, "payload_too_large");
@@ -820,6 +841,50 @@ test("instrument references are fingerprinted server-side and never persisted ra
   assert.doesNotMatch(fingerprintText, new RegExp(instrumentReference));
   const fingerprint = JSON.parse(fingerprintText).instrumentFingerprint;
   assert.match(fingerprint, /^instrument-v1:[A-Za-z0-9_-]{43}$/);
+  const persistedKey = await readFile(
+    `${policyStorePath}.fingerprint-key`,
+    "utf8"
+  );
+  assert.match(persistedKey, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(persistedKey, new RegExp(instrumentReference));
+
+  const standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
+  const standaloneServer = join(standaloneRoot, "server.js");
+  const rotatedPort = await freePort();
+  const rotatedUrl = `http://127.0.0.1:${rotatedPort}`;
+  const rotatedProcess = spawn(process.execPath, [standaloneServer], {
+    cwd: standaloneRoot,
+    env: {
+      ...process.env,
+      BRIDGE_URL: fakeBridgeUrl,
+      BRIDGE_API_TOKEN: "rotated-synthetic-service-token-value",
+      TYRION_POLICY_STORE_PATH: policyStorePath,
+      HOSTNAME: "127.0.0.1",
+      PORT: String(rotatedPort),
+    },
+    stdio: "ignore",
+  });
+  try {
+    await waitForServer(rotatedUrl, rotatedProcess);
+    const afterRotation = await fetch(
+      `${rotatedUrl}/api/policy/instruments/fingerprint`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: rotatedUrl,
+        },
+        body: JSON.stringify({ instrumentReference }),
+      }
+    );
+    assert.equal(afterRotation.status, 200);
+    assert.equal(
+      (await afterRotation.json()).instrumentFingerprint,
+      fingerprint
+    );
+  } finally {
+    if (rotatedProcess.exitCode === null) rotatedProcess.kill();
+  }
 
   const updatedDraft = policyDraft(activePolicy);
   updatedDraft.cardRules = [

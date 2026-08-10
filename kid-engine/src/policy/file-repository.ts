@@ -31,11 +31,16 @@ interface StoredPolicies {
   audit: PolicyAuditEventV1[];
 }
 
+export interface FilePolicyRepositoryOptions {
+  canonicalHouseholdId?: string;
+}
+
 export class FilePolicyRepository implements PolicyRepository {
   private readonly filePath: string;
   private readonly lockPath: string;
+  private readonly canonicalHouseholdId: string | undefined;
 
-  constructor(filePath: string) {
+  constructor(filePath: string, options: FilePolicyRepositoryOptions = {}) {
     if (!isAbsolute(filePath)) {
       throw new PolicyStoreConfigurationError(
         'Policy store path must be absolute and external to the application checkout'
@@ -54,10 +59,11 @@ export class FilePolicyRepository implements PolicyRepository {
     }
     this.filePath = resolved;
     this.lockPath = `${resolved}.lock`;
+    this.canonicalHouseholdId = options.canonicalHouseholdId;
   }
 
   async load(householdId: string): Promise<PolicySnapshotV1 | null> {
-    const store = await this.readStore();
+    const store = await this.readCanonicalStore(householdId);
     const snapshot = Object.hasOwn(store.policies, householdId)
       ? store.policies[householdId]
       : undefined;
@@ -73,6 +79,7 @@ export class FilePolicyRepository implements PolicyRepository {
     const parsedAuditEvent = parsePolicyAuditEventV1(auditEvent);
     await this.withLock(async () => {
       const store = await this.readStore();
+      this.canonicalizeSingleHousehold(store, parsed.householdId);
       const currentVersion =
         store.policies[parsed.householdId]?.policyVersion ?? null;
       if (currentVersion !== expectedPolicyVersion) {
@@ -86,7 +93,7 @@ export class FilePolicyRepository implements PolicyRepository {
   }
 
   async listAudit(householdId: string): Promise<PolicyAuditEventV1[]> {
-    const store = await this.readStore();
+    const store = await this.readCanonicalStore(householdId);
     return store.audit
       .filter((event) => event.householdId === householdId)
       .map((event) => structuredClone(event));
@@ -113,6 +120,9 @@ export class FilePolicyRepository implements PolicyRepository {
     }
     try {
       const current = await this.readStore();
+      if (this.canonicalizeSingleHousehold(current, householdId)) {
+        await this.writeStore(current);
+      }
       if (
         current.policies[householdId]?.policyVersion !== expectedPolicyVersion
       ) {
@@ -161,6 +171,49 @@ export class FilePolicyRepository implements PolicyRepository {
         }
       }
     }
+  }
+
+  private async readCanonicalStore(householdId: string): Promise<StoredPolicies> {
+    const store = await this.readStore();
+    if (!this.shouldCanonicalize(store, householdId)) return store;
+    return this.withLock(async () => {
+      const current = await this.readStore();
+      if (this.canonicalizeSingleHousehold(current, householdId)) {
+        await this.writeStore(current);
+      }
+      return current;
+    });
+  }
+
+  private shouldCanonicalize(
+    store: StoredPolicies,
+    householdId: string
+  ): boolean {
+    return (
+      householdId === this.canonicalHouseholdId &&
+      !Object.hasOwn(store.policies, householdId) &&
+      Object.keys(store.policies).length === 1
+    );
+  }
+
+  private canonicalizeSingleHousehold(
+    store: StoredPolicies,
+    householdId: string
+  ): boolean {
+    if (!this.shouldCanonicalize(store, householdId)) return false;
+    const [legacyHouseholdId] = Object.keys(store.policies);
+    const legacySnapshot = store.policies[legacyHouseholdId];
+    store.policies[householdId] = parsePolicySnapshotV1({
+      ...legacySnapshot,
+      householdId,
+    });
+    delete store.policies[legacyHouseholdId];
+    store.audit = store.audit.map((event) =>
+      event.householdId === legacyHouseholdId
+        ? parsePolicyAuditEventV1({ ...event, householdId })
+        : event
+    );
+    return true;
   }
 
   private async readStore(): Promise<StoredPolicies> {

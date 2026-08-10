@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await readAttributionBody(request);
     const actor = resolveAttributionServiceActor(request);
+    const body = await readAttributionBody(request);
     const value = parseAttributionJson(body);
     const response = await getPolicyRuntime().attributionBatchService.attribute(
       actor,
