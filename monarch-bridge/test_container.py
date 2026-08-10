@@ -143,9 +143,27 @@ def test_images_include_repository_and_dependency_license_notices():
     assert "!THIRD-PARTY-NOTICES.md" in bridge_dockerignore
 
 
-def test_workflows_keep_untrusted_validation_separate_and_publication_disabled():
+def test_images_expose_oci_repository_license_and_revision_metadata():
+    bridge_dockerfile = read_repository_file("Dockerfile")
+    ui_dockerfile = read_repository_file("triage-app/Dockerfile")
+
+    for dockerfile in (bridge_dockerfile, ui_dockerfile):
+        assert 'ARG TYRION_REVISION=""' in dockerfile
+        assert (
+            'org.opencontainers.image.source="https://github.com/rsocko/tyrion"'
+            in dockerfile
+        )
+        assert 'org.opencontainers.image.revision="${TYRION_REVISION}"' in dockerfile
+        assert 'org.opencontainers.image.licenses="MIT"' in dockerfile
+        assert "org.opencontainers.image.title=" in dockerfile
+        assert "org.opencontainers.image.description=" in dockerfile
+
+
+def test_workflows_keep_untrusted_validation_separate_from_trusted_publication():
     ci = read_repository_file(".github/workflows/ci.yml")
     publisher = read_repository_file(".github/workflows/build-and-push.yml")
+    publication_script = read_repository_file(".github/scripts/publish_images.py")
+    baseline = read_repository_file(".github/workflows/baseline-guard.yml")
     bridge_readme = read_repository_file("monarch-bridge/README.md")
     validation_guide = read_repository_file(
         "docs/MONARCH-INTEGRATION-VALIDATION.md"
@@ -157,24 +175,37 @@ def test_workflows_keep_untrusted_validation_separate_and_publication_disabled()
     assert "npm run build" in ci
     assert "npm test" in ci
     assert "push: true" not in ci
-    assert "workflow_dispatch:" in publisher
-    assert "permissions: {}" in publisher
-    assert "if: ${{ false }}" in publisher
-    assert "runs-on: ubuntu-latest" in publisher
-    assert "uses:" not in publisher
+    assert "branches:\n      - main" in publisher
+    assert "contents: read" in publisher
+    assert publisher.count("packages: write") == 1
+    assert "github.repository == 'rsocko/tyrion'" in publisher
+    assert "github.ref == 'refs/heads/main'" in publisher
+    assert "runs-on: ubuntu-24.04" in publisher
+    assert "persist-credentials: false" in publisher
+    assert "GHCR_TOKEN: ${{ github.token }}" in publisher
+    assert "run: python .github/scripts/publish_images.py" in publisher
+    assert publisher.count("run:") == 1
+    assert "python .github/scripts/test_publish_images.py" in baseline
+    assert "ghcr.io/rsocko/tyrion-bridge" in publication_script
+    assert "ghcr.io/rsocko/tyrion-ui" in publication_script
+    assert "--prefer-index=false" in publication_script
+    assert "existing_commit_digest" in publication_script
+    assert "promote_and_verify" in publication_script
     assert "self-hosted" not in publisher
     assert "workflow_run" not in publisher
     assert "pull_request" not in publisher
-    assert "push:" not in publisher
+    assert "pull_request_target" not in publisher
+    assert "repository_dispatch" not in publisher
+    assert "workflow_dispatch" not in publisher
     assert "secrets." not in publisher
     normalized_readme = " ".join(bridge_readme.split())
     normalized_validation = " ".join(validation_guide.split())
     assert (
-        "CI builds both production containers without publishing them"
+        "Pull-request CI builds both production containers without publishing them"
         in normalized_readme
     )
     assert (
-        "Automated publication is disabled"
+        "publishes both production images from trusted `main` pushes"
         in normalized_validation
     )
     assert (
@@ -197,15 +228,20 @@ def test_homelab_contract_routes_only_ui_through_traefik():
     environment = read_repository_file("deploy/homelab/.env.example")
     bridge_section, ui_section = compose.split("  tyrion-operations-ui:", 1)
 
-    assert "${TYRION_BRIDGE_IMAGE:?" in bridge_section
-    assert "${TYRION_UI_IMAGE:?" in ui_section
+    assert "ghcr.io/rsocko/tyrion-bridge" in bridge_section
+    assert "ghcr.io/rsocko/tyrion-ui" in ui_section
+    assert "@${TYRION_BRIDGE_IMAGE_DIGEST:?" in bridge_section
+    assert "@${TYRION_UI_IMAGE_DIGEST:?" in ui_section
     assert "traefik" not in bridge_section
     assert "BRIDGE_URL: http://tyrion-monarch-bridge:8100" in ui_section
     assert "traefik.http.services.tyrion.loadbalancer.server.port=3000" in ui_section
     assert compose.count("read_only: true") == 2
     assert compose.count("user:") == 0
-    assert "TYRION_BRIDGE_IMAGE_TAG=latest" in environment
-    assert "TYRION_UI_IMAGE_TAG=latest" in environment
+    assert "TYRION_BRIDGE_IMAGE=ghcr.io/rsocko/tyrion-bridge" in environment
+    assert "TYRION_UI_IMAGE=ghcr.io/rsocko/tyrion-ui" in environment
+    assert "TYRION_BRIDGE_IMAGE_DIGEST=" in environment
+    assert "TYRION_UI_IMAGE_DIGEST=" in environment
+    assert "_IMAGE_TAG" not in environment
     environment_lines = environment.splitlines()
     for secret in (
         "BRIDGE_API_TOKEN",

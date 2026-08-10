@@ -7,6 +7,9 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIRECTORY = ROOT / ".github" / "workflows"
 PUBLICATION_WORKFLOW = WORKFLOW_DIRECTORY / "build-and-push.yml"
+PUBLICATION_CHECKOUT = (
+    "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+)
 
 ANY_ACTION = re.compile(
     r"^(?P<indent> *)(?P<item>-\s*)?(?P<quote>['\"]?)uses(?P=quote)"
@@ -28,13 +31,15 @@ PRIVILEGED_TOKENS = (
     "workflow_call",
     "secrets.",
     "secrets: inherit",
-    "github.token",
     "github.event.",
     "ref: ${{",
     "id-token: write",
     "contents: write",
-    "packages: write",
     "environment:",
+)
+PUBLISHER_ONLY_TOKENS = (
+    "github.token",
+    "packages: write",
 )
 PROHIBITED_ACTIONS = {
     "actions/cache",
@@ -60,6 +65,10 @@ PERSIST_CREDENTIALS = re.compile(
     r"^\s*['\"]?persist-credentials['\"]?\s*:\s*"
     r"(?P<value>\S+)\s*(?:#.*)?$",
     re.MULTILINE,
+)
+WRITE_PERMISSION = re.compile(
+    r"^(?P<indent> +)['\"]?(?P<key>[a-z-]+)['\"]?\s*:\s*write\s*(?:#.*)?$",
+    re.MULTILINE | re.IGNORECASE,
 )
 
 
@@ -212,6 +221,13 @@ def _normalized_values(pattern: re.Pattern[str], blocks: list[str]) -> list[str]
     return values
 
 
+def _normalized_block(text: str, key: str) -> str:
+    blocks = _mapping_blocks(_strip_yaml_comments(text), key, 0)
+    if len(blocks) != 1:
+        return ""
+    return "\n".join(line.rstrip() for line in blocks[0].strip().splitlines())
+
+
 def check_workflows(workflows: dict[Path, str]) -> list[str]:
     failures: list[str] = []
 
@@ -279,6 +295,23 @@ def check_workflows(workflows: dict[Path, str]) -> list[str]:
                 failures.append(
                     f"{relative}: prohibited privileged workflow token: {token}"
                 )
+        if path != PUBLICATION_WORKFLOW:
+            for token in PUBLISHER_ONLY_TOKENS:
+                if token in lowered:
+                    failures.append(
+                        f"{relative}: publisher-only workflow token: {token}"
+                    )
+        write_permissions = [
+            (len(match.group("indent")), match.group("key").lower())
+            for match in WRITE_PERMISSION.finditer(structural_text)
+        ]
+        expected_writes = (
+            [(2, "packages")] if path == PUBLICATION_WORKFLOW else []
+        )
+        if write_permissions != expected_writes:
+            failures.append(
+                f"{relative}: workflow write permissions exceed the trusted publisher"
+            )
         for runners in _runner_specs(text):
             if len(runners) != 1 or not re.fullmatch(
                 r"ubuntu-\d+\.\d+|ubuntu-latest", runners[0]
@@ -289,20 +322,83 @@ def check_workflows(workflows: dict[Path, str]) -> list[str]:
 
     publication = workflows.get(PUBLICATION_WORKFLOW, "")
     required_publication_fragments = (
-        "workflow_dispatch:",
-        "permissions: {}",
-        "if: ${{ false }}",
-        "runs-on: ubuntu-latest",
+        "name: Publish production images",
+        "github.event_name == 'push'",
+        "github.repository == 'rsocko/tyrion'",
+        "github.ref == 'refs/heads/main'",
+        "runs-on: ubuntu-24.04",
+        "persist-credentials: false",
+        "GHCR_TOKEN: ${{ github.token }}",
+        "run: python .github/scripts/publish_images.py",
     )
     for fragment in required_publication_fragments:
         if fragment not in publication:
             failures.append(
-                "publication workflow is not an inert, hosted-runner-only placeholder"
+                "publication workflow is missing its trusted GHCR contract"
             )
-            break
 
-    if "uses:" in publication or re.search(r"(?m)^\s*(push|pull_request):", publication):
-        failures.append("publication workflow can consume repository content automatically")
+    expected_trigger = "push:\n    branches:\n      - main"
+    if _normalized_block(publication, "on") != expected_trigger:
+        failures.append("publication workflow must trigger only on pushes to main")
+
+    expected_permissions = "contents: read\n  packages: write"
+    if _normalized_block(publication, "permissions") != expected_permissions:
+        failures.append(
+            "publication workflow must have only contents: read and packages: write"
+        )
+
+    if re.search(r"(?m)^ {4}permissions\s*:", publication):
+        failures.append("publication workflow must not override job permissions")
+
+    if publication.lower().count("packages: write") != 1:
+        failures.append("publication workflow must narrowly grant packages: write once")
+
+    if publication.lower().count("github.token") != 1:
+        failures.append("publication workflow must use only one short-lived GitHub token")
+
+    publication_actions = [
+        _normalized_scalar(match.group("value"))
+        for match in ANY_ACTION.finditer(_mask_block_scalars(publication))
+    ]
+    if publication_actions != [PUBLICATION_CHECKOUT]:
+        failures.append("publication workflow must use only the approved checkout pin")
+
+    expected_step_names = [
+        "Checkout trusted default-branch commit",
+        "Publish production images",
+    ]
+    step_names = re.findall(
+        r"(?m)^ {6}- name:\s*(?P<name>.+?)\s*$",
+        _strip_yaml_comments(_mask_block_scalars(publication)),
+    )
+    if step_names != expected_step_names:
+        failures.append("publication workflow must retain its exact two-step structure")
+
+    publication_with = _mapping_blocks(
+        _strip_yaml_comments(_mask_block_scalars(publication)), "with", 8
+    )
+    if len(publication_with) != 1 or publication_with[0].strip() != (
+        "persist-credentials: false"
+    ):
+        failures.append("publication checkout inputs must remain fixed")
+
+    publication_env = _mapping_blocks(
+        _strip_yaml_comments(_mask_block_scalars(publication)), "env", 8
+    )
+    if len(publication_env) != 1 or publication_env[0].strip() != (
+        "GHCR_TOKEN: ${{ github.token }}"
+    ):
+        failures.append("publication environment must contain only the GitHub token")
+
+    if re.search(r"(?m)^\s+working-directory\s*:", publication):
+        failures.append("publication workflow cannot change the publisher directory")
+
+    publication_runs = re.findall(
+        r"(?m)^\s+(?:-\s+)?run:\s*(?P<command>\S.*)$",
+        _strip_yaml_comments(_mask_block_scalars(publication)),
+    )
+    if publication_runs != ["python .github/scripts/publish_images.py"]:
+        failures.append("publication workflow must run only the reviewed publisher")
 
     return failures
 

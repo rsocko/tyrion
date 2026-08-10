@@ -9,6 +9,12 @@
 **Recommendation:** Go for the public source repository; no-go for image, package,
 release, or deployment publication
 
+> **Historical record:** This gate describes revision `9833c58` on 2026-08-09.
+> The later reviewed GitHub-hosted GHCR publisher in
+> [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md) supersedes its
+> container-image publication decision. Release and deployment automation remain
+> separate, disabled surfaces.
+
 The owner changed source visibility to public and explicitly requested the terminal
 anonymous verification. A credential-free clone, unauthenticated API and web reads, an
 anonymous full-ref fetch, and an anonymous fetch of the closing pull-request head all

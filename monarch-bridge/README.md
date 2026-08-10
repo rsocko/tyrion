@@ -129,11 +129,14 @@ can contain private transaction identifiers.
 
 ### Production container
 
-CI builds both production containers without publishing them. Automated publication
-is disabled because this repository cannot prove the isolation of external runners,
-networks, credentials, or publication services. Any future publication path must
-satisfy [`docs/DEPLOYMENT-TRUST-BOUNDARY.md`](../docs/DEPLOYMENT-TRUST-BOUNDARY.md)
-through a separate private infrastructure review.
+Pull-request CI builds both production containers without publishing them. A separate
+GitHub-hosted workflow publishes trusted `main` commits to
+`ghcr.io/rsocko/tyrion-bridge` and `ghcr.io/rsocko/tyrion-ui` with immutable commit
+digests and workflow-enforced write-once commit tags, then promotes those digests to
+`main` and `latest` without rebuilding.
+Production deployment must use the digest, not a moving tag. The exact trigger,
+credential, package-visibility, and promotion controls are documented in
+[`docs/DEPLOYMENT-TRUST-BOUNDARY.md`](../docs/DEPLOYMENT-TRUST-BOUNDARY.md).
 
 The bridge image runs `main.py` as UID/GID `10001`, listens on container port `8100`, and
 checks `GET /health` over loopback. It contains only the bridge runtime and runtime

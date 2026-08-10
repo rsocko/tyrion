@@ -30,8 +30,9 @@ operator-controlled process and must never capture live output.
 Workflow changes require security review. Jobs triggered by pull requests or forks
 must remain unprivileged, use GitHub-hosted runners, avoid shared cache and artifact
 handoffs, disable persisted checkout credentials, and pin third-party Actions to
-immutable commits. Do not add a publication or self-hosted runner path without first
-satisfying the private evidence gate in
+immutable commits. Only the trusted `main` publisher may receive `packages: write` and
+the short-lived `GITHUB_TOKEN`; it must remain GitHub-hosted, secret-free, and isolated
+from pull-request output and private infrastructure. See
 [`docs/DEPLOYMENT-TRUST-BOUNDARY.md`](docs/DEPLOYMENT-TRUST-BOUNDARY.md).
 
 ## Validation and dependencies

@@ -1,84 +1,118 @@
 # Deployment Trust Boundary
 
-**Status:** Publication is disabled.
+**Status:** Production container publication is enabled for trusted `main` pushes.
 
-The repository does not contain enough evidence to establish that a privileged
-runner, network path, credential broker, or publication target is safe for a public
-repository. Repository workflows therefore cannot schedule self-hosted work, access
-protected services, mint deployment credentials, publish artifacts, or promote
-releases. The retained publication workflow is an inert manual placeholder that
-cannot run its job.
+Tyrion publishes two Linux production images:
 
-Private infrastructure fail-closed hardening has landed outside this repository.
-That work removes the legacy publication path but does not establish the independent
-disposable-runner, workload-identity, approval, signing, or monitoring evidence
-required to enable publication.
+- `ghcr.io/rsocko/tyrion-bridge`
+- `ghcr.io/rsocko/tyrion-ui`
 
-Pull requests and forks run only unprivileged validation on GitHub-hosted runners.
-They receive read-only repository permissions, do not persist checkout credentials,
-do not write shared caches, and cannot transfer artifacts into a later privileged
-workflow. Third-party Actions are pinned to reviewed immutable commits. A repository
-policy test rejects trigger, runner, permission, credential, cache, and Action-pin
-regressions before merge.
+The publisher runs entirely on a disposable GitHub-hosted Ubuntu runner. It has no
+route to or dependency on the homelab, no self-hosted runner, no static registry
+credential, no repository secret, and no cache or artifact handoff. Runtime deployment
+and Monarch credentials never enter the build or publication boundary.
+
+## Trusted publication path
+
+`.github/workflows/build-and-push.yml` accepts only a `push` to the repository's
+default `main` branch. It does not accept `pull_request`, `pull_request_target`,
+`workflow_run`, `repository_dispatch`, `workflow_dispatch`, `workflow_call`, a supplied
+ref, or a reusable-workflow input. The job independently verifies the event,
+repository, full ref, 40-character commit ID, and checked-out revision before it
+authenticates.
+
+The workflow grants only:
+
+- `contents: read`, to check out the trusted commit; and
+- `packages: write`, to publish packages associated with this repository.
+
+Authentication uses the run-scoped `GITHUB_TOKEN` and `docker login
+--password-stdin`. No PAT or registry password is stored. Checkout does not persist
+credentials. The only third-party workflow step is GitHub's checkout Action pinned to
+an immutable reviewed commit. Builds resolve public pinned base images and
+hash-/lock-pinned public dependencies directly; they do not consume Actions caches,
+artifacts from another run, or a private registry.
+
+Pull-request CI remains separate. It runs on GitHub-hosted runners with `contents:
+read`, builds both images without pushing, and has no package write permission.
+Repository policy tests reject any second use of `packages: write` or `github.token`,
+self-hosted runner selection, untrusted or cross-workflow triggers, repository secrets,
+mutable Actions, credential persistence, explicit caches, and artifact transfers.
+
+## Image identity and promotion
+
+Each trusted run first verifies that neither commit tag exists, then builds the bridge
+and UI exactly once from the checked-out commit and pushes write-once commit tags:
+
+```text
+ghcr.io/rsocko/tyrion-bridge:sha-<40-character-git-sha>
+ghcr.io/rsocko/tyrion-ui:sha-<40-character-git-sha>
+```
+
+The publisher never replaces an existing commit tag. A retry verifies the tag's OCI
+revision label, reuses its digest, and builds only a missing counterpart before
+retrying promotion. GHCR itself permits package administrators to move tags, so the
+digest remains the authoritative immutable identity.
+
+GHCR assigns each pushed manifest an immutable `sha256:` digest. Only after both
+commit-tagged images have been built and pushed does the workflow use `docker buildx
+imagetools create --prefer-index=false` to point `main` and `latest` at those exact
+digests without wrapping them in a new index. It then resolves every promoted tag and
+fails if its digest differs. Promotion does not rebuild either image. Immediately
+before promotion, the job also verifies that its commit is still the remote `main`
+head; an older queued run can publish its write-once references but cannot move the
+discovery tags backward. The workflow summary records both digest-pinned references;
+production compose requires those digests and never defaults to a mutable tag.
+
+Both Dockerfiles retain the repository license and dependency notices in `/licenses`
+and set OCI source, revision, license, title, and description labels. The revision is
+the same full commit ID used in the write-once commit tag.
+
+## Public package visibility
+
+GHCR creates a new container package as **private**, even when it is linked to a public
+repository. Repository permission inheritance does not change package visibility.
+Publishing with `GITHUB_TOKEN` and the
+`org.opencontainers.image.source=https://github.com/rsocko/tyrion` label links each
+package to this repository and gives its workflow package access.
+
+GitHub's documented package REST API has no update operation for package visibility.
+The run-scoped `GITHUB_TOKEN` can publish and, with package admin access, use GitHub's
+preview delete/restore support, but it has no supported operation that changes
+visibility. Tyrion therefore cannot perform this operation with available workflow
+permissions and deliberately does not store a PAT. After the first successful
+publication, the `rsocko` owner must open each package's **Package settings**, choose
+**Change visibility**, and set it to **Public**:
+
+- <https://github.com/users/rsocko/packages/container/tyrion-bridge/settings>
+- <https://github.com/users/rsocko/packages/container/tyrion-ui/settings>
+
+That one-time setting persists for later versions. Confirm anonymous access by signing
+out of GHCR and pulling each workflow-reported `image@sha256:...` reference. If a
+same-named package was created previously without being linked to this repository,
+connect it to `rsocko/tyrion` and grant the repository Actions access before rerunning;
+do not add a PAT or registry secret to the workflow.
+
+GitHub documents the default-private behavior, source-label association, anonymous
+public pulls, and workflow `GITHUB_TOKEN` authentication in
+[Working with the Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+Its [package REST API](https://docs.github.com/en/rest/packages/packages) exposes no
+visibility update operation.
 
 ## Threat model
 
-| Threat | Fail-closed control |
+| Threat | Control |
 | --- | --- |
-| Fork or pull-request code attempts to reach protected services | Validation uses only GitHub-hosted runners with a read-only token and no deployment identity. No privileged runner labels exist in a workflow. |
-| A `workflow_run`, `pull_request_target`, dispatch payload, or reusable workflow launders untrusted inputs into a trusted job | Privileged and cross-workflow triggers, inherited secrets, event-derived refs, and reusable-workflow entry points are prohibited by the workflow policy test. Publication has no runnable job. |
-| A pull request poisons a cache or artifact consumed after merge | Workflow caches and artifact transfers are prohibited. Existing repository caches were deleted. Trusted publication cannot consume either surface. |
-| A mutable third-party Action changes after review | Every Action reference is an immutable commit and provider-side policy rejects non-immutable references outside a three-Action allowlist. |
-| A maintainer publishes an unreviewed branch or stale commit | There is no publication capability. The default branch independently requires a pull request, current checks, linear history, and resolved conversations. |
-| A maintainer account or repository owner is compromised | Repository controls reduce single-change paths but cannot prove account integrity or prevent an owner from changing settings. Account protection, independent environment reviewers, audit monitoring, and credential-broker policy are required infrastructure evidence before publication. |
-| A build attempts to substitute an unreviewed dependency or output | Pull-request builds publish nothing. Future publication must use reviewed immutable dependencies, bind output to the protected commit digest, and promote by digest without rebuilding. |
+| Fork or pull-request code attempts to publish | PR workflows have read-only contents permission; only a `push` to `main` starts the publisher. |
+| An event payload or manual input selects attacker-controlled code | The publisher has no manual, cross-workflow, reusable, or dispatch trigger and checks the literal repository and default-branch ref. |
+| A PR poisons output consumed after merge | Publication performs a clean checkout and rebuild. Workflows prohibit shared caches and artifact upload/download. |
+| A mutable Action changes after review | Every external Action reference is a full immutable commit, and repository policy enforces that form. |
+| Registry credentials persist or cross trust boundaries | The run-scoped `GITHUB_TOKEN` has only contents read and package write, is passed through standard input, and is logged out at job end. |
+| A moving tag changes without a corresponding immutable digest | The publisher first pushes write-once `sha-<commit>`, resolves its registry digest, validates the digest form, and promotes and re-verifies that digest without rebuilding. |
+| Deployment silently advances to a mutable image | Canonical production compose requires explicit bridge and UI `sha256:` digests. |
+| Build or publication reaches private infrastructure | The job uses a GitHub-hosted runner and public package/dependency endpoints only; it has no homelab address, runner, credential, or network dependency. |
 
-## Required evidence before publication can be enabled
-
-Enabling publication requires a separate private infrastructure review and a new
-security-reviewed pull request. The operator must provide redacted evidence that:
-
-1. Publication accepts only a protected default-branch commit that passed required
-   checks after merge. It must not trust a pull-request artifact, cache, event payload,
-   branch name, mutable tag, user-controlled path, or reusable-workflow input.
-2. The publication job uses a protected GitHub environment with required reviewers,
-   no administrator bypass, and deployment branch restrictions.
-3. Credentials are audience-restricted, short-lived, and issued only after environment
-   approval. No static publication credential is stored on a runner or in repository
-   configuration.
-4. Runners are dedicated to this repository, single-job and ephemeral, start from a
-   known-clean image, discard all work and caches after use, and cannot be selected by
-   untrusted jobs.
-5. Network policy permits only the minimum control-plane and publication endpoints.
-   Pull-request jobs cannot route to protected services, runner management interfaces,
-   or publication targets.
-6. Action and container dependencies are immutable and reviewed. Build output is
-   bound to the verified commit digest, signed with workload identity, and promoted
-   by digest without rebuilding.
-7. Repository owners have verified fork approval policy, branch protection, immutable
-   Action enforcement, secret scanning, push protection, dependency alerts, and
-   private vulnerability reporting after any visibility change.
-
-The review must not place hostnames, addresses, runner labels, filesystem paths,
-topology, credentials, or raw settings in this repository or a public collaboration
-surface. Infrastructure implementation belongs in the system that owns the runners
-and publication service, not in Tyrion.
-
-## Current repository controls
-
-The publication workflow is disabled in GitHub and inert in the repository. Actions
-use a read-only default token, an explicit three-Action allowlist, and provider-side
-immutable commit enforcement. The protected default branch requires pull requests, the baseline and full validation
-jobs, resolved conversations, linear history, and current-branch checks.
-Because this repository has one maintainer, it does not require an impossible
-self-review or commit-signing setup. Administrators cannot bypass the other
-protections, and force pushes and deletion are disabled. Existing Actions caches were
-removed; the workflows do not create replacements. Dependency alerts and security
-updates are enabled.
-
-After the controlled source-visibility change, secret scanning, push protection,
-private vulnerability reporting, and approval for all external-contributor workflows
-were enabled and API-verified. These source-repository controls do not enable
-publication. No protected deployment environment exists because there is currently no
-deployment job; creating one is part of the evidence-gated future publication change,
-not a substitute for disabling an unverified runner.
+Repository owners can still change workflows, branch rules, package visibility, or
+Actions settings. Account protection, ruleset monitoring, and review of changes to this
+workflow remain operator responsibilities. This publication path does not deploy the
+images, receive runtime secrets, inspect runtime state, or exercise live Monarch access.
