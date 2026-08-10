@@ -261,8 +261,10 @@ for the evidence matrix, limitations, and safe refresh procedure.
 | GET | `/transactions` | Fetch transactions with filters |
 | GET | `/transactions/{id}` | Single transaction detail |
 | PATCH | `/transactions/{id}/category` | Verified category write-back |
-| GET | `/categories` | Categories |
-| GET | `/accounts` | Accounts |
-| GET | `/recurring` | Recurring transactions |
+| GET | `/accounts` | Bounded account references and current balances |
+| GET | `/category-groups` | Bounded category-group references |
+| GET | `/categories` | Bounded categories with stable group identity |
+| GET | `/tags` | Bounded transaction-tag references |
+| GET | `/recurring` | Bounded recurring-obligation snapshot |
 | GET | `/cashflow` | Cash-flow summary |
-| GET | `/budgets` | Budget status |
+| GET | `/budgets` | Bounded current budget status with explicit period |

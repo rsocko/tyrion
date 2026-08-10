@@ -41,6 +41,7 @@ from contract import (
     AuthStatusResponse,
     BudgetsResponse,
     CashflowResponse,
+    CategoryGroupsResponse,
     CategoriesResponse,
     CategoryUpdateResponse,
     ContractInfoResponse,
@@ -51,14 +52,17 @@ from contract import (
     RecurringResponse,
     SyncResponse,
     TransactionResponse,
+    TransactionTagsResponse,
     TransactionSplitsResponse,
     TransactionsResponse,
     normalize_accounts,
     normalize_budgets,
     normalize_cashflow,
+    normalize_category_groups,
     normalize_categories,
     normalize_recurring,
     normalize_transaction,
+    normalize_transaction_tags,
     normalize_transaction_splits,
     normalize_transactions,
     provenance,
@@ -161,14 +165,28 @@ class DemoProvider:
     ]
 
     CATEGORIES = [
-        {"id": "cat-groceries", "name": "Groceries", "group": {"name": "Food & Drink"}},
-        {"id": "cat-restaurants", "name": "Restaurants", "group": {"name": "Food & Drink"}},
-        {"id": "cat-gas", "name": "Gas & Fuel", "group": {"name": "Transportation"}},
-        {"id": "cat-utilities", "name": "Utilities", "group": {"name": "Bills"}},
-        {"id": "cat-streaming", "name": "Streaming Services", "group": {"name": "Entertainment"}},
-        {"id": "cat-rent", "name": "Rent", "group": {"name": "Housing"}},
-        {"id": "cat-income", "name": "Paycheck", "group": {"name": "Income"}},
-        {"id": "cat-transfer", "name": "Transfer", "group": {"name": "Transfers"}},
+        {"id": "cat-groceries", "name": "Groceries", "group": {"id": "group-food", "name": "Food & Drink"}},
+        {"id": "cat-restaurants", "name": "Restaurants", "group": {"id": "group-food", "name": "Food & Drink"}},
+        {"id": "cat-gas", "name": "Gas & Fuel", "group": {"id": "group-transport", "name": "Transportation"}},
+        {"id": "cat-utilities", "name": "Utilities", "group": {"id": "group-bills", "name": "Bills"}},
+        {"id": "cat-streaming", "name": "Streaming Services", "group": {"id": "group-entertainment", "name": "Entertainment"}},
+        {"id": "cat-rent", "name": "Rent", "group": {"id": "group-housing", "name": "Housing"}},
+        {"id": "cat-income", "name": "Paycheck", "group": {"id": "group-income", "name": "Income"}},
+        {"id": "cat-transfer", "name": "Transfer", "group": {"id": "group-transfers", "name": "Transfers"}},
+    ]
+    CATEGORY_GROUPS = [
+        {"id": "group-food", "name": "Food & Drink"},
+        {"id": "group-transport", "name": "Transportation"},
+        {"id": "group-bills", "name": "Bills"},
+        {"id": "group-entertainment", "name": "Entertainment"},
+        {"id": "group-housing", "name": "Housing"},
+        {"id": "group-income", "name": "Income"},
+        {"id": "group-transfers", "name": "Transfers"},
+    ]
+    TRANSACTION_TAGS = [
+        {"id": "tag-household", "name": "Household"},
+        {"id": "tag-reimbursable", "name": "Reimbursable"},
+        {"id": "tag-subscription", "name": "Subscription"},
     ]
 
     @classmethod
@@ -217,9 +235,9 @@ class DemoProvider:
                     "isRecurring": cat_id == "cat-streaming",
                     "notes": None,
                     "tags": [
-                        {"id": "tag-household", "name": "Household"},
+                        cls.TRANSACTION_TAGS[0],
                         *(
-                            [{"id": "tag-subscription", "name": "Subscription"}]
+                            [cls.TRANSACTION_TAGS[2]]
                             if cat_id == "cat-streaming"
                             else []
                         ),
@@ -312,6 +330,14 @@ class DemoProvider:
         return {"categories": cls.CATEGORIES}
 
     @classmethod
+    def get_category_groups(cls) -> dict:
+        return {"categoryGroups": cls.CATEGORY_GROUPS}
+
+    @classmethod
+    def get_transaction_tags(cls) -> dict:
+        return {"householdTransactionTags": cls.TRANSACTION_TAGS}
+
+    @classmethod
     def get_recurring(cls) -> dict:
         return {"recurring": [
             {"id": "rec-1", "merchant": {"name": "Netflix"}, "amount": -15.99,
@@ -346,10 +372,10 @@ class DemoProvider:
     @classmethod
     def get_budgets(cls) -> dict:
         return {"budgets": [
-            {"category": "Groceries", "budgeted": 600.00, "spent": 478.50, "remaining": 121.50},
-            {"category": "Restaurants", "budgeted": 200.00, "spent": 187.40, "remaining": 12.60},
-            {"category": "Gas & Fuel", "budgeted": 150.00, "spent": 97.00, "remaining": 53.00},
-            {"category": "Entertainment", "budgeted": 100.00, "spent": 126.98, "remaining": -26.98},
+            {"category": {"id": "cat-groceries", "name": "Groceries"}, "budgeted": 600.00, "spent": 478.50},
+            {"category": {"id": "cat-restaurants", "name": "Restaurants"}, "budgeted": 200.00, "spent": 187.40},
+            {"category": {"id": "cat-gas", "name": "Gas & Fuel"}, "budgeted": 150.00, "spent": 97.00},
+            {"category": {"id": "cat-streaming", "name": "Entertainment"}, "budgeted": 100.00, "spent": 126.98},
         ]}
 
 
@@ -1235,9 +1261,13 @@ async def update_transaction_category(
 async def get_categories():
     """List all transaction categories."""
     if DEMO_MODE:
+        try:
+            categories = normalize_categories(DemoProvider.get_categories())
+        except Exception as e:
+            raise upstream_error("category", e)
         return CategoriesResponse(
             provenance=provenance("demo"),
-            categories=normalize_categories(DemoProvider.get_categories()),
+            categories=categories,
         )
 
     client = await get_client()
@@ -1251,13 +1281,65 @@ async def get_categories():
         raise upstream_error("category", e)
 
 
+@app.get("/category-groups", response_model=CategoryGroupsResponse)
+async def get_category_groups():
+    """List the bounded transaction category-group reference set."""
+    if DEMO_MODE:
+        try:
+            groups = normalize_category_groups(DemoProvider.get_category_groups())
+        except Exception as e:
+            raise upstream_error("category group", e)
+        return CategoryGroupsResponse(
+            provenance=provenance("demo"),
+            category_groups=groups,
+        )
+
+    client = await get_client()
+    try:
+        groups = await client.get_transaction_category_groups()
+        return CategoryGroupsResponse(
+            provenance=provenance("live"),
+            category_groups=normalize_category_groups(groups),
+        )
+    except Exception as e:
+        raise upstream_error("category group", e)
+
+
+@app.get("/tags", response_model=TransactionTagsResponse)
+async def get_transaction_tags():
+    """List the bounded transaction-tag reference set."""
+    if DEMO_MODE:
+        try:
+            tags = normalize_transaction_tags(DemoProvider.get_transaction_tags())
+        except Exception as e:
+            raise upstream_error("transaction tag", e)
+        return TransactionTagsResponse(
+            provenance=provenance("demo"),
+            tags=tags,
+        )
+
+    client = await get_client()
+    try:
+        tags = await client.get_transaction_tags()
+        return TransactionTagsResponse(
+            provenance=provenance("live"),
+            tags=normalize_transaction_tags(tags),
+        )
+    except Exception as e:
+        raise upstream_error("transaction tag", e)
+
+
 @app.get("/accounts", response_model=AccountsResponse)
 async def get_accounts():
     """List all connected accounts."""
     if DEMO_MODE:
+        try:
+            accounts = normalize_accounts(DemoProvider.get_accounts())
+        except Exception as e:
+            raise upstream_error("account", e)
         return AccountsResponse(
             provenance=provenance("demo"),
-            accounts=normalize_accounts(DemoProvider.get_accounts()),
+            accounts=accounts,
         )
 
     client = await get_client()
@@ -1275,9 +1357,13 @@ async def get_accounts():
 async def get_recurring():
     """List recurring/subscription transactions."""
     if DEMO_MODE:
+        try:
+            recurring = normalize_recurring(DemoProvider.get_recurring())
+        except Exception as e:
+            raise upstream_error("recurring transaction", e)
         return RecurringResponse(
             provenance=provenance("demo"),
-            recurring=normalize_recurring(DemoProvider.get_recurring()),
+            recurring=recurring,
         )
 
     client = await get_client()
@@ -1328,22 +1414,38 @@ async def get_cashflow(
 @app.get("/budgets", response_model=BudgetsResponse)
 async def get_budgets():
     """Get budget status per category."""
+    today = datetime.now().date()
+    period_start = today.replace(day=1)
+    next_month = (
+        period_start.replace(year=period_start.year + 1, month=1)
+        if period_start.month == 12
+        else period_start.replace(month=period_start.month + 1)
+    )
+    period_end = next_month - timedelta(days=1)
+
     if DEMO_MODE:
+        try:
+            budgets = normalize_budgets(DemoProvider.get_budgets(), period_start)
+        except Exception as e:
+            raise upstream_error("budget", e)
         return BudgetsResponse(
             provenance=provenance("demo"),
-            budgets=normalize_budgets(DemoProvider.get_budgets()),
+            period_start=period_start,
+            period_end=period_end,
+            budgets=budgets,
         )
 
     client = await get_client()
     try:
-        today = datetime.now().date()
         budgets = await client.get_budgets(
-            start_date=today.replace(day=1).isoformat(),
-            end_date=today.isoformat(),
+            start_date=period_start.isoformat(),
+            end_date=period_end.isoformat(),
         )
         return BudgetsResponse(
             provenance=provenance("live"),
-            budgets=normalize_budgets(budgets),
+            period_start=period_start,
+            period_end=period_end,
+            budgets=normalize_budgets(budgets, period_start),
         )
     except Exception as e:
         raise upstream_error("budget", e)

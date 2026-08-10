@@ -64,14 +64,17 @@ Tyrion currently normalizes and tests this smaller contract:
 | `GET` | `/transactions/{id}/splits` | Reads at most 100 normalized splits for one explicit transaction investigation |
 | `PATCH` | `/transactions/{id}/category` | Writes and verifies a category change |
 | `GET` | `/categories` | Reads normalized categories |
+| `GET` | `/category-groups` | Reads the bounded normalized category-group reference set |
+| `GET` | `/tags` | Reads the bounded normalized transaction-tag reference set |
 | `GET` | `/accounts` | Reads normalized account metadata and current balances |
 | `GET` | `/recurring` | Reads normalized recurring obligations |
 | `GET` | `/cashflow` | Reads a normalized cash-flow summary for a date range |
-| `GET` | `/budgets` | Reads normalized current-month category budgets |
+| `GET` | `/budgets` | Reads normalized current-month category budgets with explicit period boundaries |
 
 The bridge transaction DTO includes date, amount, merchant, category, account,
-pending and recurring state, notes, and tags. It intentionally does not expose raw
-Monarch payloads.
+pending and recurring state, notes, compatible tag display names, and additive stable
+tag references. Categories retain their compatible group display name and add a
+stable group ID. It intentionally does not expose raw Monarch payloads.
 
 Mission Control's connector currently synchronizes normalized transaction pages into
 its finance projection. It does not yet maintain complete local projections for

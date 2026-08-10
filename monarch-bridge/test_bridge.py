@@ -4,6 +4,8 @@ Tests verify endpoint shapes and response codes without needing real credentials
 """
 
 import os
+from calendar import monthrange
+from datetime import date
 import inspect
 from unittest.mock import AsyncMock
 
@@ -15,11 +17,20 @@ from httpx import ASGITransport, AsyncClient
 
 from contract import (
     CONTRACT_VERSION,
+    MAX_ACCOUNTS,
+    MAX_BUDGET_ROWS,
+    MAX_CATEGORIES,
+    MAX_CATEGORY_GROUPS,
+    MAX_RECURRING_OBLIGATIONS,
+    MAX_TRANSACTION_TAGS,
     normalize_accounts,
     normalize_budgets,
     normalize_cashflow,
+    normalize_category_groups,
+    normalize_categories,
     normalize_recurring,
     normalize_transaction,
+    normalize_transaction_tags,
     normalize_transaction_splits,
     normalize_transactions,
 )
@@ -116,10 +127,15 @@ async def test_transactions(client):
         assert "account" in tx
         assert set(tx) == {
             "id", "date", "amount", "merchant", "category", "account",
-            "isPending", "isRecurring", "notes", "tags",
+            "isPending", "isRecurring", "notes", "tags", "tagReferences",
         }
         assert set(tx["merchant"]) == {"name", "logoUrl"}
         assert set(tx["account"]) == {"id", "displayName", "mask"}
+        assert tx["tags"] == ["Household"]
+        assert tx["tagReferences"] == [{
+            "id": "tag-household",
+            "name": "Household",
+        }]
     assert_contract(resp)
 
 
@@ -439,8 +455,35 @@ async def test_categories(client):
     assert "categories" in data
     assert len(data["categories"]) > 0
     cat = data["categories"][0]
-    assert "id" in cat
-    assert "name" in cat
+    assert set(cat) == {"id", "name", "groupId", "group", "icon", "isActive"}
+    assert cat["groupId"]
+    assert cat["isActive"] is True
+
+
+@pytest.mark.anyio
+async def test_category_groups(client):
+    resp = await client.get("/category-groups")
+
+    assert resp.status_code == 200
+    assert resp.json()["categoryGroups"][0] == {
+        "id": "group-food",
+        "name": "Food & Drink",
+        "isActive": True,
+    }
+    assert_contract(resp)
+
+
+@pytest.mark.anyio
+async def test_transaction_tags(client):
+    resp = await client.get("/tags")
+
+    assert resp.status_code == 200
+    assert resp.json()["tags"][0] == {
+        "id": "tag-household",
+        "name": "Household",
+        "isActive": True,
+    }
+    assert_contract(resp)
 
 
 @pytest.mark.anyio
@@ -473,6 +516,11 @@ async def test_budgets(client):
     resp = await client.get("/budgets")
     assert resp.status_code == 200
     data = resp.json()
+    period_start = date.fromisoformat(data["periodStart"])
+    period_end = date.fromisoformat(data["periodEnd"])
+    assert period_start.day == 1
+    assert period_end.day == monthrange(period_end.year, period_end.month)[1]
+    assert (period_start.year, period_start.month) == (period_end.year, period_end.month)
     assert "budgets" in data
     assert len(data["budgets"]) > 0
     budget = data["budgets"][0]
@@ -506,9 +554,25 @@ async def test_openapi_json(client):
         "/auth/status", "/auth/logout", "/sync", "/transactions",
         "/transactions/{transaction_id}", "/transactions/{transaction_id}/splits",
         "/transactions/{transaction_id}/category",
-        "/categories", "/accounts", "/recurring", "/cashflow", "/budgets",
+        "/categories", "/category-groups", "/tags", "/accounts", "/recurring",
+        "/cashflow", "/budgets",
     ):
         assert path in schema["paths"]
+    response_bounds = {
+        "AccountsResponse": ("accounts", MAX_ACCOUNTS),
+        "CategoryGroupsResponse": ("categoryGroups", MAX_CATEGORY_GROUPS),
+        "CategoriesResponse": ("categories", MAX_CATEGORIES),
+        "TransactionTagsResponse": ("tags", MAX_TRANSACTION_TAGS),
+        ("RecurringResponse"): ("recurring", MAX_RECURRING_OBLIGATIONS),
+        "BudgetsResponse": ("budgets", MAX_BUDGET_ROWS),
+    }
+    for model_name, (field_name, maximum) in response_bounds.items():
+        assert (
+            schema["components"]["schemas"][model_name]["properties"][field_name][
+                "maxItems"
+            ]
+            == maximum
+        )
 
 
 def test_live_and_demo_normalizers_produce_identical_dtos():
@@ -552,6 +616,17 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
     }]}
     assert normalize_accounts(demo_accounts) == normalize_accounts(live_accounts)
 
+    assert normalize_category_groups({
+        "categoryGroups": [{"id": "group-1", "name": "Food"}],
+    }) == normalize_category_groups({
+        "transactionCategoryGroups": [{"id": "group-1", "name": "Food"}],
+    })
+    assert normalize_transaction_tags({
+        "householdTransactionTags": [{"id": "tag-1", "name": "Household"}],
+    }) == normalize_transaction_tags({
+        "transactionTags": [{"id": "tag-1", "name": "Household"}],
+    })
+
 
 def test_transaction_normalizer_matches_nullable_consumer_fields():
     transaction = normalize_transaction({
@@ -568,6 +643,47 @@ def test_transaction_normalizer_matches_nullable_consumer_fields():
     assert transaction.category is None
     assert transaction.account.mask == "1234"
     assert transaction.notes is None
+
+
+def test_transaction_normalizer_preserves_names_and_adds_stable_tag_references():
+    transaction = normalize_transaction({
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -12.5,
+        "merchant": {"name": "Store"},
+        "account": {"id": "acc-1", "displayName": "Checking"},
+        "tags": [
+            {"id": "tag-1", "name": "Household"},
+            {"id": "tag-2", "name": "Reimbursable"},
+        ],
+    })
+
+    assert transaction.tags == ["Household", "Reimbursable"]
+    assert [tag.model_dump() for tag in transaction.tag_references] == [
+        {"id": "tag-1", "name": "Household"},
+        {"id": "tag-2", "name": "Reimbursable"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [
+        ["legacy-name"],
+        [None],
+        [{"name": "Missing ID"}],
+        [{"id": "tag-1"}],
+    ],
+)
+def test_transaction_normalizer_rejects_tags_without_stable_identity(tags):
+    with pytest.raises(ValueError):
+        normalize_transaction({
+            "id": "tx-1",
+            "date": "2026-08-01",
+            "amount": -12.5,
+            "merchant": {"name": "Store"},
+            "account": {"id": "acc-1", "displayName": "Checking"},
+            "tags": tags,
+        })
 
 
 def test_split_normalizers_produce_identical_dtos():
@@ -687,13 +803,95 @@ def test_normalizes_real_live_budget_shape():
             "categories": [{"id": "cat-1", "name": "Groceries"}],
         }],
     }
-    budgets = normalize_budgets(payload)
+    budgets = normalize_budgets(payload, date(2026, 8, 1))
     assert len(budgets) == 1
     assert budgets[0].category.name == "Groceries"
     assert budgets[0].budgeted == 700
     assert budgets[0].spent == 680
     assert budgets[0].remaining == 20
     assert budgets[0].percent_used == 97.14
+
+
+@pytest.mark.parametrize(
+    ("normalizer", "payload"),
+    [
+        (normalize_accounts, {"accounts": [{}] * (MAX_ACCOUNTS + 1)}),
+        (normalize_category_groups, {"categoryGroups": [{}] * (MAX_CATEGORY_GROUPS + 1)}),
+        (normalize_categories, {"categories": [{}] * (MAX_CATEGORIES + 1)}),
+        (
+            normalize_transaction_tags,
+            {"householdTransactionTags": [{}] * (MAX_TRANSACTION_TAGS + 1)},
+        ),
+        (
+            normalize_recurring,
+            {"recurringTransactionItems": [{}] * (MAX_RECURRING_OBLIGATIONS + 1)},
+        ),
+        (normalize_budgets, {"budgets": [{}] * (MAX_BUDGET_ROWS + 1)}),
+    ],
+)
+def test_dataset_normalizers_reject_oversized_collections(normalizer, payload):
+    with pytest.raises(ValueError, match="exceeded"):
+        normalizer(payload)
+
+
+@pytest.mark.parametrize(
+    ("normalizer", "payload"),
+    [
+        (normalize_accounts, {"accounts": "not-an-array"}),
+        (normalize_category_groups, {"categoryGroups": [None]}),
+        (normalize_categories, {"categories": [{"name": "Missing ID"}]}),
+        (
+            normalize_transaction_tags,
+            {"householdTransactionTags": [{"id": "tag-1"}]},
+        ),
+        (normalize_recurring, {"recurringTransactionItems": [{"id": None}]}),
+        (normalize_budgets, {"budgets": [{"category": {"name": "Missing ID"}}]}),
+    ],
+)
+def test_dataset_normalizers_reject_malformed_upstream_shapes(normalizer, payload):
+    with pytest.raises(ValueError):
+        normalizer(payload)
+
+
+@pytest.mark.parametrize(
+    ("normalizer", "payload"),
+    [
+        (
+            normalize_accounts,
+            {"accounts": [{
+                "id": "acc-1",
+                "type": "checking",
+                "currentBalance": 0,
+            }]},
+        ),
+        (
+            normalize_budgets,
+            {"budgets": [{
+                "category": {"id": "cat-1"},
+                "budgeted": 0,
+                "spent": 0,
+            }]},
+        ),
+    ],
+)
+def test_dataset_normalizers_do_not_invent_required_names(normalizer, payload):
+    with pytest.raises(ValueError, match="text is missing"):
+        normalizer(payload)
+
+
+@pytest.mark.parametrize(
+    ("normalizer", "payload"),
+    [
+        (normalize_accounts, {"accounts": []}),
+        (normalize_category_groups, {"categoryGroups": []}),
+        (normalize_categories, {"categories": []}),
+        (normalize_transaction_tags, {"householdTransactionTags": []}),
+        (normalize_recurring, {"recurringTransactionItems": []}),
+        (normalize_budgets, {"budgets": []}),
+    ],
+)
+def test_dataset_normalizers_accept_authoritative_empty_collections(normalizer, payload):
+    assert normalizer(payload) == []
 
 
 def test_normalizes_real_live_cashflow_shape():
@@ -1145,3 +1343,193 @@ async def test_category_update_rejects_empty_id(client):
 
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "invalid_request"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("path", "method_name", "payload", "response_key"),
+    [
+        (
+            "/category-groups",
+            "get_transaction_category_groups",
+            {"categoryGroups": [{"id": "group-1", "name": "Food"}]},
+            "categoryGroups",
+        ),
+        (
+            "/tags",
+            "get_transaction_tags",
+            {"householdTransactionTags": [{"id": "tag-1", "name": "Household"}]},
+            "tags",
+        ),
+    ],
+)
+async def test_live_reference_routes_use_pinned_provider_methods(
+    client,
+    monkeypatch,
+    path,
+    method_name,
+    payload,
+    response_key,
+):
+    provider = AsyncMock()
+    getattr(provider, method_name).return_value = payload
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    resp = await client.get(path)
+
+    assert resp.status_code == 200
+    assert resp.json()[response_key][0]["id"]
+    getattr(provider, method_name).assert_awaited_once_with()
+    assert resp.json()["provenance"]["provider"] == "live"
+    assert_contract(resp)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("path", "method_name", "resource"),
+    [
+        ("/accounts", "get_accounts", "account"),
+        ("/categories", "get_transaction_categories", "category"),
+        (
+            "/category-groups",
+            "get_transaction_category_groups",
+            "category group",
+        ),
+        ("/tags", "get_transaction_tags", "transaction tag"),
+        ("/recurring", "get_recurring_transactions", "recurring transaction"),
+        ("/budgets", "get_budgets", "budget"),
+    ],
+)
+async def test_live_datasets_map_malformed_upstream_to_sanitized_error(
+    client,
+    monkeypatch,
+    path,
+    method_name,
+    resource,
+):
+    provider = AsyncMock()
+    getattr(provider, method_name).return_value = {
+        "unexpected": "private-upstream-value",
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    resp = await client.get(path)
+
+    assert resp.status_code == 502
+    assert resp.json() == {
+        "contractVersion": CONTRACT_VERSION,
+        "error": {
+            "code": "upstream_error",
+            "message": f"Monarch {resource} request failed",
+        },
+    }
+    assert "private-upstream-value" not in resp.text
+    assert_contract(resp)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("path", "method_name", "resource"),
+    [
+        ("/category-groups", "get_category_groups", "category group"),
+        ("/tags", "get_transaction_tags", "transaction tag"),
+        ("/budgets", "get_budgets", "budget"),
+    ],
+)
+async def test_demo_datasets_map_malformed_data_to_same_sanitized_error(
+    client,
+    monkeypatch,
+    path,
+    method_name,
+    resource,
+):
+    monkeypatch.setattr(
+        main_module.DemoProvider,
+        method_name,
+        lambda: {"unexpected": "private-demo-value"},
+    )
+
+    resp = await client.get(path)
+
+    assert resp.status_code == 502
+    assert resp.json()["error"] == {
+        "code": "upstream_error",
+        "message": f"Monarch {resource} request failed",
+    }
+    assert "private-demo-value" not in resp.text
+    assert_contract(resp)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("path", "method_name", "payload"),
+    [
+        (
+            "/category-groups",
+            "get_category_groups",
+            {"categoryGroups": [
+                {"id": f"group-{index}", "name": f"Group {index}"}
+                for index in range(MAX_CATEGORY_GROUPS + 1)
+            ]},
+        ),
+        (
+            "/tags",
+            "get_transaction_tags",
+            {"householdTransactionTags": [
+                {"id": f"tag-{index}", "name": f"Tag {index}"}
+                for index in range(MAX_TRANSACTION_TAGS + 1)
+            ]},
+        ),
+    ],
+)
+async def test_demo_reference_routes_reject_oversized_collections(
+    client,
+    monkeypatch,
+    path,
+    method_name,
+    payload,
+):
+    monkeypatch.setattr(main_module.DemoProvider, method_name, lambda: payload)
+
+    resp = await client.get(path)
+
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "upstream_error"
+    assert_contract(resp)
+
+
+@pytest.mark.anyio
+async def test_live_budget_uses_explicit_full_month_period(client, monkeypatch):
+    provider = AsyncMock()
+    today = date.today()
+    period_start = today.replace(day=1)
+    period_end = today.replace(day=monthrange(today.year, today.month)[1])
+    provider.get_budgets.return_value = {
+        "budgetData": {
+            "monthlyAmountsByCategory": [{
+                "category": {"id": "cat-1"},
+                "monthlyAmounts": [{
+                    "month": period_start.isoformat(),
+                    "plannedCashFlowAmount": -700,
+                    "actualAmount": -680,
+                }],
+            }],
+        },
+        "categoryGroups": [{
+            "categories": [{"id": "cat-1", "name": "Groceries"}],
+        }],
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    resp = await client.get("/budgets")
+
+    assert resp.status_code == 200
+    assert resp.json()["periodStart"] == period_start.isoformat()
+    assert resp.json()["periodEnd"] == period_end.isoformat()
+    provider.get_budgets.assert_awaited_once_with(
+        start_date=period_start.isoformat(),
+        end_date=period_end.isoformat(),
+    )

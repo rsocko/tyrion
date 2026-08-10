@@ -7,6 +7,12 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field
 
 CONTRACT_VERSION = "1.0"
+MAX_ACCOUNTS = 1_000
+MAX_CATEGORY_GROUPS = 250
+MAX_CATEGORIES = 2_000
+MAX_TRANSACTION_TAGS = 1_000
+MAX_RECURRING_OBLIGATIONS = 5_000
+MAX_BUDGET_ROWS = 5_000
 
 
 def _camel(name: str) -> str:
@@ -73,6 +79,11 @@ class CategoryRef(ApiModel):
     name: str
 
 
+class TransactionTagRef(ApiModel):
+    id: str
+    name: str
+
+
 class AccountRef(ApiModel):
     id: str
     display_name: str
@@ -90,6 +101,7 @@ class Transaction(ApiModel):
     is_recurring: bool = False
     notes: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
+    tag_references: list[TransactionTagRef] = Field(default_factory=list)
 
 
 class PageInfo(ApiModel):
@@ -122,12 +134,34 @@ class TransactionSplitsResponse(DataResponse):
 class Category(ApiModel):
     id: str
     name: str
+    group_id: Optional[str] = None
     group: Optional[str] = None
     icon: Optional[str] = None
+    is_active: bool = True
 
 
 class CategoriesResponse(DataResponse):
-    categories: list[Category]
+    categories: list[Category] = Field(max_length=MAX_CATEGORIES)
+
+
+class CategoryGroup(ApiModel):
+    id: str
+    name: str
+    is_active: bool = True
+
+
+class CategoryGroupsResponse(DataResponse):
+    category_groups: list[CategoryGroup] = Field(max_length=MAX_CATEGORY_GROUPS)
+
+
+class TransactionTag(ApiModel):
+    id: str
+    name: str
+    is_active: bool = True
+
+
+class TransactionTagsResponse(DataResponse):
+    tags: list[TransactionTag] = Field(max_length=MAX_TRANSACTION_TAGS)
 
 
 class Account(ApiModel):
@@ -141,7 +175,7 @@ class Account(ApiModel):
 
 
 class AccountsResponse(DataResponse):
-    accounts: list[Account]
+    accounts: list[Account] = Field(max_length=MAX_ACCOUNTS)
 
 
 class RecurringObligation(ApiModel):
@@ -155,7 +189,9 @@ class RecurringObligation(ApiModel):
 
 
 class RecurringResponse(DataResponse):
-    recurring: list[RecurringObligation]
+    recurring: list[RecurringObligation] = Field(
+        max_length=MAX_RECURRING_OBLIGATIONS
+    )
 
 
 class Budget(ApiModel):
@@ -167,7 +203,9 @@ class Budget(ApiModel):
 
 
 class BudgetsResponse(DataResponse):
-    budgets: list[Budget]
+    period_start: date
+    period_end: date
+    budgets: list[Budget] = Field(max_length=MAX_BUDGET_ROWS)
 
 
 class CashflowCategory(ApiModel):
@@ -238,6 +276,13 @@ def _text(value: Any, default: str = "") -> str:
     return str(value) if value is not None else default
 
 
+def _required_text(value: Any) -> str:
+    text = _text(value).strip()
+    if not text:
+        raise ValueError("Required upstream text is missing")
+    return text
+
+
 def _money(value: Any) -> float:
     return round(float(value or 0), 2)
 
@@ -279,12 +324,55 @@ def _items(payload: Any, *paths: str) -> list[Mapping[str, Any]]:
     return [_mapping(item) for item in values] if isinstance(values, list) else []
 
 
+def _bounded_items(
+    payload: Any,
+    dataset: str,
+    maximum: int,
+    *paths: str,
+) -> list[Mapping[str, Any]]:
+    if isinstance(payload, list):
+        values = payload
+    elif isinstance(payload, Mapping):
+        missing = object()
+        values: Any = missing
+        for path in paths:
+            current: Any = payload
+            for part in path.split("."):
+                if not isinstance(current, Mapping) or part not in current:
+                    current = missing
+                    break
+                current = current[part]
+            if current is not missing:
+                values = current
+                break
+        if values is missing:
+            raise ValueError(f"Upstream {dataset} collection is missing")
+    else:
+        raise ValueError(f"Upstream {dataset} response must be an object or array")
+    if not isinstance(values, list):
+        raise ValueError(f"Upstream {dataset} collection must be an array")
+    if len(values) > maximum:
+        raise ValueError(f"Upstream {dataset} collection exceeded {maximum} items")
+    if any(not isinstance(item, Mapping) for item in values):
+        raise ValueError(f"Upstream {dataset} collection contains an invalid item")
+    return list(values)
+
+
 def normalize_category_ref(raw: Any) -> Optional[CategoryRef]:
     value = _mapping(raw)
     identifier = _pick(value, "id")
     if not identifier:
         return None
     return CategoryRef(id=_identifier(identifier), name=_text(_pick(value, "name"), "Uncategorized"))
+
+
+def normalize_transaction_tag_ref(raw: Any) -> TransactionTagRef:
+    if not isinstance(raw, Mapping):
+        raise ValueError("Upstream transaction tag must be an object")
+    return TransactionTagRef(
+        id=_identifier(_pick(raw, "id")),
+        name=_required_text(_pick(raw, "name")),
+    )
 
 
 def normalize_account_ref(raw: Any) -> AccountRef:
@@ -300,6 +388,9 @@ def normalize_transaction(raw: Any) -> Transaction:
     value = _mapping(raw)
     merchant = _mapping(_pick(value, "merchant", default={}))
     tags = _pick(value, "tags", default=[])
+    if not isinstance(tags, list):
+        raise ValueError("Upstream transaction tags must be an array")
+    tag_references = [normalize_transaction_tag_ref(tag) for tag in tags]
     return Transaction(
         id=_identifier(_pick(value, "id")),
         date=_date(_pick(value, "date", "postedDate", "createdAt")),
@@ -313,7 +404,8 @@ def normalize_transaction(raw: Any) -> Transaction:
         is_pending=bool(_pick(value, "isPending", "pending", default=False)),
         is_recurring=bool(_pick(value, "isRecurring", "recurring", default=False)),
         notes=_optional_text(_pick(value, "notes")),
-        tags=[_text(_pick(tag, "name", default=tag)) for tag in tags] if isinstance(tags, list) else [],
+        tags=[tag.name for tag in tag_references],
+        tag_references=tag_references,
     )
 
 
@@ -351,22 +443,75 @@ def normalize_transaction_splits(payload: Any) -> list[TransactionSplit]:
 
 
 def normalize_categories(payload: Any) -> list[Category]:
-    return [
-        Category(
-            id=str(_pick(item, "id")),
-            name=_text(_pick(item, "name")),
-            group=_text(_pick(item, "group.name", "group"), "") or None,
-            icon=_pick(item, "icon"),
+    normalized = []
+    for item in _bounded_items(
+        payload,
+        "categories",
+        MAX_CATEGORIES,
+        "categories",
+        "transactionCategories",
+        "results",
+    ):
+        group = _pick(item, "group")
+        group_id = _optional_text(_pick(item, "groupId"))
+        group_name = _text(group, "") or None
+        if isinstance(group, Mapping):
+            group_id = _identifier(_pick(group, "id"))
+        normalized.append(
+            Category(
+                id=_identifier(_pick(item, "id")),
+                name=_required_text(_pick(item, "name")),
+                group_id=group_id,
+                group=group_name,
+                icon=_optional_text(_pick(item, "icon")),
+                is_active=not bool(_pick(item, "isDisabled", default=False)),
+            )
         )
-        for item in _items(payload, "categories", "transactionCategories", "results")
+    return normalized
+
+
+def normalize_category_groups(payload: Any) -> list[CategoryGroup]:
+    return [
+        CategoryGroup(
+            id=_identifier(_pick(item, "id")),
+            name=_required_text(_pick(item, "name")),
+            is_active=not bool(_pick(item, "isDisabled", default=False)),
+        )
+        for item in _bounded_items(
+            payload,
+            "category groups",
+            MAX_CATEGORY_GROUPS,
+            "categoryGroups",
+            "transactionCategoryGroups",
+            "results",
+        )
+    ]
+
+
+def normalize_transaction_tags(payload: Any) -> list[TransactionTag]:
+    return [
+        TransactionTag(
+            id=_identifier(_pick(item, "id")),
+            name=_required_text(_pick(item, "name")),
+            is_active=not bool(_pick(item, "isDisabled", default=False)),
+        )
+        for item in _bounded_items(
+            payload,
+            "transaction tags",
+            MAX_TRANSACTION_TAGS,
+            "householdTransactionTags",
+            "transactionTags",
+            "tags",
+            "results",
+        )
     ]
 
 
 def normalize_accounts(payload: Any) -> list[Account]:
     return [
         Account(
-            id=str(_pick(item, "id")),
-            display_name=_text(_pick(item, "displayName", "name"), "Unknown account"),
+            id=_identifier(_pick(item, "id")),
+            display_name=_required_text(_pick(item, "displayName", "name")),
             type=_text(_pick(item, "type.name", "type"), "unknown"),
             mask=_pick(item, "mask", "last4"),
             institution=_text(_pick(item, "institution.name", "institution"), "") or None,
@@ -377,13 +522,21 @@ def normalize_accounts(payload: Any) -> list[Account]:
                 else not bool(_pick(item, "deactivatedAt"))
             ),
         )
-        for item in _items(payload, "accounts", "results")
+        for item in _bounded_items(
+            payload,
+            "accounts",
+            MAX_ACCOUNTS,
+            "accounts",
+            "results",
+        )
     ]
 
 
 def normalize_recurring(payload: Any) -> list[RecurringObligation]:
-    items = _items(
+    items = _bounded_items(
         payload,
+        "recurring obligations",
+        MAX_RECURRING_OBLIGATIONS,
         "recurring",
         "recurringTransactions",
         "recurringTransactionItems",
@@ -391,7 +544,7 @@ def normalize_recurring(payload: Any) -> list[RecurringObligation]:
     )
     return [
         RecurringObligation(
-            id=str(_pick(item, "id", "stream.id")),
+            id=_identifier(_pick(item, "id", "stream.id")),
             merchant=_text(
                 _pick(item, "merchant.name", "merchant", "stream.merchant.name"),
                 "Unknown merchant",
@@ -417,23 +570,69 @@ def normalize_recurring(payload: Any) -> list[RecurringObligation]:
     ]
 
 
-def normalize_budgets(payload: Any) -> list[Budget]:
-    items = _items(payload, "budgets", "results")
-    budget_rows = _items(payload, "budgetData.monthlyAmountsByCategory")
-    category_names = {
-        str(_pick(category, "id")): _text(_pick(category, "name"), "Uncategorized")
-        for group in _items(payload, "categoryGroups")
-        for category in _items(group, "categories")
-    }
+def normalize_budgets(payload: Any, period_start: Optional[date] = None) -> list[Budget]:
+    budget_rows = []
+    if isinstance(payload, Mapping) and "budgetData" in payload:
+        budget_rows = _bounded_items(
+            payload,
+            "budget rows",
+            MAX_BUDGET_ROWS,
+            "budgetData.monthlyAmountsByCategory",
+        )
+        items: list[Mapping[str, Any]] = []
+    else:
+        items = _bounded_items(
+            payload,
+            "budget rows",
+            MAX_BUDGET_ROWS,
+            "budgets",
+            "results",
+        )
+    category_names = {}
+    category_count = 0
+    category_groups = (
+        _bounded_items(
+            payload,
+            "budget category groups",
+            MAX_CATEGORY_GROUPS,
+            "categoryGroups",
+        )
+        if budget_rows
+        else []
+    )
+    for group in category_groups:
+        categories = _bounded_items(
+            group,
+            "budget categories",
+            MAX_CATEGORIES,
+            "categories",
+        )
+        category_count += len(categories)
+        if category_count > MAX_CATEGORIES:
+            raise ValueError(
+                f"Upstream budget categories exceeded {MAX_CATEGORIES} items"
+            )
+        for category in categories:
+            category_names[_identifier(_pick(category, "id"))] = _required_text(
+                _pick(category, "name")
+            )
     if budget_rows:
-        items = []
         for row in budget_rows:
-            category_id = str(_pick(row, "category.id"))
-            for monthly in _items(row, "monthlyAmounts"):
+            category_id = _identifier(_pick(row, "category.id"))
+            monthly_amounts = _bounded_items(
+                row,
+                "budget monthly amounts",
+                1,
+                "monthlyAmounts",
+            )
+            for monthly in monthly_amounts:
+                month = _date(_pick(monthly, "month"))
+                if period_start is not None and month != period_start:
+                    raise ValueError("Upstream budget month did not match the requested period")
                 items.append({
                     "category": {
                         "id": category_id,
-                        "name": category_names.get(category_id, "Uncategorized"),
+                        "name": category_names.get(category_id),
                     },
                     "budgeted": _pick(
                         monthly,
@@ -443,17 +642,18 @@ def normalize_budgets(payload: Any) -> list[Budget]:
                     ),
                     "spent": _pick(monthly, "actualAmount", default=0),
                 })
+        if len(items) > MAX_BUDGET_ROWS:
+            raise ValueError(f"Upstream budget rows exceeded {MAX_BUDGET_ROWS} items")
     normalized = []
-    for index, item in enumerate(items):
+    for item in items:
         category_raw = _pick(item, "category", default={})
         if not isinstance(category_raw, Mapping):
-            category_raw = {
-                "id": _pick(item, "categoryId", default=f"category-{index}"),
-                "name": category_raw,
-            }
-        category = normalize_category_ref(category_raw) or CategoryRef(
-            id=str(_pick(item, "categoryId", default=f"category-{index}")),
-            name=_text(_pick(item, "categoryName"), "Uncategorized"),
+            category_raw = {"id": _pick(item, "categoryId"), "name": category_raw}
+        category = CategoryRef(
+            id=_identifier(_pick(category_raw, "id", default=_pick(item, "categoryId"))),
+            name=_required_text(
+                _pick(category_raw, "name", default=_pick(item, "categoryName"))
+            ),
         )
         budgeted = abs(_money(_pick(item, "budgeted", "budgetAmount", "planned")))
         spent = abs(_money(_pick(item, "spent", "actual")))
