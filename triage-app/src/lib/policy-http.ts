@@ -10,7 +10,6 @@ import {
   PolicyVersionConflictError,
   ReattributionError,
 } from "@rsocko/tyrion-kid-engine";
-import { PolicyAuthError } from "@/lib/policy-auth";
 import {
   PolicyRuntimeConfigurationError,
   InstrumentReferenceError,
@@ -27,9 +26,6 @@ export function policyJson(value: unknown, status = 200) {
 }
 
 export function policyError(error: unknown) {
-  if (error instanceof PolicyAuthError) {
-    return jsonError(error.status, error.code, error.message);
-  }
   if (error instanceof PolicyAuthorizationError) {
     return jsonError(403, error.code, error.message);
   }

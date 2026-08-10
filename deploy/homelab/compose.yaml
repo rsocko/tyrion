@@ -64,14 +64,6 @@ services:
       BRIDGE_URL: http://tyrion-monarch-bridge:8100
       BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a secret}
       TYRION_POLICY_STORE_PATH: /var/lib/tyrion-policy/policies.json
-      TYRION_POLICY_AUTH_SECRET: ${TYRION_POLICY_AUTH_SECRET:?Provision TYRION_POLICY_AUTH_SECRET as a secret}
-      TYRION_INSTRUMENT_FINGERPRINT_KEY: ${TYRION_INSTRUMENT_FINGERPRINT_KEY:?Provision TYRION_INSTRUMENT_FINGERPRINT_KEY as a secret}
-      TYRION_ATTRIBUTION_CLIENT_ID: ${TYRION_ATTRIBUTION_CLIENT_ID:?Provision the Mission Control service client ID}
-      TYRION_ATTRIBUTION_ACTOR_ID: ${TYRION_ATTRIBUTION_ACTOR_ID:?Provision the server-derived service actor ID}
-      TYRION_ATTRIBUTION_HOUSEHOLD_ID: ${TYRION_ATTRIBUTION_HOUSEHOLD_ID:?Provision the authorized household ID}
-      TYRION_ATTRIBUTION_AUTH_SECRET: ${TYRION_ATTRIBUTION_AUTH_SECRET:?Provision TYRION_ATTRIBUTION_AUTH_SECRET as a secret}
-      TYRION_ATTRIBUTION_INTERNAL_HOST: tyrion-operations-ui:3000
-      TYRION_ATTRIBUTION_REPLAY_STORE_PATH: /var/lib/tyrion-policy/attribution-replay
       TYRION_REATTRIBUTION_URL: ${TYRION_REATTRIBUTION_URL:-}
       TYRION_REATTRIBUTION_TOKEN: ${TYRION_REATTRIBUTION_TOKEN:-}
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "false"
@@ -87,16 +79,6 @@ services:
       - "traefik.http.routers.tyrion-secure.tls=true"
       - "traefik.http.routers.tyrion-secure.tls.certresolver=letsencrypt"
       - "traefik.http.routers.tyrion-secure.middlewares=trusted-private-networks@file,compression@file,security-headers@file"
-      - "traefik.http.routers.tyrion-policy.rule=Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`) && PathPrefix(`/api/policy`)"
-      - "traefik.http.routers.tyrion-policy.entrypoints=websecure"
-      - "traefik.http.routers.tyrion-policy.tls=true"
-      - "traefik.http.routers.tyrion-policy.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.tyrion-policy.priority=100"
-      - "traefik.http.routers.tyrion-policy.middlewares=trusted-private-networks@file,tyrion-policy-auth,compression@file,security-headers@file"
-      - "traefik.http.routers.tyrion-policy.service=tyrion"
-      - "traefik.http.middlewares.tyrion-policy-auth.forwardauth.address=${TYRION_POLICY_AUTH_URL:?Provision TYRION_POLICY_AUTH_URL for signed policy assertions}"
-      - "traefik.http.middlewares.tyrion-policy-auth.forwardauth.trustForwardHeader=false"
-      - "traefik.http.middlewares.tyrion-policy-auth.forwardauth.authResponseHeaders=X-Tyrion-Actor,X-Tyrion-Household,X-Tyrion-Permissions,X-Tyrion-Auth-Timestamp,X-Tyrion-Auth-Signature"
       - "traefik.http.services.tyrion.loadbalancer.server.port=3000"
       - "traefik.docker.network=traefik"
     healthcheck:

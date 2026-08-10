@@ -43,8 +43,9 @@ identifiers, account masks, amounts, notes, tags, categories, session material,
 credentials, free-form manual explanations, and browser identity/permission claims
 are not accepted.
 
-Tyrion derives the actor, household, and sole `attribution:batch` permission from
-server configuration for the authenticated service client. It loads the current
+Tyrion derives the fixed Mission Control service actor, homelab household, and sole
+`attribution:batch` permission from implementation constants after authenticating the
+private caller. It loads the current
 `PolicySnapshotV1` and evaluates the complete batch under one policy-version fence.
 An optional `expectedPolicyVersion` detects a consumer-observed conflict. Manual
 decisions are converted to the internal `AttributionInputV1` with a fixed safe
@@ -53,34 +54,28 @@ to the strict API result containing only consumer source reference, assignment,
 confidence, method, bounded explanation, review state/reasons, decision source,
 policy version, engine version, and evaluation timestamp.
 
-### Service assertion
+### Private service authentication
 
-The service signs the lowercase SHA-256 digest of the exact transmitted JSON bytes.
-Required headers are:
+Mission Control calls `http://tyrion-operations-ui:3000` over the private Docker
+backend network and sends `Authorization: Bearer <BRIDGE_API_TOKEN>`. Tyrion requires
+the same minimum-32-character server-only token already used by the protected bridge
+contract. No client ID, actor, household, timestamp, nonce, body digest, signature, or
+replay-store configuration is part of this contract.
 
-| Header | Meaning |
-| --- | --- |
-| `x-tyrion-service-client` | Configured least-privilege client ID |
-| `x-tyrion-service-timestamp` | Current Unix timestamp in seconds |
-| `x-tyrion-service-nonce` | Unique 22-128 character base64url nonce |
-| `x-tyrion-content-sha256` | Lowercase SHA-256 body digest |
-| `x-tyrion-service-signature` | Lowercase HMAC-SHA256 signature |
-
-The signed UTF-8 value is the newline-joined uppercase method, pathname, lowercase
-private host, client ID, timestamp, nonce, and body digest. Assertions expire after
-60 seconds. The external replay store atomically accepts each signed
-client/timestamp/nonce tuple once, and the route limits a configured client to 60
-requests per minute. Missing configuration returns `503`; missing or invalid
-assertions return `401`; replay returns `409`; rate exhaustion returns `429`.
+The endpoint accepts only the exact private service authority. If
+`x-forwarded-host` is present, it must identify that same private authority. This
+provides application-level defense in depth behind the Compose rule that excludes
+`/api/internal/` from all public Traefik routers. Missing server token configuration
+returns `503`; missing or invalid credentials return `401`; a non-private authority
+returns `404`.
 
 ### Failure semantics
 
 Stable errors use `{ "error": { "code": "...", "message": "..." } }` and include
 `invalid_request` (400), `attribution_auth_required` or
 `attribution_auth_invalid` (401), `attribution_forbidden` (403),
-`attribution_route_not_available` (404), `attribution_replay_detected` or
-`policy_conflict` (409), `payload_too_large` or `batch_too_large` (413),
-`unsupported_media_type` (415), `attribution_rate_limited` (429),
+`attribution_route_not_available` (404), `policy_conflict` (409),
+`payload_too_large` or `batch_too_large` (413), `unsupported_media_type` (415),
 `attribution_auth_not_configured`, `policy_unavailable`, or
 `attribution_service_unavailable` (503), and sanitized
 `attribution_operation_failed` (500).
@@ -133,9 +128,9 @@ duplicate rule IDs or limit periods, and currency mismatches.
   signals eligible for Mission Control notification
 - Last-update timestamp
 
-`PolicyService` receives authenticated `PolicyActorV1` context from the hosting
-server. Household equality and explicit `policy:read` or `policy:write` permissions
-are enforced before repository access. Replacements use compare-and-swap through
+`PolicyService` receives the hosting server's fixed local-operator `PolicyActorV1`
+context. Household equality and explicit `policy:read` or `policy:write` permissions
+remain enforced before repository access. Replacements use compare-and-swap through
 `expectedPolicyVersion`; each successful mutation writes a metadata-only
 `PolicyAuditEventV1` with actor, action, prior/new version, and timestamp.
 
@@ -156,7 +151,15 @@ version comparison and application.
 - Returns stable sanitized errors without paths or persisted content
 
 The file adapter stores policy and audit data only. Its state path must be external,
-access-restricted, backed up, and mounted by only one application deployment.
+access-restricted, backed up, and mounted by only one application deployment. When
+the fixed homelab identity first opens a store containing exactly one policy under
+the superseded configurable household ID, the adapter atomically rewrites that
+policy and its audit household scope to `homelab-household`. Existing card-rule
+fingerprints cannot be converted after removal of the standalone fingerprint key;
+the operator must re-enroll those rules once after the transition. New deployments
+derive the replacement key once from a domain-separated use of `BRIDGE_API_TOKEN`,
+persist only that derived key beside the access-restricted policy store, and reuse it
+across later bearer-token rotation.
 
 ## Attribution result and precedence
 

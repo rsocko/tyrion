@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { TYRION_DOMAIN_CONTRACT_VERSION } from "@rsocko/tyrion-kid-engine/contracts/v1";
-import { resolvePolicyActor } from "@/lib/policy-auth";
+import { resolveHomelabPolicyActor } from "@/lib/homelab-identity";
 import {
   handlePolicyRouteError,
   policyJson,
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     validatePolicyMutationOrigin(request);
-    const actor = resolvePolicyActor(request);
+    const actor = resolveHomelabPolicyActor();
     const body = strictObject(await readPolicyJson(request), [
       "expectedPolicyVersion",
       "sourceRefs",

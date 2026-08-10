@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { authorizePolicy } from "@rsocko/tyrion-kid-engine/policy";
-import { resolvePolicyActor } from "@/lib/policy-auth";
+import { resolveHomelabPolicyActor } from "@/lib/homelab-identity";
 import {
   handlePolicyRouteError,
   policyJson,
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     validatePolicyMutationOrigin(request);
-    const actor = resolvePolicyActor(request);
+    const actor = resolveHomelabPolicyActor();
     authorizePolicy(actor, actor.householdId, "write");
     const body = strictObject(await readPolicyJson(request), ["instrumentReference"]);
     if (typeof body.instrumentReference !== "string") {

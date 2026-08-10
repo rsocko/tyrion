@@ -155,6 +155,39 @@ describe('durable file policy repository', () => {
     ).toBe(30);
   });
 
+  it('atomically adopts a sole legacy policy into the canonical household', async () => {
+    const directory = await temporaryDirectory();
+    const path = resolve(directory, 'policies.json');
+    const legacy = new FilePolicyRepository(path);
+    await legacy.save(policyFixture, null, {
+      contractVersion: '1.0',
+      eventId: 'audit-event-legacy',
+      householdId: 'household-demo',
+      actorId: 'actor-demo',
+      action: 'policy-created',
+      previousPolicyVersion: null,
+      policyVersion: 1,
+      occurredAt: policyFixture.updatedAt,
+    });
+
+    const canonical = new FilePolicyRepository(path, {
+      canonicalHouseholdId: 'homelab-household',
+    });
+    const migrated = await canonical.load('homelab-household');
+    expect(migrated).toMatchObject({
+      householdId: 'homelab-household',
+      policyVersion: 1,
+    });
+    expect(await canonical.load('household-demo')).toBeNull();
+    expect(await canonical.listAudit('homelab-household')).toMatchObject([
+      {
+        householdId: 'homelab-household',
+        eventId: 'audit-event-legacy',
+      },
+    ]);
+    expect(await readFile(path, 'utf8')).not.toContain('"household-demo"');
+  });
+
   it('enforces compare-and-swap when a writer uses a stale version', async () => {
     const directory = await temporaryDirectory();
     const repository = new FilePolicyRepository(resolve(directory, 'policies.json'));
