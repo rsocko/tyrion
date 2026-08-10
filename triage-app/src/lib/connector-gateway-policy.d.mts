@@ -1,6 +1,7 @@
 export const CONNECTOR_GATEWAY_BASE: "/api/connector/v1";
 export const MAX_CONNECTOR_REQUEST_BODY_BYTES: number;
 export const MAX_CONNECTOR_RESPONSE_BYTES: number;
+export const MAX_CONNECTOR_HEALTH_RESPONSE_BYTES: number;
 
 export type ConnectorPolicyError = {
   allowed: false;
@@ -34,3 +35,14 @@ export function parseCategoryMutation(
 export function resolveConnectorBridgeUrl(
   rawUrl: string | undefined
 ): { configured: false } | { configured: true; baseUrl: URL };
+
+export type ConnectorHealth = {
+  contractVersion: "1.0";
+  status: "ok" | "degraded";
+  mode: "demo" | "live";
+  reachable: true;
+  authenticated: boolean;
+  authState: "unauthenticated" | "connected" | "expired" | "degraded";
+};
+
+export function normalizeConnectorHealth(value: unknown): ConnectorHealth | null;

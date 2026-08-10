@@ -168,6 +168,14 @@ routes are unavailable through it. `/api/internal/` remains excluded from every
 public router and the attribution handler independently enforces its private Docker
 authority.
 
+Authenticated connector `GET /health` privately calls protected Bridge
+`GET /auth/status` once instead of forwarding raw Bridge `GET /health`. This verifies
+and refreshes the external saved session after bridge/UI restart, then emits only the
+strict six-field `HealthResponse`; it never exposes email or session details. The raw
+Bridge health route remains an internal last-known-state probe. Operators should test
+Mission Control connectivity with gateway health after restart; a UI Recheck must not
+be required to restore a valid persisted session.
+
 Mission Control configures
 `FINANCE_MANAGER_URL=https://tyrion.socko.us/api/connector/v1` and
 `FINANCE_MANAGER_API_TOKEN` equal to Tyrion's minimum-32-character

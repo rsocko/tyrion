@@ -3,8 +3,10 @@ import {
   authenticateConnectorRequest,
   evaluateConnectorRequest,
   isBrowserConnectorRequest,
+  MAX_CONNECTOR_HEALTH_RESPONSE_BYTES,
   MAX_CONNECTOR_REQUEST_BODY_BYTES,
   MAX_CONNECTOR_RESPONSE_BYTES,
+  normalizeConnectorHealth,
   parseCategoryMutation,
   resolveConnectorBridgeUrl,
 } from "@/lib/connector-gateway-policy.mjs";
@@ -65,14 +67,14 @@ async function readBoundedBody(request: NextRequest, maximumBytes: number) {
   return { bytes };
 }
 
-async function readBoundedResponse(response: Response) {
+async function readBoundedResponse(response: Response, maximumBytes: number) {
   const contentLength = response.headers.get("content-length");
   if (contentLength) {
     const parsedLength = Number(contentLength);
     if (
       !Number.isSafeInteger(parsedLength) ||
       parsedLength < 0 ||
-      parsedLength > MAX_CONNECTOR_RESPONSE_BYTES
+      parsedLength > maximumBytes
     ) {
       await response.body?.cancel().catch(() => undefined);
       return null;
@@ -87,7 +89,7 @@ async function readBoundedResponse(response: Response) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_CONNECTOR_RESPONSE_BYTES) {
+    if (size > maximumBytes) {
       await reader.cancel().catch(() => undefined);
       return null;
     }
@@ -210,7 +212,9 @@ async function proxyConnectorRequest(
   const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
 
   try {
-    const response = await fetch(new URL(policy.upstreamPath, bridge.baseUrl), {
+    const verifiesHealth = policy.upstreamPath === "/health";
+    const upstreamPath = verifiesHealth ? "/auth/status" : policy.upstreamPath;
+    const response = await fetch(new URL(upstreamPath, bridge.baseUrl), {
       method: request.method,
       headers,
       body,
@@ -219,7 +223,11 @@ async function proxyConnectorRequest(
       signal: controller.signal,
     });
     const contentType = response.headers.get("content-type")?.toLowerCase() || "";
-    if (!contentType.includes("application/json")) {
+    const mediaType = contentType.split(";")[0]?.trim();
+    if (
+      (verifiesHealth && mediaType !== "application/json") ||
+      (!verifiesHealth && !contentType.includes("application/json"))
+    ) {
       await response.body?.cancel().catch(() => undefined);
       return jsonError(
         502,
@@ -227,7 +235,12 @@ async function proxyConnectorRequest(
         "Bridge returned an invalid response"
       );
     }
-    const responseBody = await readBoundedResponse(response);
+    const responseBody = await readBoundedResponse(
+      response,
+      verifiesHealth
+        ? MAX_CONNECTOR_HEALTH_RESPONSE_BYTES
+        : MAX_CONNECTOR_RESPONSE_BYTES
+    );
     if (!responseBody) {
       return jsonError(
         502,
@@ -235,14 +248,39 @@ async function proxyConnectorRequest(
         "Bridge returned an invalid response"
       );
     }
+    let payload: unknown;
     try {
-      JSON.parse(new TextDecoder().decode(responseBody));
+      payload = JSON.parse(new TextDecoder().decode(responseBody));
     } catch {
       return jsonError(
         502,
         "invalid_bridge_response",
         "Bridge returned an invalid response"
       );
+    }
+    if (verifiesHealth) {
+      if (!response.ok) {
+        return jsonError(
+          502,
+          "bridge_health_verification_failed",
+          "Bridge health verification failed"
+        );
+      }
+      const health = normalizeConnectorHealth(payload);
+      if (!health) {
+        return jsonError(
+          502,
+          "invalid_bridge_response",
+          "Bridge returned an invalid response"
+        );
+      }
+      return NextResponse.json(health, {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+          "X-Monarch-Contract-Version": health.contractVersion,
+        },
+      });
     }
     const responseHeaders = new Headers();
     for (const name of FORWARDED_RESPONSE_HEADERS) {

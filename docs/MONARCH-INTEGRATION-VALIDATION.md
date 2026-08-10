@@ -45,7 +45,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
-| Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB response bounds; status/body/safe-header preservation; sanitized network/invalid-response errors; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
+| Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB general response bounds; one-call private auth verification plus strict 4 KiB normalized health response; sanitized network/invalid-response errors; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
 | Production images | Separate non-root bridge/UI runtimes, route allowlist, loopback health checks, external session mount, no auth state in build contexts | Pull immutable images, mount restricted state, and smoke test private bridge plus TLS UI ingress |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
@@ -199,7 +199,15 @@ router, and the connector route requires valid backend bearer auth over TLS. Exe
 every allowlisted connector path against demo/invented data; confirm missing/invalid
 auth, browser metadata, unknown routes/methods/query/body expansion, oversized
 requests/responses, `/auth/*`, `/api/internal/*`, and broad `/api/bridge/...` finance
-operations fail without a bridge call. Confirm Bridge status/body/contract headers
-survive and synthetic network/invalid-response details do not. Restart must reuse the
-external session. Do not run live login or mutation, capture responses, or inspect the
-mounted session as part of image publishing.
+operations fail without a bridge call. Confirm non-health Bridge
+status/body/contract headers survive and synthetic network/invalid-response details do
+not. After restarting both containers with a valid external session, call authenticated
+gateway `GET /health` before using the operations UI: it must make only private
+`GET /auth/status`, return exactly the six `HealthResponse` fields with
+`authenticated: true` and `authState: connected`, and make Mission Control Test
+Connection succeed without a UI Recheck. Also confirm unauthenticated, expired,
+degraded, malformed, oversized, and failed private verification remain sanitized and
+that public `/auth/*` is still rejected. Raw private Bridge `GET /health` may remain
+last-known until verification and is not the Mission Control readiness contract. Do
+not run live login or mutation, capture responses, or inspect the mounted session as
+part of image publishing.

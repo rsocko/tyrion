@@ -46,7 +46,7 @@ to private `BRIDGE_URL`:
 | Method | Gateway path | Bounds |
 | --- | --- | --- |
 | `GET` | `/contract` | No query or body |
-| `GET` | `/health` | No query or body |
+| `GET` | `/health` | No query or body; privately verifies the saved Bridge session |
 | `GET` | `/transactions` | The v1 transaction query allowlist and bounds below |
 | `GET` | `/transactions/{id}` | ID 1-512 normalized characters; no query or body |
 | `GET` | `/transactions/{id}/splits` | ID 1-512 normalized characters; no query or body |
@@ -75,6 +75,31 @@ gateway forces `Cache-Control: no-store` and enforces an 8 MiB response limit.
 Network, timeout, non-JSON, malformed JSON, and oversized responses become stable
 sanitized gateway errors. Authorization values, request or response bodies, sensitive
 URLs, identifiers, and upstream exception text are not logged.
+
+Gateway `GET /health` is the deliberate exception to response passthrough. After
+gateway bearer authentication, it makes one protected private Bridge
+`GET /auth/status` call with the server-held Bridge credential. That call verifies and
+refreshes a persisted session after restart; the gateway does not first call raw Bridge
+`GET /health`. It validates a maximum 4 KiB auth response, discards `email`, and returns
+exactly the existing `HealthResponse` fields:
+
+```json
+{
+  "contractVersion": "1.0",
+  "status": "ok",
+  "mode": "live",
+  "reachable": true,
+  "authenticated": true,
+  "authState": "connected"
+}
+```
+
+`status` is `ok` for `connected` and `unauthenticated`, and `degraded` for `expired`
+and `degraded`. A valid verified auth response means `reachable` is `true`.
+Non-JSON, malformed, inconsistent, oversized, non-success, network, and timeout
+verification results become stable sanitized gateway errors rather than
+`HealthResponse`. Raw Bridge `GET /health` remains last-known state and does not verify
+the persisted session. `/auth/*` remains unavailable through the public gateway.
 
 ## Common semantics
 

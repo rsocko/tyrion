@@ -62,6 +62,12 @@ query expansion, bodies on bodyless operations, request bodies above 1 KiB, and
 responses above 8 MiB. Bridge JSON bodies, status, and safe contract headers are
 preserved after validation; proxy and invalid-response failures are sanitized.
 
+Gateway `GET /health` makes one protected private `/auth/status` call so a persisted
+session is verified immediately after restart. It validates the private response at
+4 KiB, removes email and every other auth detail, and returns only the six-field
+`HealthResponse`. It does not call raw Bridge `/health` first, and `/auth/*` remains
+unavailable publicly.
+
 The production Traefik contract routes `/api/connector/v1/` separately over TLS
 without the UI's private-network middleware. All other UI routes retain that
 middleware, and every public router continues to exclude `/api/internal/`. Traefik

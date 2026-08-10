@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 export const CONNECTOR_GATEWAY_BASE = "/api/connector/v1";
 export const MAX_CONNECTOR_REQUEST_BODY_BYTES = 1_024;
 export const MAX_CONNECTOR_RESPONSE_BYTES = 8 * 1_024 * 1_024;
+export const MAX_CONNECTOR_HEALTH_RESPONSE_BYTES = 4 * 1_024;
 
 const noQueryRoutes = new Map([
   ["contract", "GET"],
@@ -177,6 +178,58 @@ export function resolveConnectorBridgeUrl(rawUrl) {
     return { configured: false };
   }
   return { configured: true, baseUrl };
+}
+
+export function normalizeConnectorHealth(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    return null;
+  }
+  const keys = Object.keys(value).sort();
+  const expectedKeys = [
+    "authState",
+    "authenticated",
+    "contractVersion",
+    "email",
+    "mode",
+  ];
+  if (
+    keys.length !== expectedKeys.length ||
+    keys.some((key, index) => key !== expectedKeys[index])
+  ) {
+    return null;
+  }
+  const authStates = new Set([
+    "unauthenticated",
+    "connected",
+    "expired",
+    "degraded",
+  ]);
+  if (
+    value.contractVersion !== "1.0" ||
+    (value.mode !== "demo" && value.mode !== "live") ||
+    !authStates.has(value.authState) ||
+    typeof value.authenticated !== "boolean" ||
+    value.authenticated !== (value.authState === "connected") ||
+    (value.email !== null && typeof value.email !== "string")
+  ) {
+    return null;
+  }
+  return {
+    contractVersion: "1.0",
+    status:
+      value.authState === "connected" || value.authState === "unauthenticated"
+        ? "ok"
+        : "degraded",
+    mode: value.mode,
+    reachable: true,
+    authenticated: value.authenticated,
+    authState: value.authState,
+  };
 }
 
 function evaluateTransactionQuery(searchParams) {

@@ -14,6 +14,7 @@ import {
 import {
   authenticateConnectorRequest,
   evaluateConnectorRequest,
+  MAX_CONNECTOR_HEALTH_RESPONSE_BYTES,
   MAX_CONNECTOR_RESPONSE_BYTES,
   parseCategoryMutation,
   resolveConnectorBridgeUrl,
@@ -134,6 +135,52 @@ before(async () => {
         }));
         return;
       }
+      if (
+        request.url === "/auth/status" &&
+        bridgeResponseMode === "auth-verification-failed"
+      ) {
+        response.writeHead(503, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({
+          error: {
+            code: "synthetic_private_error",
+            message: "synthetic private detail",
+          },
+        }));
+        return;
+      }
+      if (
+        request.url === "/auth/status" &&
+        bridgeResponseMode === "auth-oversized"
+      ) {
+        const payload = JSON.stringify({
+          contractVersion: "1.0",
+          value: "x".repeat(MAX_CONNECTOR_HEALTH_RESPONSE_BYTES),
+        });
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(payload);
+        return;
+      }
+      if (
+        request.url === "/auth/status" &&
+        bridgeResponseMode === "auth-malformed"
+      ) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          mode: "live",
+          authenticated: true,
+          authState: "connected",
+          email: "private@example.invalid",
+          privateSessionDetail: "must not escape",
+        }));
+        return;
+      }
+      if (
+        request.url === "/auth/status" &&
+        bridgeResponseMode === "restart-stale"
+      ) {
+        authState = "connected";
+      }
 
       const common = { contractVersion: "1.0", mode: "live" };
       const payload =
@@ -150,7 +197,7 @@ before(async () => {
                 ...common,
                 authenticated: authState === "connected",
                 authState,
-                email: null,
+                email: authState === "connected" ? "private@example.invalid" : null,
               }
             : request.url === "/auth/logout"
               ? { contractVersion: "1.0", status: "logged_out", message: "Session cleared", email: null }
@@ -742,6 +789,72 @@ test("public connector gateway forwards every allowlisted operation with caller 
   );
 });
 
+test("connector health verifies the private session and returns only normalized health", async () => {
+  bridgeResponseMode = "restart-stale";
+  authState = "degraded";
+
+  const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
+headers: { Authorization: ["Bearer", serviceToken].join(" ") },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(receivedRequests.length, 1);
+  assert.equal(receivedRequests[0].path, "/auth/status");
+  assert.equal(receivedRequests[0].authorized, true);
+  assert.deepEqual(await response.json(), {
+contractVersion: "1.0",
+status: "ok",
+mode: "live",
+reachable: true,
+authenticated: true,
+authState: "connected",
+  });
+});
+
+test("connector health strictly maps verified authentication states", async () => {
+  const expected = [
+["unauthenticated", "ok", false],
+["expired", "degraded", false],
+["degraded", "degraded", false],
+  ];
+  for (const [state, status, authenticated] of expected) {
+authState = state;
+const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
+  headers: { Authorization: ["Bearer", serviceToken].join(" ") },
+});
+assert.equal(response.status, 200);
+assert.deepEqual(await response.json(), {
+  contractVersion: "1.0",
+  status,
+  mode: "live",
+  reachable: true,
+  authenticated,
+  authState: state,
+});
+  }
+});
+
+test("connector health sanitizes failed, malformed, and oversized verification", async () => {
+  const expected = [
+["auth-verification-failed", "bridge_health_verification_failed"],
+["auth-malformed", "invalid_bridge_response"],
+["auth-oversized", "invalid_bridge_response"],
+  ];
+  for (const [mode, code] of expected) {
+bridgeResponseMode = mode;
+const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
+  headers: { Authorization: ["Bearer", serviceToken].join(" ") },
+});
+assert.equal(response.status, 502);
+const text = await response.text();
+assert.equal(JSON.parse(text).error.code, code);
+assert.doesNotMatch(
+  text,
+  /synthetic private detail|synthetic_private_error|privateSessionDetail|private@example/
+);
+  }
+});
+
 test("connector gateway requires independent auth and rejects browser use before forwarding", async () => {
   for (const request of [
     {},
@@ -756,7 +869,7 @@ test("connector gateway requires independent auth and rejects browser use before
   ]) {
     const beforeCount = receivedRequests.length;
     const response = await fetch(
-      `${uiUrl}/api/connector/v1/transactions`,
+      `${uiUrl}/api/connector/v1/health`,
       request
     );
     assert.equal(response.status, request.headers?.Origin ? 403 : 401);
@@ -788,6 +901,7 @@ test("connector gateway blocks route, method, query, and body expansion before f
       method,
       headers: { Authorization: `Bearer ${serviceToken}` },
     });
+
     assert.ok([404, 405, 422].includes(response.status), `${method} ${path}`);
     assert.equal(receivedRequests.length, beforeCount);
   }
@@ -812,6 +926,20 @@ test("connector gateway blocks route, method, query, and body expansion before f
     assert.equal(response.status, 400);
     assert.equal(receivedRequests.length, beforeCount);
   }
+});
+
+test("connector gateway never exposes the private auth route", async () => {
+  const response = await fetch(`${uiUrl}/api/connector/v1/auth/status`, {
+    headers: { Authorization: ["Bearer", serviceToken].join(" ") },
+  });
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), {
+    error: {
+      code: "connector_route_not_available",
+      message: "This operation is not available through the connector gateway",
+    },
+  });
+  assert.equal(receivedRequests.length, 0);
 });
 
 test("public ingress marker blocks encoded traversal into private API trees", async () => {
