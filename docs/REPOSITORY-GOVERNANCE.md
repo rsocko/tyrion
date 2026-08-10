@@ -44,10 +44,8 @@ placeholder with no runnable job, privilege, repository checkout, credential, or
 self-hosted path. Restoring publication requires the independent evidence gate in
 [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md).
 
-GitHub's fork-contributor approval setting is unavailable for private repositories.
-Before accepting an external contribution after a visibility change, the owner must
-set the policy to require approval for all external contributors and verify that
-approval schedules only read-only GitHub-hosted validation.
+Workflows from all external contributors require approval. Approved fork work can
+schedule only the repository's read-only GitHub-hosted validation.
 
 ## Dependency and vulnerability controls
 
@@ -55,22 +53,11 @@ The dependency graph, Dependabot alerts, and Dependabot security updates are ena
 Weekly version updates cover GitHub Actions, Python dependencies in
 `monarch-bridge`, and npm dependencies in `kid-engine` and `triage-app`.
 
-GitHub secret scanning, push protection, and private vulnerability reporting are not
-available to this user-owned private repository under its current plan. API
-unavailability is not recorded as a disabled control. During a controlled visibility
-transition, publication and external workflows remain disabled and no external
-contribution may be accepted. Immediately after the visibility change and before
-announcing or accepting public collaboration, the owner must:
-
-1. enable secret scanning and push protection;
-2. enable private vulnerability reporting;
-3. set fork workflow approval to all external contributors;
-4. verify every control through its authenticated API;
-5. keep publication disabled if any control is unavailable or fails verification.
-
-Until private vulnerability reporting is available, follow the private-channel
-fallback in [`../SECURITY.md`](../SECURITY.md). Vulnerabilities must never be reported
-through public issues.
+GitHub secret scanning, push protection, and private vulnerability reporting are
+enabled and authenticated-API verified. Workflows from all external contributors
+require approval. Publication remains independently disabled and fail-closed.
+Vulnerabilities must never be reported through public issues; follow
+[`../SECURITY.md`](../SECURITY.md).
 
 ## Licensing and public data
 
@@ -106,4 +93,4 @@ The expected effective state is:
 | Action sources | Selected GitHub-owned Actions; immutable SHA required |
 | Dependabot | Alerts and security updates enabled; weekly version updates configured |
 | Commit policy | Web signoff enabled; signed commits not required |
-| Public-only security | Publication blocker until enabled and API-verified |
+| Public-only security | Secret scanning, push protection, private vulnerability reporting, and all-external-contributor workflow approval enabled and API-verified |
