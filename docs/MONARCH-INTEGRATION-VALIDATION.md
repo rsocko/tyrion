@@ -117,14 +117,23 @@ Pull-request CI builds both production containers without credentials and does n
 publish them. A separate GitHub-hosted workflow publishes both production images from
 trusted `main` pushes using only the run-scoped `GITHUB_TOKEN`. The image contract is:
 
-| Runtime | Write-once commit tag | Canonical immutable deployment reference |
-| --- | --- | --- |
-| Bridge | `ghcr.io/rsocko/tyrion-bridge:sha-<40-character-git-sha>` | `ghcr.io/rsocko/tyrion-bridge@sha256:<manifest-digest>` |
-| UI | `ghcr.io/rsocko/tyrion-ui:sha-<40-character-git-sha>` | `ghcr.io/rsocko/tyrion-ui@sha256:<manifest-digest>` |
+| Runtime | Write-once commit tag | Numbered release | Immutable reference |
+| --- | --- | --- | --- |
+| Bridge | `ghcr.io/rsocko/tyrion-bridge:sha-<40-character-git-sha>` | `ghcr.io/rsocko/tyrion-bridge:build-N` | `ghcr.io/rsocko/tyrion-bridge@sha256:<manifest-digest>` |
+| UI | `ghcr.io/rsocko/tyrion-ui:sha-<40-character-git-sha>` | `ghcr.io/rsocko/tyrion-ui:build-N` | `ghcr.io/rsocko/tyrion-ui@sha256:<manifest-digest>` |
 
-After both digest-addressed images are published, `main` and `latest` are moved to
-those same digests without rebuilding. Production compose requires the digest and never falls
-back to a moving tag. New GHCR packages are private by default; the repository owner
+After both digest-addressed images are published, `build-N`, `main`, and `latest` are
+promoted from those same digests without rebuilding. `N` is the positive bounded
+decimal `${{ github.run_number }}` assigned by GitHub Actions to this publication
+workflow. It increases for each new workflow run and remains unchanged on rerun, but
+successful publications can have gaps and the number is neither globally contiguous
+nor guaranteed reset-proof if workflow history or file identity changes.
+
+Canonical Compose follows `latest` by default and accepts one shared
+`TYRION_IMAGE_TAG` override for both images. `latest` is convenient for moving
+deployments; `build-N`, `main`, the full commit tag, and the manifest digest support
+rollback or pinning. The publication summary makes the numbered tag and digest for
+each image explicit. New GHCR packages are private by default; the repository owner
 must make each package public once through its package settings because GitHub's
 documented package API exposes no visibility update operation and the workflow
 intentionally stores no PAT. See
@@ -138,16 +147,16 @@ artifact, log, or repository. Only one bridge process may mount and own a given
 session directory at a time. The image defaults
 `BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, `BRIDGE_REMOTE_TLS=true`,
 `BRIDGE_LOAD_DOTENV=false`, and `DEFAULT_TRANSACTION_DAYS=90`; the homelab stack
-repeats these settings and selects the image with
-`TYRION_BRIDGE_IMAGE_DIGEST`. It has no host port or Traefik route. The image's
-default command starts `main.py`; the stack does not override it.
+repeats these settings and selects the image with the shared `TYRION_IMAGE_TAG`,
+defaulting to `latest`. It has no host port or Traefik route. The image's default
+command starts `main.py`; the stack does not override it.
 
 The UI container contract is port `3000`, `GET /api/health`, non-root UID/GID
 `10001`, a read-only root filesystem, and runtime-only `BRIDGE_URL` plus
-`BRIDGE_API_TOKEN`. It is selected with `TYRION_UI_IMAGE_DIGEST` and is the only
-production ingress at `https://tyrion.socko.us`. Its proxy permits only health,
-auth setup/status/logout, and sync limited to 90 days; the rendered UI fixes sync
-to 30 days. Broad finance routes return `404`.
+`BRIDGE_API_TOKEN`. It uses the same `TYRION_IMAGE_TAG` as the bridge and is the only
+production ingress at `https://tyrion.socko.us`. Its proxy permits only health, auth
+setup/status/logout, and sync limited to 90 days; the rendered UI fixes sync to 30
+days. Broad finance routes return `404`.
 
 Mission Control does not use the UI ingress as a bridge origin. Its server and sync
 worker join `tyrion-backend`, call

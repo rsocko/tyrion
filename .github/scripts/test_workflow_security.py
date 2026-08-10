@@ -33,6 +33,7 @@ jobs:
       - name: Publish production images
         env:
           GHCR_TOKEN: ${{ github.token }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: python .github/scripts/publish_images.py
 """ % PINNED_CHECKOUT
 
@@ -335,6 +336,10 @@ class WorkflowSecurityPolicyTests(unittest.TestCase):
                 "          GHCR_TOKEN: ${{ github.token }}",
                 "          GHCR_TOKEN: ${{ github.token }}\n"
                 "          EXTRA_VALUE: unreviewed",
+            ),
+            SAFE_PUBLICATION.replace(
+                "          GITHUB_RUN_NUMBER: ${{ github.run_number }}",
+                "          GITHUB_RUN_NUMBER: ${{ github.event.number }}",
             ),
             SAFE_PUBLICATION.replace(
                 "          persist-credentials: false",

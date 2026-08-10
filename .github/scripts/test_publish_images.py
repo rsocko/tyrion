@@ -13,6 +13,7 @@ SHA = "1" * 40
 NEWER_SHA = "2" * 40
 BRIDGE_DIGEST = f"sha256:{'a' * 64}"
 UI_DIGEST = f"sha256:{'b' * 64}"
+BUILD_NUMBER = "1234"
 
 
 def workflow_environment(**overrides: str) -> dict[str, str]:
@@ -21,6 +22,7 @@ def workflow_environment(**overrides: str) -> dict[str, str]:
         "GITHUB_REPOSITORY": "rsocko/tyrion",
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_SHA": SHA,
+        "GITHUB_RUN_NUMBER": BUILD_NUMBER,
         "GITHUB_ACTOR": "publisher",
         "GHCR_TOKEN": "short-lived-test-token",
     }
@@ -126,6 +128,7 @@ class PublishImagesTests(unittest.TestCase):
 
         self.assertEqual(result.bridge_digest, BRIDGE_DIGEST)
         self.assertEqual(result.ui_digest, UI_DIGEST)
+        self.assertEqual(result.build_number, BUILD_NUMBER)
         self.assertTrue(result.promoted)
 
         builds = [command for command in runner.commands if command[:2] == ("docker", "build")]
@@ -137,16 +140,45 @@ class PublishImagesTests(unittest.TestCase):
         ]
         self.assertEqual(len(builds), 2)
         self.assertEqual(len(pushes), 2)
-        self.assertEqual(len(promotions), 2)
+        self.assertEqual(len(promotions), 4)
         self.assertTrue(all("--prefer-index=false" in command for command in promotions))
-        self.assertEqual(
-            promotions[0][-1],
-            f"{publisher.BRIDGE_IMAGE}@{BRIDGE_DIGEST}",
-        )
-        self.assertEqual(
-            promotions[1][-1],
-            f"{publisher.UI_IMAGE}@{UI_DIGEST}",
-        )
+        expected_references = {
+            publisher.BRIDGE_IMAGE: {
+                f"{publisher.BRIDGE_IMAGE}:sha-{SHA}",
+                f"{publisher.BRIDGE_IMAGE}:build-{BUILD_NUMBER}",
+                f"{publisher.BRIDGE_IMAGE}:main",
+                f"{publisher.BRIDGE_IMAGE}:latest",
+            },
+            publisher.UI_IMAGE: {
+                f"{publisher.UI_IMAGE}:sha-{SHA}",
+                f"{publisher.UI_IMAGE}:build-{BUILD_NUMBER}",
+                f"{publisher.UI_IMAGE}:main",
+                f"{publisher.UI_IMAGE}:latest",
+            },
+        }
+        published_references = {image: set() for image in expected_references}
+        for push in pushes:
+            reference = push[2]
+            image = (
+                publisher.BRIDGE_IMAGE
+                if reference.startswith(publisher.BRIDGE_IMAGE)
+                else publisher.UI_IMAGE
+            )
+            published_references[image].add(reference)
+        for promotion in promotions:
+            source = promotion[-1]
+            image, expected_digest = (
+                (publisher.BRIDGE_IMAGE, BRIDGE_DIGEST)
+                if source.startswith(publisher.BRIDGE_IMAGE)
+                else (publisher.UI_IMAGE, UI_DIGEST)
+            )
+            self.assertEqual(source, f"{image}@{expected_digest}")
+            published_references[image].update(
+                promotion[index + 1]
+                for index, value in enumerate(promotion)
+                if value == "--tag"
+            )
+        self.assertEqual(published_references, expected_references)
         self.assertLess(
             max(runner.commands.index(command) for command in pushes),
             min(runner.commands.index(command) for command in promotions),
@@ -172,10 +204,22 @@ class PublishImagesTests(unittest.TestCase):
         result = publisher.publish(workflow_environment(), runner)
 
         self.assertFalse(result.promoted)
-        self.assertFalse(
-            any(
-                command[:4] == ("docker", "buildx", "imagetools", "create")
-                for command in runner.commands
+        promotions = [
+            command
+            for command in runner.commands
+            if command[:4] == ("docker", "buildx", "imagetools", "create")
+        ]
+        self.assertEqual(len(promotions), 2)
+        self.assertTrue(
+            all(
+                any(value.endswith(f":build-{BUILD_NUMBER}") for value in command)
+                for command in promotions
+            )
+        )
+        self.assertTrue(
+            all(
+                not any(value.endswith((":main", ":latest")) for value in command)
+                for command in promotions
             )
         )
 
@@ -265,6 +309,84 @@ class PublishImagesTests(unittest.TestCase):
                 self.assertFalse(
                     any(command[0] == "docker" for command in runner.commands)
                 )
+
+    def test_rejects_malformed_or_unbounded_run_numbers(self) -> None:
+        invalid_run_numbers = (
+            "",
+            "0",
+            "-1",
+            "+1",
+            "01",
+            "1.0",
+            " 1",
+            "1 ",
+            "build-1",
+            str(publisher.MAX_RUN_NUMBER + 1),
+        )
+        for run_number in invalid_run_numbers:
+            with self.subTest(run_number=run_number):
+                runner = FakeRunner()
+                with self.assertRaisesRegex(
+                    publisher.PublicationError,
+                    "bounded positive workflow run number|context is missing",
+                ):
+                    publisher.publish(
+                        workflow_environment(GITHUB_RUN_NUMBER=run_number),
+                        runner,
+                    )
+                self.assertFalse(
+                    any(command[0] == "docker" for command in runner.commands)
+                )
+
+    def test_accepts_maximum_bounded_run_number(self) -> None:
+        runner = FakeRunner()
+
+        result = publisher.publish(
+            workflow_environment(
+                GITHUB_RUN_NUMBER=str(publisher.MAX_RUN_NUMBER),
+            ),
+            runner,
+        )
+
+        self.assertEqual(result.build_number, str(publisher.MAX_RUN_NUMBER))
+        self.assertTrue(
+            any(
+                f"{publisher.BRIDGE_IMAGE}:build-{publisher.MAX_RUN_NUMBER}" in command
+                for command in runner.commands
+            )
+        )
+
+    def test_summary_records_build_tag_and_manifest_digests(self) -> None:
+        result = publisher.PublicationResult(
+            sha=SHA,
+            build_number=BUILD_NUMBER,
+            bridge_digest=BRIDGE_DIGEST,
+            ui_digest=UI_DIGEST,
+            promoted=True,
+        )
+        files: dict[str, list[str]] = {}
+
+        def capture(path: str, lines: Sequence[str]) -> None:
+            files[path] = list(lines)
+
+        with mock.patch("publish_images.append_line", side_effect=capture):
+            publisher.record_result(
+                result,
+                {
+                    "GITHUB_OUTPUT": "output",
+                    "GITHUB_STEP_SUMMARY": "summary",
+                },
+            )
+
+        self.assertIn(f"build_number={BUILD_NUMBER}", files["output"])
+        summary = "\n".join(files["summary"])
+        self.assertIn(
+            f"{publisher.BRIDGE_IMAGE}:build-{BUILD_NUMBER}", summary
+        )
+        self.assertIn(f"{publisher.BRIDGE_IMAGE}@{BRIDGE_DIGEST}", summary)
+        self.assertIn(f"{publisher.UI_IMAGE}:build-{BUILD_NUMBER}", summary)
+        self.assertIn(f"{publisher.UI_IMAGE}@{UI_DIGEST}", summary)
+        self.assertIn("`main`, and `latest`", summary)
 
     def test_real_command_runner_removes_token_from_child_environment(self) -> None:
         subprocess_result = mock.Mock(
