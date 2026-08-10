@@ -135,6 +135,9 @@ scanned separately with no finding or prohibited private reference.
 ## Remaining publication gates
 
 These gates are explained and owned; none is an unexplained remediation finding:
+The current fail-closed source-visibility recommendation and required post-change
+anonymous checks are recorded in
+[`PUBLIC-RELEASE-GATE-2026-08-09.md`](PUBLIC-RELEASE-GATE-2026-08-09.md).
 
 1. **Dependency vulnerabilities:** **Resolved.** Human-authored Actions, Python, and
    UI remediation pull requests #132, #133, and #134 are merged. The UI now uses

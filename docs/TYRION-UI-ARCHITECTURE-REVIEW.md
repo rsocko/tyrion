@@ -486,7 +486,6 @@ now preserved at the following paths in this repository:
 - [`brand/DESIGN.md`](../brand/DESIGN.md)
 - [`mockups/*.html`](../mockups/)
 - [`triage-app/src/app/*`](../triage-app/src/app/)
-- [`triage-app/src/components/layout/Sidebar.tsx`](../triage-app/src/components/layout/Sidebar.tsx)
 
 ### Mission Control implementation
 
