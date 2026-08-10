@@ -1,10 +1,10 @@
 # Public source release gate
 
-**Evaluated:** 2026-08-09T20:51:51-04:00
+**Evaluated:** 2026-08-09T21:01:48-04:00
 
 **Issue:** [#98](https://github.com/rsocko/tyrion/issues/98)
 
-**Evaluated revision:** `27de99c` (public `main`) and the anonymous closing pull-request head
+**Evaluated revision:** `9833c58` (public `main`) and the anonymous closing pull-request head
 
 **Recommendation:** Go for the public source repository; no-go for image, package,
 release, or deployment publication
@@ -30,7 +30,7 @@ does not enable those surfaces or waive any requirement in
 | Current protected revision | Both required checks completed successfully on public `main`. Actions default to read-only, cannot approve pull requests, allow only the three reviewed GitHub Actions, and require immutable SHA references. | Pass |
 | Dependency security and provenance | The authenticated API reports zero open Dependabot alerts and enabled security updates. Lock-policy checks accept only public npm/PyPI provenance, required integrity or hashes, reviewed licenses, and the pinned dependency graph. Public PyPI metadata was anonymously readable; the public closing checks provide the cold npm and Python installs. | Pass |
 | Anonymous source and documentation | A credential-free clone resolved public `main` and contained the README, MIT license, third-party notices, security policy, and contribution guidance. The closing pull-request head was fetched anonymously and all 28 Markdown documents had valid relative links. | Pass |
-| Full refs and reachable history | An unauthenticated remote inventory reconciled 81 concrete advertised refs: 22 branches, 53 pull-request heads, six pull-request merge refs, and no tags. The graph contained 181 commits, 533 trees, and 614 reachable blobs. | Pass |
+| Full refs and reachable history | An unauthenticated remote inventory reconciled 82 concrete advertised refs: 22 branches, 54 pull-request heads, six pull-request merge refs, and no tags. The graph contained 184 commits, 537 trees, and 621 reachable blobs. | Pass |
 | Secret and sensitive-data scans | Gitleaks 8.30.1 found four instances of two reviewed dependency-policy metadata values. TruffleHog 3.96.0 found four distinct deterministic `test_` names used only as Python test identifiers and one unverified invented URI fixture. These match the established classifications; no result is unexplained. | Pass |
 | Public GitHub surfaces | Anonymous API and web reads succeeded for repository metadata, Actions and run pages, issues, pull requests, security, releases, and the package listing. The anonymous collaboration inventory contained 141 issue/pull-request records and 76 issue comments; Gitleaks and TruffleHog reported zero findings. Private-source cross-references remained permission-gated. | Pass |
 | GitHub-hosted logs | All 16 post-ledger logs, three changed collaboration records, and both initial closing-PR logs were scanned with zero findings. GitHub exposes public run pages anonymously but requires authentication for the log-archive API; that platform restriction does not conceal the public workflow definition or run result. | Pass |
