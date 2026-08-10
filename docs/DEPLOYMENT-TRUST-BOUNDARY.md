@@ -76,10 +76,9 @@ protections, and force pushes and deletion are disabled. Existing Actions caches
 removed; the workflows do not create replacements. Dependency alerts and security
 updates are enabled.
 
-The current private-repository plan does not expose secret scanning, push protection,
-private vulnerability reporting, or fork-contributor approval policy. Before changing
-visibility or accepting an external contribution, an owner must enable and API-verify
-those four controls. If any remains unavailable, publication and external workflow
-execution must remain disabled. No protected deployment environment exists because
-there is currently no deployment job; creating one is part of the evidence-gated
-future publication change, not a substitute for disabling an unverified runner.
+After the controlled source-visibility change, secret scanning, push protection,
+private vulnerability reporting, and approval for all external-contributor workflows
+were enabled and API-verified. These source-repository controls do not enable
+publication. No protected deployment environment exists because there is currently no
+deployment job; creating one is part of the evidence-gated future publication change,
+not a substitute for disabling an unverified runner.

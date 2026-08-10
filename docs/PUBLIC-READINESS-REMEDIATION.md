@@ -36,7 +36,7 @@ pull-request refs cannot be completely purged by a repository rewrite.
 | #99 | Default-branch governance | Repository owner | **Resolved.** An active no-bypass ruleset requires pull requests, strict current checks, resolved conversations, linear history, and blocks deletion and force pushes. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md), authenticated ruleset API |
 | #99 | Actions permissions and supply-chain policy | Repository owner | **Resolved.** Tokens default read-only, Actions cannot approve pull requests, only the reviewed GitHub-owned allowlist is permitted, and immutable Action references are provider-enforced. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md), workflow policy tests, authenticated Actions APIs |
 | #99 | Dependency automation | Repository owner | **Resolved and configured.** Dependency graph, alerts, security updates, and weekly update groups are enabled. Human-authored remediation is merged and the authenticated API reports zero open alerts. | [`.github/dependabot.yml`](../.github/dependabot.yml), authenticated security APIs |
-| #99 | Public-only GitHub security controls | Repository owner | **Deferred and fail-closed.** Secret scanning, push protection, private vulnerability reporting, and external-contributor workflow approval are unavailable for the current private-repository plan or visibility. They must be enabled and API-verified before public collaboration. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md) |
+| #99 | Public-only GitHub security controls | Repository owner | **Resolved after source visibility changed.** Secret scanning, push protection, private vulnerability reporting, and all-external-contributor workflow approval are enabled and authenticated-API verified. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md) |
 | #100 | Untrusted access to privileged runners and publication credentials | Repository maintainer | **Resolved by removal.** Repository workflows use GitHub-hosted validation only. Privileged triggers, credentials, cache/artifact handoffs, and self-hosted selection are prohibited. | [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md), workflow policy tests |
 | #100 | Image or release publication | Infrastructure owner and repository owner | **Disabled, not waived.** The retained manual workflow has no runnable job or privilege. Independent ephemeral-runner, identity, environment-review, network, signing, and monitoring evidence is required to restore publication. | [`build-and-push.yml`](../.github/workflows/build-and-push.yml), [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md) |
 | #101 | Full-ref secret and sensitive-artifact review | Repository maintainer | **Resolved.** Every advertised branch, pull-request ref, commit, tree, path, and reachable blob was reconciled and scanned. Scanner findings were deterministic test-name or placeholder false positives; no unexplained result remains. | [`SECURITY-AUDIT-2026-08-08.md`](SECURITY-AUDIT-2026-08-08.md), final issue #102 scan |
@@ -146,10 +146,10 @@ anonymous checks are recorded in
    and CI passed on `main`. Production-image license compliance follow-up #137 is also
    merged with both hosted checks passing. The authenticated Dependabot API reports
    zero open alerts.
-2. **Visibility-dependent GitHub controls:** secret scanning, push protection, private
-   vulnerability reporting, and external-contributor workflow approval must be
-   enabled and API-verified after the visibility or plan supports them and before
-   accepting public contributions.
+2. **Visibility-dependent GitHub controls:** **Resolved.** After the owner changed
+   source visibility, secret scanning, push protection, private vulnerability
+   reporting, and approval for all external-contributor workflows were enabled and
+   authenticated-API verified.
 3. **Publication infrastructure:** image, package, release, and deployment publication
    remains disabled until every independent evidence requirement in
    [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md) is satisfied.
@@ -157,7 +157,6 @@ anonymous checks are recorded in
    one maintainer. Before a second maintainer receives merge access, require one
    approval and approval after the latest push.
 
-The repository must remain private except during the controlled visibility transition
-defined in [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md). External workflows,
-public collaboration, and publication remain disabled until every applicable gate is
-verified.
+The source repository is public following the controlled transition in
+[`PUBLIC-RELEASE-GATE-2026-08-09.md`](PUBLIC-RELEASE-GATE-2026-08-09.md). Publication
+remains disabled until every independent infrastructure gate is verified.
