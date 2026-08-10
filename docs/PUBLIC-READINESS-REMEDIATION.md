@@ -46,8 +46,8 @@ pull-request refs cannot be completely purged by a repository rewrite.
 | #103 | Operational identifiers and architecture detail | Repository owner and #103 technical reviewer | **Resolved or approved.** Current values are standard platform metadata, repository-derived expressions, reserved examples, generalized roles, or required public coordinates. | [`SYNTHETIC-DATA-CERTIFICATION.md`](SYNTHETIC-DATA-CERTIFICATION.md) |
 | #104 | Actions logs, artifacts, and caches existing before the first surface audit | Repository maintainer | **Resolved.** All downloadable material was scanned in controlled storage and nonessential runs, artifacts, and caches were deleted. No credential rotation was indicated. | [`GITHUB-SURFACE-AUDIT-2026-08-09.md`](GITHUB-SURFACE-AUDIT-2026-08-09.md) |
 | #104 / #102 follow-up | Five later legacy publication build records | Repository maintainer | **Resolved.** All five records were downloaded despite their nonstandard archive encoding, recursively inspected, and scanned. The only secret-shaped hits were public base-image signing fingerprints. Their five obsolete publication runs and artifacts were deleted; post-deletion artifact, publication-run, and cache counts are zero. | Final issue #102 GitHub-surface scan and authenticated Actions APIs |
-| #104 / #102 follow-up | Current Actions logs | Repository maintainer | **Resolved.** Every downloadable current log was scanned. Three runs had no downloadable log. Findings were limited to generic hosted-runner, CI, or generalized service-role paths. | Final issue #102 GitHub-surface scan |
-| #104 / #102 follow-up | Current GitHub collaboration metadata | Repository maintainer | **Resolved.** Issues, pull requests, comments, reviews, branches, labels, milestones, hooks, deployments, environments, releases, and tags were inventoried. Two unverified detector results were commit-identifier substrings in public pull-request metadata, not credentials. | Final issue #102 GitHub-surface scan |
+| #104 / #102 follow-up | Current Actions logs | Repository maintainer | **Resolved.** Every downloadable current log was scanned. One run had no downloadable log. Findings were limited to generic hosted-runner, CI, or generalized service-role paths. | Final issue #102 GitHub-surface scan |
+| #104 / #102 follow-up | Current GitHub collaboration metadata | Repository maintainer | **Resolved.** Issues, pull requests, comments, reviews, branches, labels, milestones, hooks, deployments, environments, releases, and tags were inventoried. The final scan produced no detector finding. | Final issue #102 GitHub-surface scan |
 | #104 | Packages, releases, assets, attachments, wiki, projects, discussions, deployments, and environments | Repository owner and maintainer | **Resolved.** Owner attests that no GitHub Package exists; the other retained publication surfaces have no content requiring remediation. Wiki and discussions are disabled. | [`GITHUB-SURFACE-AUDIT-2026-08-09.md`](GITHUB-SURFACE-AUDIT-2026-08-09.md), authenticated API inventory |
 | #104 | Actions retention and future artifacts | Repository owner | **Resolved.** Retention is one day. Repository policy rejects explicit artifact upload and all cache or artifact handoffs; any future use requires an explicit reviewed policy change. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md), baseline policy checks |
 
@@ -113,7 +113,7 @@ After the dependency workstreams landed, the closing branch was rebased onto cur
 `main` and the complete scan was repeated at the pushed closing head immediately
 before this evidence-only finalization. The isolated mirror reconciled all 80
 advertised refs (22 branches, 52 pull-request heads, six pull-request merge refs, and
-no tags) with no missing or mismatched tip. It contained 176 commits, 392 trees, 608
+no tags) with no missing or mismatched tip. It contained 178 commits, 394 trees, 610
 reachable blobs, and 223 unique historical paths; every reachable blob was extracted.
 
 Gitleaks 8.30.1 again reported zero history findings. Its two exact-blob findings were
@@ -123,16 +123,14 @@ covered by the established deterministic-test and placeholder classifications.
 Targeted private-key, JWT, sensitive-path, generated-output, package-bound, and
 repository-hygiene checks found no unexplained sensitive content.
 
-The final GitHub-surface snapshot contained 302 Actions runs: 299 logs were
-downloadable and scanned, and three had no downloadable log. Artifact and cache counts
+The final GitHub-surface snapshot contained 306 Actions runs: 305 logs were
+downloadable and scanned, and one had no downloadable log. Artifact and cache counts
 were zero. The collaboration inventory contained 135 issue/PR records, 52 pull
 requests, 76 issue comments, 22 branches, 19 labels, one reviewed webhook, and no
 release, tag, milestone, deployment, environment, pull-request comment, or commit
-comment. Gitleaks reported zero findings. TruffleHog reported two unverified
-credential-pattern substrings within public commit identifiers; neither was a
-credential and no result remained unexplained. The evidence-only finalization diff and
-pull-request metadata were then scanned separately with no finding or prohibited
-private reference.
+comment. Gitleaks and TruffleHog reported zero findings. No result remained
+unexplained. The evidence-only finalization diff and pull-request metadata were then
+scanned separately with no finding or prohibited private reference.
 
 ## Remaining publication gates
 
