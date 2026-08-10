@@ -96,7 +96,8 @@ policy CRUD and connector operations remain available.
 Mission Control calls `POST /api/internal/v1/attribution/batch` by private backend
 DNS. This is a Tyrion domain endpoint, not a Bridge proxy or browser route. The
 public `tyrion.socko.us` Traefik routers must exclude `/api/internal/`; the service
-also accepts only `Host: tyrion-operations-ui:3000` and rejects forwarded requests.
+also requires `Host: tyrion-operations-ui:3000` and, when present, the same value in
+`x-forwarded-host`.
 
 The exact v1 request, response, header, status, and schema contract is
 [`../docs/attribution-service-v1.openapi.json`](../docs/attribution-service-v1.openapi.json).

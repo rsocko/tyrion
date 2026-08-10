@@ -62,11 +62,12 @@ the same minimum-32-character server-only token already used by the protected br
 contract. No client ID, actor, household, timestamp, nonce, body digest, signature, or
 replay-store configuration is part of this contract.
 
-The endpoint accepts only the exact private service authority and rejects any request
-carrying `x-forwarded-host`, providing application-level defense in depth behind the
-Compose rule that excludes `/api/internal/` from all public Traefik routers. Missing
-server token configuration returns `503`; missing or invalid credentials return
-`401`; a non-private or forwarded authority returns `404`.
+The endpoint accepts only the exact private service authority. If
+`x-forwarded-host` is present, it must identify that same private authority. This
+provides application-level defense in depth behind the Compose rule that excludes
+`/api/internal/` from all public Traefik routers. Missing server token configuration
+returns `503`; missing or invalid credentials return `401`; a non-private authority
+returns `404`.
 
 ### Failure semantics
 

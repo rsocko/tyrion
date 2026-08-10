@@ -56,8 +56,9 @@ Mission Control calls Tyrion's protected versioned batch attribution API over th
 private service network. It must not install, copy, or execute `kid-engine`; that
 module remains internal to Tyrion. The attribution route is not a Monarch Bridge
 endpoint and is explicitly excluded from the public `tyrion.socko.us` router. It
-accepts the fixed private Docker authority only, rejects forwarded requests, and uses
-the existing server-only bridge/finance-manager token as its bearer credential.
+accepts the fixed private Docker authority only, rejects any different forwarded
+authority, and uses the existing server-only bridge/finance-manager token as its
+bearer credential.
 
 The production route tree and proxy allowlist must prevent access to transactions,
 accounts, categories, recurring items, cash flow, budgets, bills, broad kid-spending

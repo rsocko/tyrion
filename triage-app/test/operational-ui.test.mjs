@@ -692,6 +692,17 @@ test("batch attribution fails closed for auth, host, body, and policy conflicts"
     "attribution_route_not_available"
   );
 
+  const mixedForwardedHosts = await attributionFetch(body, {
+    requestHeaders: {
+      "x-forwarded-host": `${internalAttributionHost}, tyrion.socko.us`,
+    },
+  });
+  assert.equal(mixedForwardedHosts.status, 404);
+  assert.equal(
+    (await mixedForwardedHosts.json()).error.code,
+    "attribution_route_not_available"
+  );
+
   const conflict = await attributionFetch({
     ...body,
     expectedPolicyVersion: activePolicy.policyVersion + 1,
@@ -780,6 +791,7 @@ test("policy mutations reject cross-site requests and ignore client identity hea
 
 test("instrument references are fingerprinted server-side and never persisted raw", async () => {
   const instrumentReference = "opaque-integration-reference-synthetic";
+  const previousPolicyVersion = activePolicy.policyVersion;
   const bypass = await policyFetch("/api/policy", "PUT", {
     expectedPolicyVersion: activePolicy.policyVersion,
     policy: {
@@ -825,7 +837,7 @@ test("instrument references are fingerprinted server-side and never persisted ra
   });
   assert.equal(updated.status, 200);
   activePolicy = (await updated.json()).policy;
-  assert.equal(activePolicy.policyVersion, 2);
+  assert.equal(activePolicy.policyVersion, previousPolicyVersion + 1);
   const stored = await readFile(policyStorePath, "utf8");
   assert.doesNotMatch(stored, new RegExp(instrumentReference));
   assert.doesNotMatch(stored, /password|cookie|authorization|sessionPath/i);

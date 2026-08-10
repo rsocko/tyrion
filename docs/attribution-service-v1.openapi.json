@@ -25,7 +25,7 @@
       "post": {
         "operationId": "attributeBatchV1",
         "summary": "Attribute a bounded transaction batch using one current policy snapshot",
-        "description": "Maximum body size is 65536 bytes. This route accepts only the fixed private service authority, rejects forwarded requests, and is excluded from every public operational UI router.",
+        "description": "Maximum body size is 65536 bytes. This route requires the fixed private service authority in Host and, when present, x-forwarded-host. It is excluded from every public operational UI router.",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,

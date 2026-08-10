@@ -24,9 +24,13 @@ export function resolveAttributionServiceActor(
   environment: NodeJS.ProcessEnv = process.env
 ): PolicyActorV1 {
   const requestHost = request.headers.get("host")?.toLowerCase();
+  const forwardedHosts = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")
+    .map((host) => host.trim().toLowerCase());
   if (
     requestHost !== INTERNAL_ATTRIBUTION_HOST ||
-    request.headers.has("x-forwarded-host")
+    forwardedHosts?.some((host) => host !== INTERNAL_ATTRIBUTION_HOST)
   ) {
     throw new AttributionAuthError(
       "attribution_route_not_available",
