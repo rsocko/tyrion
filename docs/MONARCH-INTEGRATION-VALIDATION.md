@@ -39,7 +39,8 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Expiry and recovery | Expired cleanup and degraded retention | Revoke controlled session, verify `expired`, then set up again |
 | Logout | In-memory and persisted state removal | Completed 2026-08-08; state and external session removal verified |
 | Health/auth state | All four auth states and public reachability | `test_live_auth_health` |
-| Transactions/filter/detail | Mission Control strict DTO parity, 1-500 page bound, bounded opaque cursor, filters, detail, empty/error shapes, malformed upstream rejection | Read contract completed 2026-08-08 |
+| Transactions/filter/detail | Mission Control strict DTO parity; 366-day window; 1-500 page; 5,000-item normalized-filter scan; bounded opaque cursor; exact account, category, merchant, tag, amount, pending, and recurring filters; duplicate/unknown-query rejection; detail; empty/error shapes; malformed upstream rejection | Existing read contract completed 2026-08-08; issue #140 filter expansion requires controlled live validation |
+| Transaction splits | Normalized split identity, signed amount, merchant name, nullable category, 100-item hard limit, empty/not-found/malformed/over-limit shapes, and sanitized expiry/timeout/rate-limit/upstream failures | Controlled live validation required for issue #140 |
 | Accounts/categories/recurring/cashflow/budgets | Normalized synthetic current-upstream structures | Completed 2026-08-08 |
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
@@ -112,6 +113,14 @@ When upgrading `monarchmoneycommunity`, pin the exact version, verify method
 signatures, update synthetic normalizer inputs, run deterministic tests, then perform
 the controlled live matrix. Never capture a real response as a fixture. Reconstruct
 only the minimum structural shape with invented identifiers and values.
+
+For the issue #140 controlled read refresh, run the opt-in read contract against a
+dedicated connected bridge. Confirm bounded search parameters are accepted by the
+pinned `get_transactions` signature and normalized merchant/amount pagination is
+correct, then request split detail for one transaction through
+`get_transaction_splits(transaction_id)`. Record only pass/fail and the validation
+date. Do not record the query values, source identifiers, merchant names, amounts,
+split contents, response bodies, or upstream exception text.
 
 ## Container deployment validation
 

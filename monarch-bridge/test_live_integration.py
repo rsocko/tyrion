@@ -54,8 +54,31 @@ async def test_live_read_and_sync_contracts(live_bridge):
     assert_success(transactions)
     transaction_rows = transactions.json()["transactions"]
     if transaction_rows:
-        detail = await live_bridge.get(f"/transactions/{transaction_rows[0]['id']}")
+        transaction = transaction_rows[0]
+        detail = await live_bridge.get(f"/transactions/{transaction['id']}")
         assert_success(detail)
+        splits = await live_bridge.get(
+            f"/transactions/{transaction['id']}/splits",
+        )
+        assert_success(splits)
+        filters = {
+            "start_date": transaction["date"],
+            "end_date": transaction["date"],
+            "account_id": transaction["account"]["id"],
+            "merchant_query": transaction["merchant"]["name"],
+            "min_amount": transaction["amount"],
+            "max_amount": transaction["amount"],
+            "is_pending": str(transaction["isPending"]).lower(),
+            "is_recurring": str(transaction["isRecurring"]).lower(),
+            "limit": 1,
+        }
+        if transaction["category"]:
+            filters["category_id"] = transaction["category"]["id"]
+        tag_id = os.getenv("TYRION_TEST_TAG_ID")
+        if tag_id:
+            filters["tag_id"] = tag_id
+        filtered = await live_bridge.get("/transactions", params=filters)
+        assert_success(filtered)
 
     for path in ("/accounts", "/categories", "/recurring", "/cashflow", "/budgets"):
         assert_success(await live_bridge.get(path))

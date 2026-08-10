@@ -107,6 +107,18 @@ class TransactionResponse(DataResponse):
     transaction: Transaction
 
 
+class TransactionSplit(ApiModel):
+    id: str
+    amount: float
+    merchant_name: str
+    category: Optional[CategoryRef] = None
+
+
+class TransactionSplitsResponse(DataResponse):
+    transaction_id: str
+    splits: list[TransactionSplit]
+
+
 class Category(ApiModel):
     id: str
     name: str
@@ -310,6 +322,32 @@ def normalize_transactions(payload: Any) -> list[Transaction]:
         normalize_transaction(item)
         for item in _items(payload, "transactions", "allTransactions.results", "results")
     ]
+
+
+def normalize_transaction_splits(payload: Any) -> list[TransactionSplit]:
+    transaction = _pick(payload, "getTransaction", default=payload)
+    if not isinstance(transaction, Mapping):
+        raise ValueError("Upstream split detail was malformed")
+    splits = transaction.get("splitTransactions")
+    if splits is None:
+        splits = transaction.get("splits")
+    if not isinstance(splits, list):
+        raise ValueError("Upstream split detail was malformed")
+    normalized = []
+    for item in splits:
+        amount = _pick(item, "amount")
+        merchant_name = _pick(item, "merchant.name", "merchantName")
+        if amount is None or not _text(merchant_name).strip():
+            raise ValueError("Upstream split detail was malformed")
+        normalized.append(
+            TransactionSplit(
+                id=_identifier(_pick(item, "id")),
+                amount=_money(amount),
+                merchant_name=_text(merchant_name),
+                category=normalize_category_ref(_pick(item, "category", default={})),
+            )
+        )
+    return normalized
 
 
 def normalize_categories(payload: Any) -> list[Category]:
