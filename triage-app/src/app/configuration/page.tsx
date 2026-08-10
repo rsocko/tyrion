@@ -36,6 +36,13 @@ type BusyState = "saving" | "fingerprinting" | "previewing" | "applying" | null;
 type RuleConfidence = Exclude<AttributionConfidenceV1, "none">;
 
 const PERIODS: LimitPeriodV1[] = ["daily", "weekly", "monthly"];
+const TIMEZONES = ["UTC", ...Intl.supportedValuesOf("timeZone")].map(
+  (timezone) => ({ value: timezone, label: timezone })
+);
+const CURRENCIES = Intl.supportedValuesOf("currency").map((currency) => ({
+  value: currency,
+  label: currency,
+}));
 const SIGNALS: Array<{ value: ExceptionSignalV1; label: string }> = [
   { value: "limit-warning", label: "Limit warning" },
   { value: "limit-exceeded", label: "Limit exceeded" },
@@ -375,26 +382,27 @@ export default function ConfigurationPage() {
 
       <Section title="Policy basics" description="Timezone and currency apply to every configured limit.">
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField
+          <SelectField
             id="timezone"
             label="IANA timezone"
             value={draft.timezone}
+            options={TIMEZONES}
             disabled={disabled}
             onChange={(timezone) => replaceDraft({ ...draft, timezone })}
           />
-          <TextField
+          <SelectField
             id="currency"
             label="ISO currency"
             value={draft.currency}
-            maxLength={3}
+            options={CURRENCIES}
             disabled={disabled}
             onChange={(currency) =>
               replaceDraft({
                 ...draft,
-                currency: currency.toUpperCase(),
+                currency,
                 limits: draft.limits.map((limit) => ({
                   ...limit,
-                  currency: currency.toUpperCase(),
+                  currency,
                 })),
               })
             }
