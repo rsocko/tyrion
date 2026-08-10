@@ -6,21 +6,35 @@ import unittest
 import check_workflow_security as policy
 
 
-SAFE_PUBLICATION = """\
-name: Publication disabled
-on:
-  workflow_dispatch:
-permissions: {}
-jobs:
-  publication-disabled:
-    if: ${{ false }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo disabled
-"""
-
-PINNED_CHECKOUT = "actions/checkout@1111111111111111111111111111111111111111"
+PINNED_CHECKOUT = policy.PUBLICATION_CHECKOUT
 PINNED_SETUP_NODE = "actions/setup-node@2222222222222222222222222222222222222222"
+
+SAFE_PUBLICATION = """\
+name: Publish production images
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'rsocko/tyrion' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout trusted default-branch commit
+        uses: %s
+        with:
+          persist-credentials: false
+      - name: Publish production images
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: python .github/scripts/publish_images.py
+""" % PINNED_CHECKOUT
 
 SAFE_VALIDATION = """\
 name: Validation
@@ -241,17 +255,116 @@ class WorkflowSecurityPolicyTests(unittest.TestCase):
                 workflows = synthetic_workflows(SAFE_VALIDATION + mutation)
                 self.assertTrue(policy.check_workflows(workflows))
 
-    def test_publication_cannot_run_or_consume_automatic_content(self) -> None:
+    def test_publication_rejects_untrusted_triggers_and_refs(self) -> None:
         for mutation in (
-            SAFE_PUBLICATION.replace("if: ${{ false }}", "if: ${{ true }}"),
-            SAFE_PUBLICATION + "\npush:\n",
-            SAFE_PUBLICATION + "\n  - uses: actions/checkout@"
-            "1111111111111111111111111111111111111111\n",
+            SAFE_PUBLICATION.replace(
+                "  push:\n    branches:\n      - main",
+                "  workflow_dispatch:",
+            ),
+            SAFE_PUBLICATION.replace("      - main", "      - feature"),
+            SAFE_PUBLICATION.replace(
+                "  push:\n    branches:\n      - main",
+                "  pull_request:\n  push:\n    branches:\n      - main",
+            ),
+            SAFE_PUBLICATION.replace(
+                "      github.event_name == 'push' &&\n", ""
+            ),
+            SAFE_PUBLICATION.replace(
+                "      github.repository == 'rsocko/tyrion' &&\n", ""
+            ),
+            SAFE_PUBLICATION.replace(
+                "      github.ref == 'refs/heads/main'", "      github.ref == 'main'"
+            ),
         ):
-            with self.subTest():
+            with self.subTest(mutation=mutation):
                 workflows = synthetic_workflows()
                 workflows[policy.PUBLICATION_WORKFLOW] = mutation
                 self.assertTrue(policy.check_workflows(workflows))
+
+    def test_publication_privilege_is_exact_and_publisher_only(self) -> None:
+        publisher_mutations = (
+            SAFE_PUBLICATION.replace("  packages: write\n", ""),
+            SAFE_PUBLICATION.replace(
+                "  packages: write", "  packages: write\n  attestations: write"
+            ),
+            SAFE_PUBLICATION.replace(
+                "GHCR_TOKEN: ${{ github.token }}",
+                "GHCR_TOKEN: ${{ secrets.REGISTRY_PASSWORD }}",
+            ),
+            SAFE_PUBLICATION.replace(
+                "    steps:", "    permissions:\n      packages: write\n    steps:"
+            ),
+        )
+        for mutation in publisher_mutations:
+            with self.subTest(mutation=mutation):
+                workflows = synthetic_workflows()
+                workflows[policy.PUBLICATION_WORKFLOW] = mutation
+                self.assertTrue(policy.check_workflows(workflows))
+
+    def test_publication_cannot_add_inert_or_unreviewed_commands(self) -> None:
+        for mutation in (
+            SAFE_PUBLICATION.replace(
+                "run: python .github/scripts/publish_images.py",
+                "run: echo python .github/scripts/publish_images.py",
+            ),
+            SAFE_PUBLICATION.replace(
+                "run: python .github/scripts/publish_images.py",
+                "run: python .github/scripts/publish_images.py\n"
+                "      - run: docker build .",
+            ),
+            SAFE_PUBLICATION.replace(
+                "      - name: Publish production images",
+                "      - uses: ./.github/actions/unreviewed\n"
+                "      - name: Publish production images",
+            ),
+            SAFE_PUBLICATION.replace(
+                PINNED_CHECKOUT,
+                "attacker/rewrite-workspace@"
+                "3d3c42e5aac5ba805825da76410c181273ba90b1",
+            ),
+            SAFE_PUBLICATION.replace(
+                PINNED_CHECKOUT,
+                "actions/checkout@1111111111111111111111111111111111111111",
+            ),
+            SAFE_PUBLICATION.replace(
+                "        run: python .github/scripts/publish_images.py",
+                "        working-directory: .github\n"
+                "        run: python .github/scripts/publish_images.py",
+            ),
+            SAFE_PUBLICATION.replace(
+                "          GHCR_TOKEN: ${{ github.token }}",
+                "          GHCR_TOKEN: ${{ github.token }}\n"
+                "          EXTRA_VALUE: unreviewed",
+            ),
+            SAFE_PUBLICATION.replace(
+                "          persist-credentials: false",
+                "          persist-credentials: false\n"
+                "          fetch-depth: 0",
+            ),
+        ):
+            with self.subTest(mutation=mutation):
+                workflows = synthetic_workflows()
+                workflows[policy.PUBLICATION_WORKFLOW] = mutation
+                self.assertTrue(policy.check_workflows(workflows))
+
+        validation_mutations = (
+            SAFE_VALIDATION.replace(
+                "  contents: read", "  contents: read\n  packages: write"
+            ),
+            SAFE_VALIDATION.replace(
+                "- run: echo validate",
+                "- env:\n          TOKEN: ${{ github.token }}\n"
+                "        run: echo validate",
+            ),
+            SAFE_VALIDATION.replace(
+                "  contents: read", "  contents: read\n  issues: write"
+            ),
+        )
+        for mutation in validation_mutations:
+            with self.subTest(mutation=mutation):
+                self.assertTrue(
+                    policy.check_workflows(synthetic_workflows(mutation))
+                )
 
 
 if __name__ == "__main__":

@@ -61,11 +61,18 @@ FROM node:20.19.4-bookworm-slim@sha256:6db5e436948af8f0244488a1f658c2c8e55a3ae51
 
 ARG TYRION_UID=10001
 ARG TYRION_GID=10001
+ARG TYRION_REVISION=""
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000
+
+LABEL org.opencontainers.image.source="https://github.com/rsocko/tyrion" \
+    org.opencontainers.image.revision="${TYRION_REVISION}" \
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.title="Tyrion Operations UI" \
+    org.opencontainers.image.description="Bounded operations and configuration UI for the Tyrion household-finance domain"
 
 WORKDIR /app
 RUN groupadd --gid "${TYRION_GID}" tyrion \

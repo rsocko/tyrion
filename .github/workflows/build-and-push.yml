@@ -1,14 +1,33 @@
-name: Publication disabled
+name: Publish production images
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
-permissions: {}
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-production-main
+  cancel-in-progress: false
 
 jobs:
-  publication-disabled:
-    if: ${{ false }}
-    runs-on: ubuntu-latest
+  publish:
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'rsocko/tyrion' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - name: Publication remains fail-closed
-        run: echo "Publication is disabled pending independent infrastructure assurance."
+      - name: Checkout trusted default-branch commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Publish production images
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: python .github/scripts/publish_images.py

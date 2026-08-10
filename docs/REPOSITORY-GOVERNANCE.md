@@ -1,6 +1,6 @@
 # Repository Governance
 
-**Last verified:** 2026-08-09
+**Last verified:** 2026-08-09; publication policy updated 2026-08-09
 
 This record describes public-safe repository controls. It intentionally omits raw API
 responses, actor identifiers, infrastructure names, runner labels, environment
@@ -36,12 +36,14 @@ Repository workflow tokens default to read-only, and Actions cannot approve pull
 requests. Allowed Actions are limited to the GitHub-owned validation Actions used by
 the repository, with provider-side immutable SHA enforcement. Repository policy tests
 also reject mutable Action references, persisted checkout credentials, privileged or
-cross-workflow triggers, writable credentials, untrusted runner selection, and cache
-or artifact handoffs.
+cross-workflow triggers, untrusted runner selection, and cache or artifact handoffs.
 
-Publication is fail-closed. The retained publication workflow is an inert manual
-placeholder with no runnable job, privilege, repository checkout, credential, or
-self-hosted path. Restoring publication requires the independent evidence gate in
+The only writable workflow token is the `packages: write` grant in
+`build-and-push.yml`. That workflow runs only for a push to `main` on a GitHub-hosted
+runner, verifies its repository/ref/commit context, and uses the run-scoped
+`GITHUB_TOKEN` to publish the two GHCR images. It accepts no manual, pull-request,
+cross-workflow, reusable, or dispatch trigger and consumes no shared cache or artifact.
+All other workflows remain read-only. The complete image and package boundary is in
 [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md).
 
 Workflows from all external contributors require approval. Approved fork work can
@@ -55,7 +57,8 @@ Weekly version updates cover GitHub Actions, Python dependencies in
 
 GitHub secret scanning, push protection, and private vulnerability reporting are
 enabled and authenticated-API verified. Workflows from all external contributors
-require approval. Publication remains independently disabled and fail-closed.
+require approval. Pull-request workflows cannot publish; package write permission is
+isolated to the trusted default-branch publisher.
 Vulnerabilities must never be reported through public issues; follow
 [`../SECURITY.md`](../SECURITY.md).
 
@@ -91,6 +94,7 @@ The expected effective state is:
 | Reviews | Conversations resolved; zero approvals while single-maintainer |
 | Actions token | Read-only; Actions PR approval disabled |
 | Action sources | Selected GitHub-owned Actions; immutable SHA required |
+| Container publication | GitHub-hosted `main` publisher; contents read and package write only |
 | Dependabot | Alerts and security updates enabled; weekly version updates configured |
 | Commit policy | Web signoff enabled; signed commits not required |
 | Public-only security | Secret scanning, push protection, private vulnerability reporting, and all-external-contributor workflow approval enabled and API-verified |

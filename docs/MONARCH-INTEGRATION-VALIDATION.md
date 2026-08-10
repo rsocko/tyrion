@@ -113,9 +113,21 @@ only the minimum structural shape with invented identifiers and values.
 
 ## Container deployment validation
 
-CI builds both production containers without credentials for pull requests and does
-not publish them. Automated publication is disabled. A future publication path must
-first satisfy the evidence and protected-environment requirements in
+Pull-request CI builds both production containers without credentials and does not
+publish them. A separate GitHub-hosted workflow publishes both production images from
+trusted `main` pushes using only the run-scoped `GITHUB_TOKEN`. The image contract is:
+
+| Runtime | Write-once commit tag | Canonical immutable deployment reference |
+| --- | --- | --- |
+| Bridge | `ghcr.io/rsocko/tyrion-bridge:sha-<40-character-git-sha>` | `ghcr.io/rsocko/tyrion-bridge@sha256:<manifest-digest>` |
+| UI | `ghcr.io/rsocko/tyrion-ui:sha-<40-character-git-sha>` | `ghcr.io/rsocko/tyrion-ui@sha256:<manifest-digest>` |
+
+After both digest-addressed images are published, `main` and `latest` are moved to
+those same digests without rebuilding. Production compose requires the digest and never falls
+back to a moving tag. New GHCR packages are private by default; the repository owner
+must make each package public once through its package settings because GitHub's
+documented package API exposes no visibility update operation and the workflow
+intentionally stores no PAT. See
 [`DEPLOYMENT-TRUST-BOUNDARY.md`](./DEPLOYMENT-TRUST-BOUNDARY.md).
 
 The bridge container contract is port `8100`, public `GET /health`, non-root UID/GID
@@ -126,13 +138,13 @@ artifact, log, or repository. Only one bridge process may mount and own a given
 session directory at a time. The image defaults
 `BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`, `BRIDGE_REMOTE_TLS=true`,
 `BRIDGE_LOAD_DOTENV=false`, and `DEFAULT_TRANSACTION_DAYS=90`; the homelab stack
-repeats these settings and selects the image with `TYRION_BRIDGE_IMAGE_TAG`. It has
-no host port or Traefik route. The image's default command starts `main.py`; the
-stack does not override it.
+repeats these settings and selects the image with
+`TYRION_BRIDGE_IMAGE_DIGEST`. It has no host port or Traefik route. The image's
+default command starts `main.py`; the stack does not override it.
 
 The UI container contract is port `3000`, `GET /api/health`, non-root UID/GID
 `10001`, a read-only root filesystem, and runtime-only `BRIDGE_URL` plus
-`BRIDGE_API_TOKEN`. It is selected with `TYRION_UI_IMAGE_TAG` and is the only
+`BRIDGE_API_TOKEN`. It is selected with `TYRION_UI_IMAGE_DIGEST` and is the only
 production ingress at `https://tyrion.socko.us`. Its proxy permits only health,
 auth setup/status/logout, and sync limited to 90 days; the rendered UI fixes sync
 to 30 days. Broad finance routes return `404`.

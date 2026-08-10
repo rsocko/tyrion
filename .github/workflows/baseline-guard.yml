@@ -22,6 +22,7 @@ jobs:
         run: |
           python .github/scripts/check_workflow_security.py
           python .github/scripts/test_workflow_security.py
+          python .github/scripts/test_publish_images.py
       - name: Enforce Actions artifact policy
         run: python .github/scripts/check_actions_artifact_policy.py
       - name: Enforce license and asset policy

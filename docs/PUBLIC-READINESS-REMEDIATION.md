@@ -4,7 +4,7 @@
 
 **Review date:** 2026-08-09
 
-**Status:** Repository remediation complete; publication gates remain fail-closed
+**Status:** Repository remediation complete; trusted GHCR publication enabled
 
 This ledger maps the findings and owner decisions from issues #97, #99, #100,
 #101, #103, and #104 to terminal dispositions and redacted evidence. It does not
@@ -37,8 +37,8 @@ pull-request refs cannot be completely purged by a repository rewrite.
 | #99 | Actions permissions and supply-chain policy | Repository owner | **Resolved.** Tokens default read-only, Actions cannot approve pull requests, only the reviewed GitHub-owned allowlist is permitted, and immutable Action references are provider-enforced. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md), workflow policy tests, authenticated Actions APIs |
 | #99 | Dependency automation | Repository owner | **Resolved and configured.** Dependency graph, alerts, security updates, and weekly update groups are enabled. Human-authored remediation is merged and the authenticated API reports zero open alerts. | [`.github/dependabot.yml`](../.github/dependabot.yml), authenticated security APIs |
 | #99 | Public-only GitHub security controls | Repository owner | **Resolved after source visibility changed.** Secret scanning, push protection, private vulnerability reporting, and all-external-contributor workflow approval are enabled and authenticated-API verified. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md) |
-| #100 | Untrusted access to privileged runners and publication credentials | Repository maintainer | **Resolved by removal.** Repository workflows use GitHub-hosted validation only. Privileged triggers, credentials, cache/artifact handoffs, and self-hosted selection are prohibited. | [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md), workflow policy tests |
-| #100 | Image or release publication | Infrastructure owner and repository owner | **Disabled, not waived.** The retained manual workflow has no runnable job or privilege. Independent ephemeral-runner, identity, environment-review, network, signing, and monitoring evidence is required to restore publication. | [`build-and-push.yml`](../.github/workflows/build-and-push.yml), [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md) |
+| #100 | Untrusted access to privileged runners and publication credentials | Repository maintainer | **Resolved by isolation.** Pull-request workflows remain read-only on GitHub-hosted runners. Only the trusted `main` publisher receives package write permission and the run-scoped GitHub token; untrusted triggers, static secrets, cache/artifact handoffs, and self-hosted selection are prohibited. | [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md), workflow policy tests |
+| #100 | Container image publication | Repository owner | **Resolved.** GitHub-hosted `main` publication produces write-once commit tags and immutable digests in the intended public GHCR repositories, then promotes and verifies those digests without rebuilding. First-package public visibility is a documented one-time owner setting because GitHub exposes no package-visibility update API and the workflow stores no PAT. Release and deployment automation remain out of scope. | [`build-and-push.yml`](../.github/workflows/build-and-push.yml), [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md) |
 | #101 | Full-ref secret and sensitive-artifact review | Repository maintainer | **Resolved.** Every advertised branch, pull-request ref, commit, tree, path, and reachable blob was reconciled and scanned. Scanner findings were deterministic test-name or placeholder false positives; no unexplained result remains. | [`SECURITY-AUDIT-2026-08-08.md`](SECURITY-AUDIT-2026-08-08.md), final issue #102 scan |
 | #101 | Current private provenance and implementation references | Repository maintainer | **Resolved in the current tree.** Private repository-form references and pinned implementation details were removed. | [`SECURITY-AUDIT-2026-08-08.md`](SECURITY-AUDIT-2026-08-08.md) |
 | #101 | Historical private provenance | Repository owner | **Accepted owner disclosure.** Retained as intentionally public low-risk provenance; no history rewrite or ref purge is justified. | Owner decision recorded in #101 and [`SECURITY-AUDIT-2026-08-08.md`](SECURITY-AUDIT-2026-08-08.md) |
@@ -48,7 +48,7 @@ pull-request refs cannot be completely purged by a repository rewrite.
 | #104 / #102 follow-up | Five later legacy publication build records | Repository maintainer | **Resolved.** All five records were downloaded despite their nonstandard archive encoding, recursively inspected, and scanned. The only secret-shaped hits were public base-image signing fingerprints. Their five obsolete publication runs and artifacts were deleted; post-deletion artifact, publication-run, and cache counts are zero. | Final issue #102 GitHub-surface scan and authenticated Actions APIs |
 | #104 / #102 follow-up | Current Actions logs | Repository maintainer | **Resolved.** Every downloadable current log was scanned. One run had no downloadable log. Findings were limited to generic hosted-runner, CI, or generalized service-role paths. | Final issue #102 GitHub-surface scan |
 | #104 / #102 follow-up | Current GitHub collaboration metadata | Repository maintainer | **Resolved.** Issues, pull requests, comments, reviews, branches, labels, milestones, hooks, deployments, environments, releases, and tags were inventoried. The final scan produced no detector finding. | Final issue #102 GitHub-surface scan |
-| #104 | Packages, releases, assets, attachments, wiki, projects, discussions, deployments, and environments | Repository owner and maintainer | **Resolved.** Owner attests that no GitHub Package exists; the other retained publication surfaces have no content requiring remediation. Wiki and discussions are disabled. | [`GITHUB-SURFACE-AUDIT-2026-08-09.md`](GITHUB-SURFACE-AUDIT-2026-08-09.md), authenticated API inventory |
+| #104 | Packages, releases, assets, attachments, wiki, projects, discussions, deployments, and environments | Repository owner and maintainer | **Resolved for the 2026-08-09 audit snapshot.** No GitHub Package existed at that audit. The later reviewed GHCR publisher is governed by the current deployment trust boundary; the other retained publication surfaces had no content requiring remediation. Wiki and discussions are disabled. | [`GITHUB-SURFACE-AUDIT-2026-08-09.md`](GITHUB-SURFACE-AUDIT-2026-08-09.md), [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md) |
 | #104 | Actions retention and future artifacts | Repository owner | **Resolved.** Retention is one day. Repository policy rejects explicit artifact upload and all cache or artifact handoffs; any future use requires an explicit reviewed policy change. | [`REPOSITORY-GOVERNANCE.md`](REPOSITORY-GOVERNANCE.md), baseline policy checks |
 
 Every preceding finding has an owner and terminal disposition. No candidate is open
@@ -150,13 +150,15 @@ anonymous checks are recorded in
    source visibility, secret scanning, push protection, private vulnerability
    reporting, and approval for all external-contributor workflows were enabled and
    authenticated-API verified.
-3. **Publication infrastructure:** image, package, release, and deployment publication
-   remains disabled until every independent evidence requirement in
-   [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md) is satisfied.
+3. **Publication infrastructure:** **Resolved for production container images.**
+   GitHub-hosted `main` publication and digest-only production selection are defined in
+   [`DEPLOYMENT-TRUST-BOUNDARY.md`](DEPLOYMENT-TRUST-BOUNDARY.md). Release and
+   deployment automation remain separate, disabled surfaces.
 4. **Review governance:** required approvals remain zero only while the repository has
    one maintainer. Before a second maintainer receives merge access, require one
    approval and approval after the latest push.
 
 The source repository is public following the controlled transition in
-[`PUBLIC-RELEASE-GATE-2026-08-09.md`](PUBLIC-RELEASE-GATE-2026-08-09.md). Publication
-remains disabled until every independent infrastructure gate is verified.
+[`PUBLIC-RELEASE-GATE-2026-08-09.md`](PUBLIC-RELEASE-GATE-2026-08-09.md). That dated
+gate records the then-current disabled state; the later reviewed GHCR migration
+supersedes it only for the two production container packages.
