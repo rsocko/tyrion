@@ -64,13 +64,28 @@ digest remains the authoritative immutable identity.
 
 GHCR assigns each pushed manifest an immutable `sha256:` digest. Only after both
 commit-tagged images have been built and pushed does the workflow use `docker buildx
-imagetools create --prefer-index=false` to point `main` and `latest` at those exact
-digests without wrapping them in a new index. It then resolves every promoted tag and
-fails if its digest differs. Promotion does not rebuild either image. Immediately
-before promotion, the job also verifies that its commit is still the remote `main`
-head; an older queued run can publish its write-once references but cannot move the
-discovery tags backward. The workflow summary records both digest-pinned references;
-production compose requires those digests and never defaults to a mutable tag.
+imagetools create --prefer-index=false` to point `build-N` at each exact digest, where
+`N` is that run's validated `github.run_number`. If the commit is still the remote
+`main` head, the publisher also points `main` and `latest` at the same digest. It
+resolves every promoted tag and fails if any digest differs. Promotion never rebuilds
+either image. An older queued run still receives its historical `build-N` aliases but
+cannot move `main` or `latest` backward.
+
+GitHub defines `run_number` as a unique number for each run of a particular workflow;
+it starts at one and increases for each new run, while a rerun keeps the same number.
+Tyrion accepts only canonical positive decimal values through
+`9,223,372,036,854,775,807`. Published `build-N` values may have gaps because failed or
+cancelled runs also consume numbers. They are not globally contiguous across
+workflows, and operators must not treat them as reset-proof if workflow history or
+workflow-file identity changes.
+
+The workflow summary records the full commit tag, `build-N`, and manifest digest for
+both images. Canonical Compose deliberately defaults to the convenient moving
+`latest` tag. Set its shared `TYRION_IMAGE_TAG` override to a reported `build-N` or
+`sha-<commit>` value for a paired rollback; use the reported digest-addressed
+references in deployment systems that require immutable pinning. `main`, `latest`,
+`build-N`, the commit tag, and the digest all identify the same manifest in a
+successful current-head publication.
 
 Both Dockerfiles retain the repository license and dependency notices in `/licenses`
 and set OCI source, revision, license, title, and description labels. The revision is
@@ -116,8 +131,8 @@ visibility update operation.
 | A PR poisons output consumed after merge | Publication performs a clean checkout and rebuild. Workflows prohibit shared caches and artifact upload/download. |
 | A mutable Action changes after review | Every external Action reference is a full immutable commit, and repository policy enforces that form. |
 | Registry credentials persist or cross trust boundaries | The run-scoped `GITHUB_TOKEN` has only contents read and package write, is passed through standard input, and is logged out at job end. |
-| A moving tag changes without a corresponding immutable digest | The publisher first pushes write-once `sha-<commit>`, resolves its registry digest, validates the digest form, and promotes and re-verifies that digest without rebuilding. |
-| Deployment silently advances to a mutable image | Canonical production compose requires explicit bridge and UI `sha256:` digests. |
+| A moving tag changes without a corresponding immutable digest | The publisher first pushes write-once `sha-<commit>`, resolves its registry digest, validates the digest form, and promotes and re-verifies `build-N`, `main`, and `latest` from that digest without rebuilding. |
+| A deployment needs rollback rather than the moving release | Canonical Compose uses one shared tag for both images; operators override `latest` with a reported `build-N` or commit tag, or use the reported digest in deployment tooling that accepts full references. |
 | Build or publication reaches private infrastructure | The job uses a GitHub-hosted runner and public package/dependency endpoints only; it has no homelab address, runner, credential, or network dependency. |
 
 Repository owners can still change workflows, branch rules, package visibility, or

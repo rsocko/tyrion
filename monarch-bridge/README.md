@@ -133,9 +133,10 @@ Pull-request CI builds both production containers without publishing them. A sep
 GitHub-hosted workflow publishes trusted `main` commits to
 `ghcr.io/rsocko/tyrion-bridge` and `ghcr.io/rsocko/tyrion-ui` with immutable commit
 digests and workflow-enforced write-once commit tags, then promotes those digests to
-`main` and `latest` without rebuilding.
-Production deployment must use the digest, not a moving tag. The exact trigger,
-credential, package-visibility, and promotion controls are documented in
+`build-N`, `main`, and `latest` without rebuilding. Canonical Compose follows `latest`
+and accepts one shared tag override for paired rollback; the commit tag and digest
+remain available for stronger pinning. The exact trigger, credential,
+package-visibility, numbering, and promotion controls are documented in
 [`docs/DEPLOYMENT-TRUST-BOUNDARY.md`](../docs/DEPLOYMENT-TRUST-BOUNDARY.md).
 
 The bridge image runs `main.py` as UID/GID `10001`, listens on container port `8100`, and

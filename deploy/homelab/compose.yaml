@@ -1,6 +1,6 @@
 services:
   tyrion-monarch-bridge:
-    image: ${TYRION_BRIDGE_IMAGE:-ghcr.io/rsocko/tyrion-bridge}@${TYRION_BRIDGE_IMAGE_DIGEST:?Set TYRION_BRIDGE_IMAGE_DIGEST to a published sha256 digest}
+    image: ${TYRION_BRIDGE_IMAGE:-ghcr.io/rsocko/tyrion-bridge}:${TYRION_IMAGE_TAG:-latest}
     container_name: tyrion-monarch-bridge
     restart: unless-stopped
     init: true
@@ -36,7 +36,7 @@ services:
       start_period: 30s
 
   tyrion-operations-ui:
-    image: ${TYRION_UI_IMAGE:-ghcr.io/rsocko/tyrion-ui}@${TYRION_UI_IMAGE_DIGEST:?Set TYRION_UI_IMAGE_DIGEST to a published sha256 digest}
+    image: ${TYRION_UI_IMAGE:-ghcr.io/rsocko/tyrion-ui}:${TYRION_IMAGE_TAG:-latest}
     container_name: tyrion-operations-ui
     restart: unless-stopped
     init: true

@@ -329,6 +329,7 @@ def check_workflows(workflows: dict[Path, str]) -> list[str]:
         "runs-on: ubuntu-24.04",
         "persist-credentials: false",
         "GHCR_TOKEN: ${{ github.token }}",
+        "GITHUB_RUN_NUMBER: ${{ github.run_number }}",
         "run: python .github/scripts/publish_images.py",
     )
     for fragment in required_publication_fragments:
@@ -386,9 +387,12 @@ def check_workflows(workflows: dict[Path, str]) -> list[str]:
         _strip_yaml_comments(_mask_block_scalars(publication)), "env", 8
     )
     if len(publication_env) != 1 or publication_env[0].strip() != (
-        "GHCR_TOKEN: ${{ github.token }}"
+        "GHCR_TOKEN: ${{ github.token }}\n"
+        "          GITHUB_RUN_NUMBER: ${{ github.run_number }}"
     ):
-        failures.append("publication environment must contain only the GitHub token")
+        failures.append(
+            "publication environment must contain only the GitHub token and run number"
+        )
 
     if re.search(r"(?m)^\s+working-directory\s*:", publication):
         failures.append("publication workflow cannot change the publisher directory")

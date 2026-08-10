@@ -183,6 +183,7 @@ def test_workflows_keep_untrusted_validation_separate_from_trusted_publication()
     assert "runs-on: ubuntu-24.04" in publisher
     assert "persist-credentials: false" in publisher
     assert "GHCR_TOKEN: ${{ github.token }}" in publisher
+    assert "GITHUB_RUN_NUMBER: ${{ github.run_number }}" in publisher
     assert "run: python .github/scripts/publish_images.py" in publisher
     assert publisher.count("run:") == 1
     assert "python .github/scripts/test_publish_images.py" in baseline
@@ -230,8 +231,15 @@ def test_homelab_contract_routes_only_ui_through_traefik():
 
     assert "ghcr.io/rsocko/tyrion-bridge" in bridge_section
     assert "ghcr.io/rsocko/tyrion-ui" in ui_section
-    assert "@${TYRION_BRIDGE_IMAGE_DIGEST:?" in bridge_section
-    assert "@${TYRION_UI_IMAGE_DIGEST:?" in ui_section
+    assert (
+        "${TYRION_BRIDGE_IMAGE:-ghcr.io/rsocko/tyrion-bridge}:"
+        "${TYRION_IMAGE_TAG:-latest}"
+    ) in bridge_section
+    assert (
+        "${TYRION_UI_IMAGE:-ghcr.io/rsocko/tyrion-ui}:"
+        "${TYRION_IMAGE_TAG:-latest}"
+    ) in ui_section
+    assert "IMAGE_DIGEST" not in compose
     assert "traefik" not in bridge_section
     assert "BRIDGE_URL: http://tyrion-monarch-bridge:8100" in ui_section
     assert "traefik.http.services.tyrion.loadbalancer.server.port=3000" in ui_section
@@ -239,9 +247,8 @@ def test_homelab_contract_routes_only_ui_through_traefik():
     assert compose.count("user:") == 0
     assert "TYRION_BRIDGE_IMAGE=ghcr.io/rsocko/tyrion-bridge" in environment
     assert "TYRION_UI_IMAGE=ghcr.io/rsocko/tyrion-ui" in environment
-    assert "TYRION_BRIDGE_IMAGE_DIGEST=" in environment
-    assert "TYRION_UI_IMAGE_DIGEST=" in environment
-    assert "_IMAGE_TAG" not in environment
+    assert "TYRION_IMAGE_TAG=latest" in environment
+    assert "IMAGE_DIGEST" not in environment
     environment_lines = environment.splitlines()
     for secret in (
         "BRIDGE_API_TOKEN",

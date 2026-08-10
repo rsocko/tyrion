@@ -30,4 +30,5 @@ jobs:
       - name: Publish production images
         env:
           GHCR_TOKEN: ${{ github.token }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: python .github/scripts/publish_images.py

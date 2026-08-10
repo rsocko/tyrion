@@ -140,8 +140,9 @@ Turbopack by default. The build retains standalone output rooted at the reposito
 the local Tyrion domain package is traced into the production image. The production
 image listens on port `3000`, runs as UID/GID `10001`, and reports liveness at
 `GET /api/health`. Trusted `main` pushes publish it as
-`ghcr.io/rsocko/tyrion-ui:sha-<commit>` and as a digest; production deploys the digest,
-while `main` and `latest` are discovery aliases only. Runtime configuration:
+`ghcr.io/rsocko/tyrion-ui:sha-<commit>`, `build-N`, `main`, and `latest` from one
+manifest digest without rebuilding. Canonical Compose follows `latest`; `build-N`,
+the commit tag, and the digest support rollback and pinning. Runtime configuration:
 
 | Variable | Purpose |
 | --- | --- |

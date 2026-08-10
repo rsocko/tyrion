@@ -17,6 +17,8 @@ EXPECTED_REPOSITORY = "rsocko/tyrion"
 EXPECTED_REF = "refs/heads/main"
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+RUN_NUMBER_PATTERN = re.compile(r"^[1-9][0-9]{0,18}$")
+MAX_RUN_NUMBER = 9_223_372_036_854_775_807
 MISSING_MANIFEST_MARKERS = ("manifest unknown", "name unknown", "not found")
 
 
@@ -34,6 +36,7 @@ class CommandResult:
 @dataclass(frozen=True)
 class PublicationResult:
     sha: str
+    build_number: str
     bridge_digest: str
     ui_digest: str
     promoted: bool
@@ -83,7 +86,7 @@ def required_environment(environment: Mapping[str, str], name: str) -> str:
 
 def verify_context(
     environment: Mapping[str, str], runner: CommandRunner
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     if required_environment(environment, "GITHUB_EVENT_NAME") != "push":
         raise PublicationError("Publication requires a push event")
     if required_environment(environment, "GITHUB_REPOSITORY") != EXPECTED_REPOSITORY:
@@ -95,6 +98,15 @@ def verify_context(
     if not SHA_PATTERN.fullmatch(sha):
         raise PublicationError("Publication requires a full Git commit ID")
 
+    build_number = required_environment(environment, "GITHUB_RUN_NUMBER")
+    if (
+        not RUN_NUMBER_PATTERN.fullmatch(build_number)
+        or int(build_number) > MAX_RUN_NUMBER
+    ):
+        raise PublicationError(
+            "Publication requires a bounded positive workflow run number"
+        )
+
     checkout = runner(
         ["git", "rev-parse", "HEAD"],
         capture_output=True,
@@ -104,7 +116,7 @@ def verify_context(
 
     actor = required_environment(environment, "GITHUB_ACTOR")
     token = required_environment(environment, "GHCR_TOKEN")
-    return sha, actor, token
+    return sha, build_number, actor, token
 
 
 def inspect_digest(reference: str, runner: CommandRunner) -> str:
@@ -208,25 +220,23 @@ def build_and_push(
 def promote_and_verify(
     image: str,
     digest: str,
+    tags: Sequence[str],
     runner: CommandRunner,
 ) -> None:
     source = f"{image}@{digest}"
-    moving_references = (f"{image}:main", f"{image}:latest")
-    runner(
-        [
-            "docker",
-            "buildx",
-            "imagetools",
-            "create",
-            "--prefer-index=false",
-            "--tag",
-            moving_references[0],
-            "--tag",
-            moving_references[1],
-            source,
-        ]
-    )
-    for reference in moving_references:
+    references = tuple(f"{image}:{tag}" for tag in tags)
+    command = [
+        "docker",
+        "buildx",
+        "imagetools",
+        "create",
+        "--prefer-index=false",
+    ]
+    for reference in references:
+        command.extend(("--tag", reference))
+    command.append(source)
+    runner(command)
+    for reference in references:
         if inspect_digest(reference, runner) != digest:
             raise PublicationError(
                 f"Promoted tag does not match its immutable digest: {reference}"
@@ -237,7 +247,7 @@ def publish(
     environment: Mapping[str, str],
     runner: CommandRunner = run_command,
 ) -> PublicationResult:
-    sha, actor, token = verify_context(environment, runner)
+    sha, build_number, actor, token = verify_context(environment, runner)
     bridge_commit = f"{BRIDGE_IMAGE}:sha-{sha}"
     ui_commit = f"{UI_IMAGE}:sha-{sha}"
     logged_in = False
@@ -264,6 +274,10 @@ def publish(
         if ui_digest is None:
             ui_digest = build_and_push(UI_IMAGE, "triage-app/Dockerfile", sha, runner)
 
+        build_tag = f"build-{build_number}"
+        promote_and_verify(BRIDGE_IMAGE, bridge_digest, (build_tag,), runner)
+        promote_and_verify(UI_IMAGE, ui_digest, (build_tag,), runner)
+
         remote_main = runner(
             ["git", "ls-remote", "origin", EXPECTED_REF],
             capture_output=True,
@@ -273,11 +287,12 @@ def publish(
 
         promoted = remote_main[0] == sha
         if promoted:
-            promote_and_verify(BRIDGE_IMAGE, bridge_digest, runner)
-            promote_and_verify(UI_IMAGE, ui_digest, runner)
+            promote_and_verify(BRIDGE_IMAGE, bridge_digest, ("main", "latest"), runner)
+            promote_and_verify(UI_IMAGE, ui_digest, ("main", "latest"), runner)
 
         return PublicationResult(
             sha=sha,
+            build_number=build_number,
             bridge_digest=bridge_digest,
             ui_digest=ui_digest,
             promoted=promoted,
@@ -301,24 +316,29 @@ def record_result(result: PublicationResult, environment: Mapping[str, str]) -> 
         (
             f"bridge_digest={result.bridge_digest}",
             f"ui_digest={result.ui_digest}",
+            f"build_number={result.build_number}",
             f"promoted={str(result.promoted).lower()}",
         ),
     )
 
     promotion_summary = (
-        "`main` and `latest` now reference these same digests."
+        f"`build-{result.build_number}`, `main`, and `latest` now reference each "
+        "image's listed manifest digest."
         if result.promoted
-        else "`main` and `latest` were not changed because `main` advanced."
+        else f"`build-{result.build_number}` references each image's listed manifest "
+        "digest; `main` and `latest` were not changed because `main` advanced."
     )
     append_line(
         summary_path,
         (
             "### Published production images",
             "",
-            f"- `{BRIDGE_IMAGE}:sha-{result.sha}`",
-            f"- `{BRIDGE_IMAGE}@{result.bridge_digest}`",
-            f"- `{UI_IMAGE}:sha-{result.sha}`",
-            f"- `{UI_IMAGE}@{result.ui_digest}`",
+            f"- Bridge: `{BRIDGE_IMAGE}:sha-{result.sha}`, "
+            f"`{BRIDGE_IMAGE}:build-{result.build_number}`, "
+            f"`{BRIDGE_IMAGE}@{result.bridge_digest}`",
+            f"- UI: `{UI_IMAGE}:sha-{result.sha}`, "
+            f"`{UI_IMAGE}:build-{result.build_number}`, "
+            f"`{UI_IMAGE}@{result.ui_digest}`",
             "",
             promotion_summary,
         ),
