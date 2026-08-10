@@ -41,7 +41,8 @@ rejected; the gateway sends no CORS permission. Browser code must use the separa
 bounded `/api/bridge/...` operations proxy, which never exposes finance datasets.
 
 The gateway strips `/api/connector/v1` and forwards these exact Bridge v1 operations
-to private `BRIDGE_URL`:
+to private `BRIDGE_URL`, except that connector health is derived from verified
+authentication status as described below:
 
 | Method | Gateway path | Bounds |
 | --- | --- | --- |
@@ -75,6 +76,48 @@ gateway forces `Cache-Control: no-store` and enforces an 8 MiB response limit.
 Network, timeout, non-JSON, malformed JSON, and oversized responses become stable
 sanitized gateway errors. Authorization values, request or response bodies, sensitive
 URLs, identifiers, and upstream exception text are not logged.
+
+### Composed connector health
+
+Authenticated `GET /api/connector/v1/health` sends exactly one server-to-server
+`GET /auth/status` request with the validated `BRIDGE_API_TOKEN`; `/auth/status` does
+not become a public gateway route. A successful verification proves that the private
+Bridge is reachable and supplies every dynamic field required to normalize the
+existing `HealthResponse`, so the gateway does not also call coarse `/health`.
+
+The response must be 2xx JSON, no larger than 4 KiB, and must carry
+`X-Monarch-Contract-Version: 1.0` plus a body `contractVersion` of `1.0`. The gateway
+validates the explicit Bridge `AuthStatusResponse` field types, enumerations, and
+authentication-state consistency. It then emits only the existing v1
+`HealthResponse` fields:
+
+```json
+{
+  "contractVersion": "1.0",
+  "status": "ok",
+  "mode": "live",
+  "reachable": true,
+  "authenticated": true,
+  "authState": "connected"
+}
+```
+
+Live-verified `/auth/status` is authoritative for `mode`, `authenticated`, and
+`authState`; its `email` and every other field are discarded. A successful response
+sets `reachable: true`. `status` is `ok` for verified `connected` and
+`unauthenticated`, matching Bridge health semantics, and `degraded` for verified
+`expired` and `degraded`. Consequently stale restart state cannot override any live
+verification result, and each gateway health request performs exactly one verification.
+
+The composed response is `200`, `Cache-Control: no-store`, and
+`X-Monarch-Contract-Version: 1.0` only when verification validates. A private
+non-2xx maps to `502 bridge_health_check_failed`; network failure maps to
+`502 bridge_unavailable`; the 30-second bound maps to `504 bridge_timeout`;
+non-JSON, malformed JSON, malformed shape, or an oversized response maps to
+`502 invalid_bridge_response`; and a missing or mismatched contract version maps to
+`502 bridge_contract_mismatch`. These failures use a versioned sanitized error
+envelope, never a success-shaped `HealthResponse`, and never include the private
+response body or exception detail.
 
 ## Common semantics
 

@@ -168,6 +168,15 @@ routes are unavailable through it. `/api/internal/` remains excluded from every
 public router and the attribution handler independently enforces its private Docker
 authority.
 
+Connector `GET /health` is composed inside the server-only gateway: it makes exactly
+one protected Bridge `/auth/status` verification with `BRIDGE_API_TOKEN`, validates
+the bounded v1 response, derives reachability and service status from that result,
+and returns only the normalized `HealthResponse`. Email and all other session context
+are discarded. This internal composition does not add `/auth/status`
+to either the Next.js route policy or Traefik's exact public allowlist. Failure of
+the private call is a sanitized non-2xx gateway error, never a healthy or
+authenticated fallback.
+
 Mission Control configures
 `FINANCE_MANAGER_URL=https://tyrion.socko.us/api/connector/v1` and
 `FINANCE_MANAGER_API_TOKEN` equal to Tyrion's minimum-32-character
