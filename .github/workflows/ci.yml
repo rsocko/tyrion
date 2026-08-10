@@ -88,5 +88,6 @@ jobs:
           docker build --file triage-app/Dockerfile --tag tyrion-ui:ci .
 
       - name: Enforce operational UI advisory policy
-        working-directory: triage-app
-        run: npm audit --audit-level=high
+        run: |
+          python .github/scripts/test_npm_audit_policy.py
+          python .github/scripts/check_npm_audit_policy.py
