@@ -59,8 +59,9 @@ Tyrion currently normalizes and tests this smaller contract:
 | Method | Endpoint | Behavior |
 | --- | --- | --- |
 | `POST` | `/sync?days=1..365` | Reads transaction pages and accounts, then returns counts; the bridge does not persist consumer records |
-| `GET` | `/transactions` | Reads normalized transactions by date, account, category, limit, and cursor |
+| `GET` | `/transactions` | Reads normalized transactions through a strict 366-day allowlist for account, category, merchant, tag, signed amount, pending, recurring, limit, and cursor filters |
 | `GET` | `/transactions/{id}` | Reads one normalized transaction |
+| `GET` | `/transactions/{id}/splits` | Reads at most 100 normalized splits for one explicit transaction investigation |
 | `PATCH` | `/transactions/{id}/category` | Writes and verifies a category change |
 | `GET` | `/categories` | Reads normalized categories |
 | `GET` | `/category-groups` | Reads the bounded normalized category-group reference set |

@@ -13,6 +13,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -52,6 +53,7 @@ from contract import (
     SyncResponse,
     TransactionResponse,
     TransactionTagsResponse,
+    TransactionSplitsResponse,
     TransactionsResponse,
     normalize_accounts,
     normalize_budgets,
@@ -61,6 +63,7 @@ from contract import (
     normalize_recurring,
     normalize_transaction,
     normalize_transaction_tags,
+    normalize_transaction_splits,
     normalize_transactions,
     provenance,
 )
@@ -123,6 +126,25 @@ def upstream_error(resource: str, exc: Exception) -> HTTPException:
 # Demo mode detection (set via --demo flag or DEMO_MODE env var)
 # ---------------------------------------------------------------------------
 DEMO_MODE: bool = os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes")
+MAX_TRANSACTION_DAYS = 366
+MAX_TRANSACTION_SCAN_ITEMS = 5000
+MAX_SPLIT_ITEMS = 100
+MAX_AMOUNT = Decimal("999999999.99")
+TRANSACTION_QUERY_PARAMETERS = {
+    "start_date",
+    "end_date",
+    "account_id",
+    "category_id",
+    "merchant_query",
+    "tag_id",
+    "min_amount",
+    "max_amount",
+    "is_pending",
+    "is_recurring",
+    "limit",
+    "cursor",
+}
+TRANSACTION_SINGLETON_PARAMETERS = TRANSACTION_QUERY_PARAMETERS - {"tag_id"}
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +186,7 @@ class DemoProvider:
     TRANSACTION_TAGS = [
         {"id": "tag-household", "name": "Household"},
         {"id": "tag-reimbursable", "name": "Reimbursable"},
+        {"id": "tag-subscription", "name": "Subscription"},
     ]
 
     @classmethod
@@ -209,9 +232,18 @@ class DemoProvider:
                     "category": category,
                     "account": {"id": account["id"], "displayName": account["displayName"]},
                     "isPending": False,
+                    "isRecurring": cat_id == "cat-streaming",
                     "notes": None,
-                    "tags": [cls.TRANSACTION_TAGS[0]],
+                    "tags": [
+                        cls.TRANSACTION_TAGS[0],
+                        *(
+                            [cls.TRANSACTION_TAGS[2]]
+                            if cat_id == "cat-streaming"
+                            else []
+                        ),
+                    ],
                 })
+                transactions[-1]["isPending"] = tx_id % 11 == 0
                 tx_id += 1
             current += timedelta(days=1)
 
@@ -220,12 +252,38 @@ class DemoProvider:
 
     @classmethod
     def get_transactions(cls, start_date: str, end_date: Optional[str], limit: int,
-                         account_id: Optional[str] = None, category_id: Optional[str] = None) -> dict:
+                         account_id: Optional[str] = None, category_id: Optional[str] = None,
+                         merchant_query: Optional[str] = None,
+                         tag_ids: Optional[list[str]] = None,
+                         min_amount: Optional[Decimal] = None,
+                         max_amount: Optional[Decimal] = None,
+                         is_pending: Optional[bool] = None,
+                         is_recurring: Optional[bool] = None) -> dict:
         results = cls._generate_transactions(start_date, end_date, limit)
         if account_id:
             results = [t for t in results if t["account"]["id"] == account_id]
         if category_id:
             results = [t for t in results if t["category"]["id"] == category_id]
+        if merchant_query:
+            query = " ".join(merchant_query.casefold().split())
+            results = [
+                t for t in results
+                if query in " ".join(t["merchant"]["name"].casefold().split())
+            ]
+        if tag_ids:
+            wanted = set(tag_ids)
+            results = [
+                t for t in results
+                if wanted.intersection(tag["id"] for tag in t["tags"])
+            ]
+        if min_amount is not None:
+            results = [t for t in results if Decimal(str(t["amount"])) >= min_amount]
+        if max_amount is not None:
+            results = [t for t in results if Decimal(str(t["amount"])) <= max_amount]
+        if is_pending is not None:
+            results = [t for t in results if t["isPending"] is is_pending]
+        if is_recurring is not None:
+            results = [t for t in results if t["isRecurring"] is is_recurring]
         return {"transactions": results, "total": len(results)}
 
     @classmethod
@@ -235,6 +293,33 @@ class DemoProvider:
             if tx["id"] == transaction_id:
                 return tx
         return None
+
+    @classmethod
+    def get_transaction_splits(cls, transaction_id: str) -> Optional[dict]:
+        transaction = cls.get_transaction_detail(transaction_id)
+        if transaction is None:
+            return None
+        amount = Decimal(str(transaction["amount"]))
+        first_amount = (amount * Decimal("0.60")).quantize(Decimal("0.01"))
+        return {
+            "getTransaction": {
+                "id": transaction_id,
+                "splitTransactions": [
+                    {
+                        "id": f"{transaction_id}-split-1",
+                        "amount": float(first_amount),
+                        "merchant": {"name": transaction["merchant"]["name"]},
+                        "category": transaction["category"],
+                    },
+                    {
+                        "id": f"{transaction_id}-split-2",
+                        "amount": float(amount - first_amount),
+                        "merchant": {"name": transaction["merchant"]["name"]},
+                        "category": None,
+                    },
+                ],
+            },
+        }
 
     @classmethod
     def get_accounts(cls) -> dict:
@@ -395,6 +480,10 @@ async def secure_bridge_request(request: Request, call_next):
     ):
         return error_response(401, "bridge_auth_required", "Bridge authentication is required")
 
+    query_error = validate_inquiry_query(request)
+    if query_error is not None:
+        return query_error
+
     response = await call_next(request)
     response.headers["X-Monarch-Contract-Version"] = CONTRACT_VERSION
     if request.url.path.startswith("/auth/"):
@@ -409,6 +498,31 @@ def error_response(status_code: int, code: str, message: str) -> JSONResponse:
         content=payload.model_dump(mode="json", by_alias=True),
         headers={"X-Monarch-Contract-Version": CONTRACT_VERSION},
     )
+
+
+def validate_inquiry_query(request: Request) -> Optional[JSONResponse]:
+    if request.method != "GET":
+        return None
+    path = request.url.path
+    if path == "/transactions":
+        pairs = list(request.query_params.multi_items())
+        unknown = sorted({name for name, _ in pairs} - TRANSACTION_QUERY_PARAMETERS)
+        if unknown:
+            return error_response(400, "invalid_request", f"Unknown query parameter: {unknown[0]}")
+        for name in TRANSACTION_SINGLETON_PARAMETERS:
+            if len(request.query_params.getlist(name)) > 1:
+                return error_response(400, "invalid_request", f"{name} may be specified only once")
+        tag_values = request.query_params.getlist("tag_id")
+        if len({value.strip() for value in tag_values}) > 20:
+            return error_response(422, "invalid_request", "tag_id accepts at most 20 unique values")
+        for name in ("is_pending", "is_recurring"):
+            value = request.query_params.get(name)
+            if value is not None and value not in {"true", "false"}:
+                return error_response(422, "invalid_request", f"{name} must be true or false")
+    elif path.startswith("/transactions/") and request.query_params:
+        name = next(iter(request.query_params))
+        return error_response(400, "invalid_request", f"Unknown query parameter: {name}")
+    return None
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -770,12 +884,100 @@ def decode_cursor(cursor: Optional[str]) -> int:
     return offset
 
 
+def normalize_filter_id(value: Optional[str], name: str) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        raise HTTPException(
+            422,
+            detail={"error": "invalid_request", "message": f"{name} must not be empty"},
+        )
+    if len(normalized) > 512:
+        raise HTTPException(
+            422,
+            detail={
+                "error": "invalid_request",
+                "message": f"{name} must contain at most 512 characters",
+            },
+        )
+    return normalized
+
+
+def normalize_merchant_query(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = " ".join(value.split())
+    if not normalized:
+        raise HTTPException(
+            422,
+            detail={"error": "invalid_request", "message": "merchant_query must not be empty"},
+        )
+    if len(normalized) > 120:
+        raise HTTPException(
+            422,
+            detail={
+                "error": "invalid_request",
+                "message": "merchant_query must contain at most 120 normalized characters",
+            },
+        )
+    return normalized
+
+
+def normalize_upstream_transaction_page(raw, requested_limit: int, provider_offset: int):
+    if not isinstance(raw, dict):
+        raise ValueError("Upstream transaction page was malformed")
+    container = raw.get("allTransactions")
+    if not isinstance(container, dict) or not isinstance(container.get("results"), list):
+        raise ValueError("Upstream transaction page was malformed")
+    page = normalize_transactions(raw)
+    if len(page) > requested_limit:
+        raise ValueError("Upstream transaction page exceeded the requested limit")
+    total = container.get("totalCount")
+    if isinstance(total, bool) or not isinstance(total, int):
+        raise ValueError("Upstream transaction total was malformed")
+    if total < 0:
+        raise ValueError("Upstream transaction total was invalid")
+    if page and provider_offset + len(page) > total:
+        raise ValueError("Upstream transaction page contradicted its total")
+    return page, total
+
+
+def filter_normalized_transactions(transactions, merchant_query, min_amount, max_amount):
+    if merchant_query:
+        query = " ".join(merchant_query.casefold().split())
+        transactions = [
+            transaction
+            for transaction in transactions
+            if query in " ".join(transaction.merchant.name.casefold().split())
+        ]
+    if min_amount is not None:
+        transactions = [
+            transaction
+            for transaction in transactions
+            if Decimal(str(transaction.amount)) >= min_amount
+        ]
+    if max_amount is not None:
+        transactions = [
+            transaction
+            for transaction in transactions
+            if Decimal(str(transaction.amount)) <= max_amount
+        ]
+    return transactions
+
+
 @app.get("/transactions", response_model=TransactionsResponse)
 async def get_transactions(
     start_date: Optional[date] = Query(None, description="Inclusive start date"),
     end_date: Optional[date] = Query(None, description="Inclusive end date"),
-    account_id: Optional[str] = Query(None, min_length=1, max_length=512),
-    category_id: Optional[str] = Query(None, min_length=1, max_length=512),
+    account_id: Optional[str] = Query(None),
+    category_id: Optional[str] = Query(None),
+    merchant_query: Optional[str] = Query(None),
+    tag_id: Optional[list[str]] = Query(None),
+    min_amount: Optional[Decimal] = Query(None, ge=-MAX_AMOUNT, le=MAX_AMOUNT),
+    max_amount: Optional[Decimal] = Query(None, ge=-MAX_AMOUNT, le=MAX_AMOUNT),
+    is_pending: Optional[bool] = Query(None),
+    is_recurring: Optional[bool] = Query(None),
     limit: int = Query(500, ge=1, le=500),
     cursor: Optional[str] = Query(None, description="Opaque cursor returned by the previous page"),
 ):
@@ -790,12 +992,45 @@ async def get_transactions(
             400,
             detail={"error": "invalid_date_range", "message": "end_date must be on or after start_date"},
         )
+    if (end_date - start_date).days + 1 > MAX_TRANSACTION_DAYS:
+        raise HTTPException(
+            400,
+            detail={
+                "error": "invalid_date_range",
+                "message": "Transaction queries may cover at most 366 inclusive days",
+            },
+        )
+    if min_amount is not None and max_amount is not None and min_amount > max_amount:
+        raise HTTPException(
+            400,
+            detail={"error": "invalid_amount_range", "message": "min_amount must not exceed max_amount"},
+        )
+    account_id = normalize_filter_id(account_id, "account_id")
+    category_id = normalize_filter_id(category_id, "category_id")
+    merchant_query = normalize_merchant_query(merchant_query)
+    normalized_tag_ids = []
+    for value in tag_id or []:
+        normalized = normalize_filter_id(value, "tag_id")
+        if normalized not in normalized_tag_ids:
+            normalized_tag_ids.append(normalized)
     start_text = start_date.isoformat()
     end_text = end_date.isoformat()
     offset = decode_cursor(cursor)
 
     if DEMO_MODE:
-        raw = DemoProvider.get_transactions(start_text, end_text, 5000, account_id, category_id)
+        raw = DemoProvider.get_transactions(
+            start_text,
+            end_text,
+            MAX_TRANSACTION_SCAN_ITEMS,
+            account_id,
+            category_id,
+            merchant_query,
+            normalized_tag_ids,
+            min_amount,
+            max_amount,
+            is_pending,
+            is_recurring,
+        )
         provider = "demo"
         results = normalize_transactions(raw)
         total = len(results)
@@ -803,21 +1038,74 @@ async def get_transactions(
     else:
         client = await get_client()
         try:
-            raw = await client.get_transactions(
-                limit=limit,
-                offset=offset,
-                start_date=start_text,
-                end_date=end_text,
-                account_ids=[account_id] if account_id else [],
-                category_ids=[category_id] if category_id else [],
+            provider_kwargs = {
+                "start_date": start_text,
+                "end_date": end_text,
+                "account_ids": [account_id] if account_id else [],
+                "category_ids": [category_id] if category_id else [],
+                "tag_ids": normalized_tag_ids,
+                "is_pending": is_pending,
+                "is_recurring": is_recurring,
+            }
+            requires_normalized_filtering = (
+                merchant_query is not None
+                or min_amount is not None
+                or max_amount is not None
             )
-            page = normalize_transactions(raw)
-            if len(page) > limit:
-                raise ValueError("Upstream transaction page exceeded the requested limit")
-            all_transactions = raw.get("allTransactions", {}) if isinstance(raw, dict) else {}
-            total = int(all_transactions.get("totalCount", len(page)))
-            if total < 0:
-                raise ValueError("Upstream transaction total was invalid")
+            if requires_normalized_filtering:
+                results = []
+                scan_offset = 0
+                expected_provider_total = None
+                while True:
+                    raw = await client.get_transactions(
+                        limit=500,
+                        offset=scan_offset,
+                        **provider_kwargs,
+                    )
+                    provider_page, provider_total = normalize_upstream_transaction_page(
+                        raw,
+                        500,
+                        scan_offset,
+                    )
+                    if (
+                        expected_provider_total is not None
+                        and provider_total != expected_provider_total
+                    ):
+                        raise ValueError("Upstream transaction total changed during pagination")
+                    expected_provider_total = provider_total
+                    if provider_total > MAX_TRANSACTION_SCAN_ITEMS:
+                        raise HTTPException(
+                            400,
+                            detail={
+                                "error": "transaction_query_too_broad",
+                                "message": "Narrow the transaction query before applying merchant or amount filters",
+                            },
+                        )
+                    results.extend(provider_page)
+                    if len(results) >= provider_total:
+                        break
+                    if not provider_page:
+                        raise ValueError("Upstream transaction pagination ended unexpectedly")
+                    scan_offset += len(provider_page)
+                results = filter_normalized_transactions(
+                    results,
+                    merchant_query,
+                    min_amount,
+                    max_amount,
+                )
+                total = len(results)
+                page = results[offset:offset + limit]
+            else:
+                raw = await client.get_transactions(
+                    limit=limit,
+                    offset=offset,
+                    **provider_kwargs,
+                )
+                page, total = normalize_upstream_transaction_page(raw, limit, offset)
+                if not page and offset < total:
+                    raise ValueError("Upstream transaction pagination ended unexpectedly")
+        except HTTPException:
+            raise
         except Exception as e:
             raise upstream_error("transaction", e)
         provider = "live"
@@ -831,6 +1119,56 @@ async def get_transactions(
             next_cursor=encode_cursor(next_offset) if next_offset < total else None,
         ),
     )
+
+
+@app.get(
+    "/transactions/{transaction_id}/splits",
+    response_model=TransactionSplitsResponse,
+)
+async def get_transaction_splits(
+    transaction_id: str = PathParam(..., min_length=1, max_length=512),
+):
+    """Get bounded normalized split detail for one transaction."""
+    if DEMO_MODE:
+        raw = DemoProvider.get_transaction_splits(transaction_id)
+        if raw is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "transaction_not_found",
+                    "message": f"Transaction {transaction_id} was not found",
+                },
+            )
+        return TransactionSplitsResponse(
+            provenance=provenance("demo"),
+            transaction_id=transaction_id,
+            splits=normalize_transaction_splits(raw),
+        )
+
+    client = await get_client()
+    try:
+        raw = await client.get_transaction_splits(transaction_id)
+        transaction = raw.get("getTransaction") if isinstance(raw, dict) else None
+        if transaction is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "transaction_not_found",
+                    "message": f"Transaction {transaction_id} was not found",
+                },
+            )
+        splits = normalize_transaction_splits(raw)
+        if len(splits) > MAX_SPLIT_ITEMS:
+            raise ValueError("Upstream split detail exceeded the item limit")
+        return TransactionSplitsResponse(
+            provenance=provenance("live"),
+            transaction_id=transaction_id,
+            splits=splits,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise upstream_error("transaction splits", e)
 
 
 @app.get("/transactions/{transaction_id}", response_model=TransactionResponse)

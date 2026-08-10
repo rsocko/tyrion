@@ -115,7 +115,13 @@ All bridge-generated errors have one shape:
 }
 ```
 
-Stable codes include `invalid_request`, `invalid_cursor`, `invalid_date_range`, `bridge_auth_required`, `bridge_unavailable`, `not_authenticated`, `session_in_use`, `session_expired`, `invalid_credentials`, `invalid_mfa`, `mfa_required`, `captcha_required`, `upstream_timeout`, `upstream_rate_limited`, `transaction_not_found`, `upstream_error`, and `internal_error`. Clients should branch on `code`, not `message`. Upstream exception text and sensitive values are never returned.
+Stable codes include `invalid_request`, `invalid_cursor`, `invalid_date_range`,
+`invalid_amount_range`, `transaction_query_too_broad`, `bridge_auth_required`,
+`bridge_unavailable`, `not_authenticated`, `session_in_use`, `session_expired`,
+`invalid_credentials`, `invalid_mfa`, `mfa_required`, `captcha_required`,
+`upstream_timeout`, `upstream_rate_limited`, `transaction_not_found`,
+`upstream_error`, and `internal_error`. Clients should branch on `code`, not
+`message`. Upstream exception text and sensitive values are never returned.
 
 ## Endpoints
 
@@ -193,8 +199,38 @@ Monarch credentials, cookies, and session values are never returned.
 `GET /transactions`
 
 Mission Control uses inclusive `start_date` and `end_date`, `limit` from 1 through
-500, and the opaque `cursor` returned by the previous page. The bridge also supports
-the optional `account_id` and `category_id` filters.
+500, and the opaque `cursor` returned by the previous page. A request may cover at
+most 366 inclusive calendar days. When dates are omitted, the bridge applies its
+bounded default window.
+
+The complete optional filter allowlist is:
+
+- `account_id` and `category_id`: one non-empty normalized source ID each, at most
+  512 characters.
+- `merchant_query`: case-insensitive normalized-whitespace substring matching against
+  merchant name only, from 1 through 120 characters.
+- Repeated `tag_id`: at most 20 unique non-empty normalized source IDs, each at most
+  512 characters. Duplicate values are coalesced and a transaction matches when it
+  has any requested tag. The bridge accepts IDs but does not add tag-reference fields
+  to the transaction DTO; the synchronized reference projection tracked by #141 is
+  the downstream source of stable consumer tag identity.
+- `min_amount` and `max_amount`: inclusive signed v1 money values from
+  `-999999999.99` through `999999999.99`. `min_amount` must not exceed `max_amount`.
+- `is_pending` and `is_recurring`: exactly `true` or `false`.
+
+Every parameter except `tag_id` is a singleton. Unknown parameters, duplicate
+singletons, malformed booleans, empty normalized text or IDs, and invalid ranges fail
+without an upstream call. `invalid_amount_range` reports reversed amount bounds.
+`invalid_date_range` reports reversed or overlong date ranges.
+
+The pinned client receives account, category, tag, pending, and recurring filters
+directly. Merchant and amount semantics are deliberately applied to normalized
+transactions because the client's generic search is broader than merchant matching
+and it has no amount-range parameters. The bridge pages the provider before applying
+those normalized filters so `total`, `cursor`, and page slicing remain correct. This
+scan is capped at 5,000 provider-matched transactions; a larger candidate set returns
+`400 transaction_query_too_broad` and the caller must narrow the date or direct
+filters.
 
 ```json
 {
@@ -228,6 +264,31 @@ The existing `tags` display-name array remains for v1 compatibility.
 filters. It is empty when a transaction has no tags.
 
 `GET /transactions/{transaction_id}` returns the same transaction DTO under `transaction`, plus `contractVersion` and `provenance`.
+
+`GET /transactions/{transaction_id}/splits` performs an explicit, read-only split
+investigation. It returns at most 100 normalized split items:
+
+```json
+{
+  "contractVersion": "1.0",
+  "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
+  "transactionId": "tx-123",
+  "splits": [
+    {
+      "id": "split-1",
+      "amount": -39.99,
+      "merchantName": "Store",
+      "category": { "id": "cat-shopping", "name": "Shopping" }
+    }
+  ]
+}
+```
+
+`category` is nullable. Collections are empty rather than `null`. A missing
+transaction returns `404 transaction_not_found`. A malformed split response, an
+over-limit response, or any split missing its normalized identity returns sanitized
+`502 upstream_error`. Notes, attachments, and raw split fields are never returned.
+The operation accepts no query parameters.
 
 `PATCH /transactions/{transaction_id}/category`
 
