@@ -45,6 +45,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
+| Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB response bounds; status/body/safe-header preservation; sanitized network/invalid-response errors; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
 | Production images | Separate non-root bridge/UI runtimes, route allowlist, loopback health checks, external session mount, no auth state in build contexts | Pull immutable images, mount restricted state, and smoke test private bridge plus TLS UI ingress |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
@@ -177,22 +178,28 @@ command starts `main.py`; the stack does not override it.
 The UI container contract is port `3000`, `GET /api/health`, non-root UID/GID
 `10001`, a read-only root filesystem, and runtime-only `BRIDGE_URL` plus
 `BRIDGE_API_TOKEN`. It uses the same `TYRION_IMAGE_TAG` as the bridge and is the only
-production ingress at `https://tyrion.socko.us`. Its proxy permits only health, auth
-setup/status/logout, and sync limited to 90 days; the rendered UI fixes sync to 30
-days. Broad finance routes return `404`.
+production ingress target at `https://tyrion.socko.us`. Its `/api/bridge/...` proxy
+permits only health, auth setup/status/logout, and sync limited to 90 days; the
+rendered UI fixes sync to 30 days. Broad finance routes return `404`.
 
-Mission Control does not use the UI ingress as a bridge origin. Its server and sync
-worker join `tyrion-backend`, call
-`http://tyrion-monarch-bridge:8100`, and send the shared service token as a bearer
-credential. The public UI origin intentionally returns `404` for `/health`; its
-allowlisted `/api/bridge/health` route only confirms private bridge reachability for
-operations.
+Mission Control server and sync workers use
+`https://tyrion.socko.us/api/connector/v1` with the shared bearer credential. That
+separate public TLS route reaches the UI container without the browser private-network
+middleware, authenticates every request, rejects browser metadata, and forwards only
+the documented connector allowlist to private `BRIDGE_URL`. The raw bridge remains
+unrouted. `/api/internal/` remains excluded from all public routers and private
+attribution retains its Docker-authority check.
 
 For a controlled homelab smoke test, inject the same `BRIDGE_API_TOKEN` into both
 containers and retain `BRIDGE_REMOTE_TLS=true` and
 `BRIDGE_ALLOWED_ORIGINS=https://mc.socko.us`. Confirm bridge startup fails when the
 token is absent or `BRIDGE_REMOTE_TLS` is explicitly overridden to `false`, the
-bridge has no ingress route, UI `/api/health` is reachable through TLS, protected
-proxy operations work, broad proxy/UI routes return `404`, and restart reuses the
-external session. Do not run login, capture responses, or inspect the mounted
-session as part of image publishing.
+bridge has no ingress route, UI `/api/health` is reachable through the private UI
+router, and the connector route requires valid backend bearer auth over TLS. Exercise
+every allowlisted connector path against demo/invented data; confirm missing/invalid
+auth, browser metadata, unknown routes/methods/query/body expansion, oversized
+requests/responses, `/auth/*`, `/api/internal/*`, and broad `/api/bridge/...` finance
+operations fail without a bridge call. Confirm Bridge status/body/contract headers
+survive and synthetic network/invalid-response details do not. Restart must reuse the
+external session. Do not run live login or mutation, capture responses, or inspect the
+mounted session as part of image publishing.

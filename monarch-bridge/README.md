@@ -70,8 +70,9 @@ by Tyrion.
 The browser calls the Next.js `/api/bridge/...` route. That server-side route permits
 only health, auth setup/status/logout, and bounded sync, then injects
 `BRIDGE_API_TOKEN` for protected operations. The token must remain server-only; never
-use a `NEXT_PUBLIC_` variable. Mission Control, scheduled sync, and MCP clients use the
-private bridge URL and service token directly rather than the public UI proxy.
+use a `NEXT_PUBLIC_` variable. Mission Control uses the separate backend-only
+`/api/connector/v1` gateway described below; scheduled sync and MCP callers may use
+that same approved contract or the private bridge when they share its backend network.
 
 The operational UI and `python main.py --setup` are initiation surfaces for the same
 bridge-owned session. They do not create independent session stores. Browser-cookie
@@ -80,25 +81,23 @@ login even when account MFA is disabled; email/password remains a best-effort fa
 
 ### Mission Control connection
 
-Mission Control must call the bridge's base origin directly. In the homelab stack,
-join the Mission Control server/worker to the external `tyrion-backend` network and
-configure:
+Mission Control server and worker processes call the bearer-protected public gateway:
 
 ```dotenv
-FINANCE_MANAGER_URL=http://tyrion-monarch-bridge:8100
+FINANCE_MANAGER_URL=https://tyrion.socko.us/api/connector/v1
 FINANCE_MANAGER_API_TOKEN=
 ```
 
-The Mission Control token must equal Tyrion's server-only `BRIDGE_API_TOKEN`. When
-the connector persists a different bridge hostname instead of using
-`FINANCE_MANAGER_URL`, also allowlist that hostname and token-bearing origin with
-Mission Control's `FINANCE_MANAGER_ALLOWED_HOSTS` and
-`FINANCE_MANAGER_TOKEN_ORIGINS`.
+The Mission Control token must equal Tyrion's server-only `BRIDGE_API_TOKEN` and be at
+least 32 characters. Mission Control must allowlist `tyrion.socko.us` and authorize
+token attachment only to the exact `https://tyrion.socko.us` origin. It must not send
+the credential to redirects or expose it to browser code.
 
-`https://tyrion.socko.us` is the operations UI origin, not the bridge base origin.
-Its `/health` route therefore returns `404`; `/api/bridge/health` is the bounded UI
-proxy health check, and transaction reads or mutations are intentionally not exposed
-through that proxy.
+The gateway strips `/api/connector/v1` and forwards only its documented Bridge v1
+allowlist to private `BRIDGE_URL`. The raw bridge base, `/auth/*`, reusable sessions,
+OpenAPI/docs, attribution, and policy routes remain private or unavailable.
+`/api/bridge/health` remains the bounded browser operations check; transaction reads
+or mutations are still unavailable through `/api/bridge/...`.
 
 ## Authenticated homelab deployment
 
@@ -150,7 +149,9 @@ network and call the protected bridge contract directly.
 
 The UI image runs as UID/GID `10001`, listens on port `3000`, and checks
 `GET /api/health`. It is the only service routed from
-`https://tyrion.socko.us`; the browser uses its allowlisted `/api/bridge/...` proxy.
+`https://tyrion.socko.us`; the browser uses its allowlisted `/api/bridge/...` proxy,
+while backend callers use the independently authenticated `/api/connector/v1`
+gateway. The raw bridge still has no Traefik route.
 
 Production must mount writable persistent storage at `/var/lib/tyrion`. The bridge
 stores the opaque session at `/var/lib/tyrion/monarch-session.json` and creates its
