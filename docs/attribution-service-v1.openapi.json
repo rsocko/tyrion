@@ -3,7 +3,7 @@
   "info": {
     "title": "Tyrion Internal Batch Attribution Service",
     "version": "1.0.0",
-    "description": "Private service-to-service contract. Mission Control sends only privacy-safe normalized attribution facts; Tyrion derives actor and household scope from the authenticated client."
+    "description": "Private trusted-homelab service contract. Mission Control sends only privacy-safe normalized attribution facts; Tyrion derives the fixed household and service actor from its server implementation."
   },
   "servers": [
     {
@@ -11,51 +11,22 @@
       "description": "Private backend-network DNS only"
     }
   ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The server-only BRIDGE_API_TOKEN shared by Tyrion and the Mission Control finance-manager backend on the private Docker network."
+      }
+    }
+  },
   "paths": {
     "/api/internal/v1/attribution/batch": {
       "post": {
         "operationId": "attributeBatchV1",
         "summary": "Attribute a bounded transaction batch using one current policy snapshot",
-        "description": "Maximum body size is 65536 bytes. The exact body bytes are SHA-256 hashed and included in the HMAC assertion. This route is excluded from the public operational UI router.",
-        "parameters": [
-          {
-            "name": "x-tyrion-service-client",
-            "in": "header",
-            "required": true,
-            "schema": { "$ref": "#/$defs/Identifier" }
-          },
-          {
-            "name": "x-tyrion-service-timestamp",
-            "in": "header",
-            "required": true,
-            "description": "Unix timestamp in seconds; accepted for 60 seconds.",
-            "schema": { "type": "string", "pattern": "^[0-9]+$" }
-          },
-          {
-            "name": "x-tyrion-service-nonce",
-            "in": "header",
-            "required": true,
-            "description": "Unique base64url nonce accepted once.",
-            "schema": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9_-]{22,128}$"
-            }
-          },
-          {
-            "name": "x-tyrion-content-sha256",
-            "in": "header",
-            "required": true,
-            "description": "Lowercase SHA-256 digest of the exact request body.",
-            "schema": { "$ref": "#/$defs/HexDigest" }
-          },
-          {
-            "name": "x-tyrion-service-signature",
-            "in": "header",
-            "required": true,
-            "description": "Lowercase HMAC-SHA256 over uppercase method, pathname, lowercase private host, client ID, timestamp, nonce, and content digest, newline joined in that order.",
-            "schema": { "$ref": "#/$defs/HexDigest" }
-          }
-        ],
+        "description": "Maximum body size is 65536 bytes. This route accepts only the fixed private service authority, rejects forwarded requests, and is excluded from every public operational UI router.",
+        "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -80,7 +51,6 @@
           "409": { "$ref": "#/$defs/ConflictResponse" },
           "413": { "$ref": "#/$defs/SizeResponse" },
           "415": { "$ref": "#/$defs/MediaTypeResponse" },
-          "429": { "$ref": "#/$defs/RateResponse" },
           "500": { "$ref": "#/$defs/OperationFailureResponse" },
           "503": { "$ref": "#/$defs/UnavailableResponse" }
         }
@@ -93,10 +63,6 @@
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
-    },
-    "HexDigest": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
     },
     "Timestamp": {
       "type": "string",
@@ -321,7 +287,7 @@
       }
     },
     "ConflictResponse": {
-      "description": "attribution_replay_detected or policy_conflict",
+      "description": "policy_conflict",
       "content": {
         "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
       }
@@ -334,12 +300,6 @@
     },
     "MediaTypeResponse": {
       "description": "unsupported_media_type",
-      "content": {
-        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
-      }
-    },
-    "RateResponse": {
-      "description": "attribution_rate_limited",
       "content": {
         "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
       }

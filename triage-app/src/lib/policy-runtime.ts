@@ -17,9 +17,11 @@ import {
   type ReattributionRecordV1,
   type ReattributionRepository,
 } from "@rsocko/tyrion-kid-engine";
+import { HOMELAB_HOUSEHOLD_ID } from "@/lib/homelab-identity";
 
 const MAX_INTEGRATION_RESPONSE_BYTES = 1_048_576;
 const INTEGRATION_TIMEOUT_MS = 10_000;
+const FINGERPRINT_KEY_DOMAIN = "tyrion/instrument-fingerprint/v1";
 
 export interface PolicyRuntime {
   mode: "demo" | "production";
@@ -62,9 +64,12 @@ export function getPolicyRuntime(
   const policyRepository: PolicyRepository = demo
     ? new MemoryPolicyRepository()
     : createFilePolicyRepository(environment);
-  const fingerprintKey = demo
+  const fingerprintRootKey = demo
     ? "deterministic-demo-fingerprint-key-not-for-production"
-    : requireSecret(environment.TYRION_INSTRUMENT_FINGERPRINT_KEY);
+    : requireSecret(environment.BRIDGE_API_TOKEN);
+  const fingerprintKey = createHmac("sha256", fingerprintRootKey)
+    .update(FINGERPRINT_KEY_DOMAIN)
+    .digest();
 
   let reattributionService: ReattributionService | undefined;
   cachedRuntime = {
@@ -194,7 +199,7 @@ class DemoReattributionRepository implements ReattributionRepository {
     householdId: string,
     sourceRefs: string[]
   ): Promise<ReattributionRecordV1[]> {
-    if (householdId !== "demo-household") return [];
+    if (householdId !== HOMELAB_HOUSEHOLD_ID) return [];
     return sourceRefs.flatMap((sourceRef) => {
       const record = this.records.get(sourceRef);
       return record ? [structuredClone(record)] : [];
@@ -370,7 +375,7 @@ function demoRecord(
 ): ReattributionRecordV1 {
   const input = parseAttributionInputV1({
     contractVersion: "1.0",
-    householdId: "demo-household",
+    householdId: HOMELAB_HOUSEHOLD_ID,
     source: {
       system: "monarch-bridge",
       recordRef: sourceRef,

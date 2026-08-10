@@ -39,6 +39,13 @@ reporting product, broad transaction browser, or separate assistant shell.
 
 ## Production Tyrion UI boundary
 
+The foreseeable production deployment is one trusted, single-household homelab. It is
+not a public SaaS, multi-user, or multi-tenant service. The operations UI has no
+directly published container port; its browser routes are reachable only through the
+homelab ingress and its `trusted-private-networks` middleware. Within that boundary,
+Tyrion uses one fixed local-operator actor and one fixed household scope rather than
+accepting browser identity, household, or permission claims.
+
 `https://tyrion.socko.us` may host the bounded Tyrion configuration and Monarch
 connector operations UI. Connector browser calls use only allowlisted Next.js
 `/api/bridge/...` routes. The bridge service token remains server-only, and the
@@ -48,7 +55,9 @@ it never stores or proxies reusable Monarch session material.
 Mission Control calls Tyrion's protected versioned batch attribution API over the
 private service network. It must not install, copy, or execute `kid-engine`; that
 module remains internal to Tyrion. The attribution route is not a Monarch Bridge
-endpoint and is explicitly excluded from the public `tyrion.socko.us` router.
+endpoint and is explicitly excluded from the public `tyrion.socko.us` router. It
+accepts the fixed private Docker authority only, rejects forwarded requests, and uses
+the existing server-only bridge/finance-manager token as its bearer credential.
 
 The production route tree and proxy allowlist must prevent access to transactions,
 accounts, categories, recurring items, cash flow, budgets, bills, broad kid-spending
