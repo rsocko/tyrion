@@ -7,6 +7,14 @@ Tyrion publishes two Linux production images:
 - `ghcr.io/rsocko/tyrion-bridge`
 - `ghcr.io/rsocko/tyrion-ui`
 
+## Initial workflow enablement
+
+**Operational note (2026-08-09):** PR #148 merged as `e88cb86` while GitHub still
+recorded the publication workflow as manually disabled, so that merge created no
+publication run. The repository owner subsequently enabled the existing workflow.
+This documentation-only follow-up merge supplies the next trusted `main` push needed
+to create the first publication event under the reviewed contract.
+
 The publisher runs entirely on a disposable GitHub-hosted Ubuntu runner. It has no
 route to or dependency on the homelab, no self-hosted runner, no static registry
 credential, no repository secret, and no cache or artifact handoff. Runtime deployment
