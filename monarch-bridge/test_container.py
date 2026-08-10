@@ -219,7 +219,7 @@ def test_workflows_keep_untrusted_validation_separate_from_trusted_publication()
     assert "`BRIDGE_REMOTE_TLS=true`" in normalized_readme
     assert "`BRIDGE_REMOTE_TLS=true`" in normalized_validation
     assert (
-        "the only production ingress at `https://tyrion.socko.us`"
+        "the only production ingress target at `https://tyrion.socko.us`"
         in normalized_validation
     )
 
@@ -243,6 +243,26 @@ def test_homelab_contract_routes_only_ui_through_traefik():
     assert "traefik" not in bridge_section
     assert "BRIDGE_URL: http://tyrion-monarch-bridge:8100" in ui_section
     assert "traefik.http.services.tyrion.loadbalancer.server.port=3000" in ui_section
+    assert (
+        "traefik.http.routers.tyrion-connector-secure.rule="
+        "Host(`${TYRION_HOSTNAME:-tyrion.socko.us}`)"
+    ) in ui_section
+    connector_rule = next(
+        line
+        for line in ui_section.splitlines()
+        if "routers.tyrion-connector-secure.rule=" in line
+    )
+    assert "PathPrefix(`/api/connector/v1/`)" not in connector_rule
+    assert "Path(`/api/connector/v1/health`)" in ui_section
+    assert "Path(`/api/connector/v1/transactions`)" in ui_section
+    assert (
+        "middlewares.tyrion-public-connector-marker.headers."
+        "customrequestheaders.X-Tyrion-Public-Connector=1"
+    ) in ui_section
+    assert (
+        "routers.tyrion-connector-secure.middlewares="
+        "tyrion-public-connector-marker,compression@file,security-headers@file"
+    ) in ui_section
     assert compose.count("read_only: true") == 2
     assert compose.count("user:") == 0
     assert "TYRION_BRIDGE_IMAGE=ghcr.io/rsocko/tyrion-bridge" in environment
