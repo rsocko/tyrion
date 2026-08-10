@@ -128,11 +128,14 @@ rejects demo mode.
 
 ```powershell
 npm ci
+npm --prefix ../kid-engine ci --no-audit --no-fund
 npm --prefix ../kid-engine run build
+npm --prefix ../kid-engine run audit
 npm run lint
 npm run typecheck
 npm run build
 npm test
+npm run audit
 ```
 
 Next.js 16 requires Node.js 20.9 or newer. Development and production builds use
@@ -142,7 +145,18 @@ image listens on port `3000`, runs as UID/GID `10001`, and reports liveness at
 `GET /api/health`. Trusted `main` pushes publish it as
 `ghcr.io/rsocko/tyrion-ui:sha-<commit>`, `build-N`, `main`, and `latest` from one
 manifest digest without rebuilding. Canonical Compose follows `latest`; `build-N`,
-the commit tag, and the digest support rollback and pinning. Runtime configuration:
+the commit tag, and the digest support rollback and pinning.
+
+The approved development registry currently resolves Next.js 16.2.12 and Nano ID
+3.3.16. Sharp is independently overridden to patched 0.35.3. The UI and kid-engine
+development graphs pin PostCSS 8.5.25. Their audit policy permits only
+GHSA-2v37-7h3g-55p8 through 2026-09-09: PostCSS imports the non-secure Nano ID entry
+point and calls only `nanoid(6)`, never the affected zero-size custom generators.
+The policy fails on any other high-severity advisory, changed dependency or call
+shape, or expiration. Replace the exception with Nano ID 3.3.17 or newer as soon as
+the approved registry carries it.
+
+Runtime configuration:
 
 | Variable | Purpose |
 | --- | --- |
