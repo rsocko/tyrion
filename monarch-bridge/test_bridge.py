@@ -4,6 +4,7 @@ Tests verify endpoint shapes and response codes without needing real credentials
 """
 
 import os
+import inspect
 from unittest.mock import AsyncMock
 
 # Force demo mode before importing the app
@@ -19,6 +20,7 @@ from contract import (
     normalize_cashflow,
     normalize_recurring,
     normalize_transaction,
+    normalize_transaction_splits,
     normalize_transactions,
 )
 import main as main_module
@@ -153,6 +155,147 @@ async def test_transactions_filter_by_category(client):
 
 
 @pytest.mark.anyio
+async def test_transactions_apply_bounded_inquiry_filters(client):
+    response = await client.get(
+        "/transactions",
+        params=[
+            ("start_date", "2026-08-01"),
+            ("end_date", "2026-08-10"),
+            ("merchant_query", "  whole   foods "),
+            ("tag_id", "tag-household"),
+            ("min_amount", "-200"),
+            ("max_amount", "-1"),
+            ("is_pending", "false"),
+            ("is_recurring", "false"),
+            ("limit", "500"),
+        ],
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["transactions"]
+    assert data["total"] == len(data["transactions"])
+    for transaction in data["transactions"]:
+        assert "whole foods" in transaction["merchant"]["name"].casefold()
+        assert -200 <= transaction["amount"] <= -1
+        assert transaction["isPending"] is False
+        assert transaction["isRecurring"] is False
+        assert "Household" in transaction["tags"]
+
+
+@pytest.mark.anyio
+async def test_transactions_support_repeated_unique_tag_filters(client):
+    response = await client.get(
+        "/transactions",
+        params=[
+            ("start_date", "2026-08-01"),
+            ("end_date", "2026-08-31"),
+            ("tag_id", "tag-subscription"),
+            ("tag_id", "tag-subscription"),
+        ],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["transactions"]
+    assert all(
+        "Subscription" in transaction["tags"]
+        for transaction in response.json()["transactions"]
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("query", "status", "code"),
+    [
+        ("unknown=true", 400, "invalid_request"),
+        ("limit=1&limit=2", 400, "invalid_request"),
+        ("is_pending=1", 422, "invalid_request"),
+        ("is_recurring=yes", 422, "invalid_request"),
+        ("merchant_query=%20%20", 422, "invalid_request"),
+        ("account_id=%20%20", 422, "invalid_request"),
+        ("tag_id=%20%20", 422, "invalid_request"),
+        (f"tag_id={'x' * 513}", 422, "invalid_request"),
+        ("min_amount=2&max_amount=1", 400, "invalid_amount_range"),
+        ("min_amount=1000000000", 422, "invalid_request"),
+        ("start_date=2025-01-01&end_date=2026-01-02", 400, "invalid_date_range"),
+    ],
+)
+async def test_transactions_reject_invalid_bounded_queries(client, query, status, code):
+    response = await client.get(f"/transactions?{query}")
+
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_transactions_accept_366_inclusive_days(client):
+    response = await client.get(
+        "/transactions?start_date=2025-01-01&end_date=2026-01-01&limit=1",
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_transactions_coalesce_repeated_tag_values(client):
+    response = await client.get(
+        "/transactions",
+        params=[("tag_id", "tag-household")] * 21,
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_transactions_limit_unique_tag_values(client):
+    response = await client.get(
+        "/transactions",
+        params=[("tag_id", f"tag-{index}") for index in range(21)],
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"
+
+
+@pytest.mark.anyio
+async def test_transactions_bound_normalized_merchant_text(client):
+    accepted = await client.get(
+        "/transactions",
+        params={"merchant_query": f"{' ' * 121}Whole Foods"},
+    )
+    rejected = await client.get(
+        "/transactions",
+        params={"merchant_query": "x" * 121},
+    )
+
+    assert accepted.status_code == 200
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "invalid_request"
+
+
+@pytest.mark.anyio
+async def test_transactions_bound_normalized_account_and_category_ids(client):
+    account = await client.get(
+        "/transactions",
+        params={"account_id": f"{' ' * 513}acc-checking-001"},
+    )
+    category = await client.get(
+        "/transactions",
+        params={"category_id": f"{' ' * 513}cat-groceries"},
+    )
+    rejected = await client.get(
+        "/transactions",
+        params={"account_id": "x" * 513},
+    )
+
+    assert account.status_code == 200
+    assert category.status_code == 200
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "invalid_request"
+
+
+@pytest.mark.anyio
 async def test_transaction_detail_not_found(client):
     resp = await client.get("/transactions/nonexistent-id")
     assert resp.status_code == 404
@@ -171,6 +314,43 @@ async def test_transaction_detail(client):
     assert resp.status_code == 200
     assert resp.json()["transaction"]["id"] == "tx-1000"
     assert_contract(resp)
+
+
+@pytest.mark.anyio
+async def test_transaction_split_detail(client):
+    response = await client.get("/transactions/tx-1000/splits")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data) == {"contractVersion", "provenance", "transactionId", "splits"}
+    assert data["transactionId"] == "tx-1000"
+    assert len(data["splits"]) == 2
+    assert set(data["splits"][0]) == {"id", "amount", "merchantName", "category"}
+    assert round(sum(split["amount"] for split in data["splits"]), 2) == round(
+        (await client.get("/transactions/tx-1000")).json()["transaction"]["amount"],
+        2,
+    )
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_transaction_split_detail_not_found(client):
+    response = await client.get("/transactions/nonexistent-id/splits")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "transaction_not_found"
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_transaction_detail_routes_reject_unknown_queries(client):
+    detail = await client.get("/transactions/tx-1000?fresh=true")
+    splits = await client.get("/transactions/tx-1000/splits?include_notes=true")
+
+    assert detail.status_code == 400
+    assert splits.status_code == 400
+    assert detail.json()["error"]["code"] == "invalid_request"
+    assert splits.json()["error"]["code"] == "invalid_request"
 
 
 @pytest.mark.anyio
@@ -324,7 +504,8 @@ async def test_openapi_json(client):
     for path in (
         "/contract", "/health", "/auth/login", "/auth/login-with-cookies",
         "/auth/status", "/auth/logout", "/sync", "/transactions",
-        "/transactions/{transaction_id}", "/transactions/{transaction_id}/category",
+        "/transactions/{transaction_id}", "/transactions/{transaction_id}/splits",
+        "/transactions/{transaction_id}/category",
         "/categories", "/accounts", "/recurring", "/cashflow", "/budgets",
     ):
         assert path in schema["paths"]
@@ -387,6 +568,83 @@ def test_transaction_normalizer_matches_nullable_consumer_fields():
     assert transaction.category is None
     assert transaction.account.mask == "1234"
     assert transaction.notes is None
+
+
+def test_split_normalizers_produce_identical_dtos():
+    demo = {
+        "getTransaction": {
+            "splitTransactions": [{
+                "id": "split-1",
+                "amount": -7.5,
+                "merchant": {"name": "Invented Market"},
+                "category": {"id": "cat-1", "name": "Groceries"},
+            }],
+        },
+    }
+    live = {
+        "getTransaction": {
+            "splitTransactions": [{
+                "id": "split-1",
+                "amount": "-7.50",
+                "merchant": {"id": "merchant-1", "name": "Invented Market"},
+                "category": {"id": "cat-1", "name": "Groceries"},
+                "notes": "not exposed",
+            }],
+        },
+    }
+
+    assert normalize_transaction_splits(demo) == normalize_transaction_splits(live)
+    split = normalize_transaction_splits(demo)[0]
+    assert split.model_dump(by_alias=True) == {
+        "id": "split-1",
+        "amount": -7.5,
+        "merchantName": "Invented Market",
+        "category": {"id": "cat-1", "name": "Groceries"},
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"getTransaction": {"splitTransactions": {}}},
+        {"getTransaction": {"splitTransactions": [{"amount": -1}]}},
+        {"getTransaction": {"splitTransactions": [{"id": "split-1", "amount": -1}]}},
+        {
+            "getTransaction": {
+                "splitTransactions": [{
+                    "id": "split-1",
+                    "merchant": {"name": "Invented Market"},
+                }],
+            },
+        },
+    ],
+)
+def test_split_normalizer_rejects_malformed_upstream(payload):
+    with pytest.raises(ValueError):
+        normalize_transaction_splits(payload)
+
+
+def test_pinned_client_inquiry_signatures_are_supported():
+    from monarchmoney import MonarchMoney
+
+    transaction_parameters = inspect.signature(
+        MonarchMoney.get_transactions,
+    ).parameters
+    assert {
+        "limit",
+        "offset",
+        "start_date",
+        "end_date",
+        "category_ids",
+        "account_ids",
+        "tag_ids",
+        "is_recurring",
+        "is_pending",
+    } <= set(transaction_parameters)
+    assert list(
+        inspect.signature(MonarchMoney.get_transaction_splits).parameters,
+    ) == ["self", "transaction_id"]
 
 
 def test_normalizes_real_live_recurring_shape():
@@ -483,7 +741,10 @@ async def test_live_transactions_use_provider_pagination_and_defaults(client, mo
     monkeypatch.setattr(main_module, "DEMO_MODE", False)
     monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
 
-    resp = await client.get("/transactions?limit=1&cursor=MTAw")
+    resp = await client.get(
+        "/transactions?limit=1&cursor=MTAw&tag_id=tag-1"
+        "&is_pending=true&is_recurring=false",
+    )
 
     assert resp.status_code == 200
     assert resp.json()["total"] == 101
@@ -493,6 +754,87 @@ async def test_live_transactions_use_provider_pagination_and_defaults(client, mo
     assert kwargs["offset"] == 100
     assert kwargs["start_date"]
     assert kwargs["end_date"]
+    assert kwargs["tag_ids"] == ["tag-1"]
+    assert kwargs["is_pending"] is True
+    assert kwargs["is_recurring"] is False
+
+
+@pytest.mark.anyio
+async def test_live_transactions_filter_merchant_and_amount_before_pagination(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.get_transactions.return_value = {
+        "allTransactions": {
+            "totalCount": 2,
+            "results": [
+                {
+                    "id": "tx-1",
+                    "date": "2026-08-01",
+                    "amount": -10,
+                    "merchant": {"name": "Invented Market"},
+                    "account": {"id": "acc-1", "displayName": "Checking"},
+                },
+                {
+                    "id": "tx-2",
+                    "date": "2026-08-01",
+                    "amount": -30,
+                    "merchant": {"name": "Other Shop"},
+                    "account": {"id": "acc-1", "displayName": "Checking"},
+                },
+            ],
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get(
+        "/transactions?merchant_query=invented&min_amount=-20&limit=1",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert [item["id"] for item in response.json()["transactions"]] == ["tx-1"]
+    kwargs = provider.get_transactions.await_args.kwargs
+    assert kwargs["limit"] == 500
+    assert "search" not in kwargs
+
+
+@pytest.mark.anyio
+async def test_live_normalized_filter_rejects_unbounded_provider_result(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.get_transactions.return_value = {
+        "allTransactions": {
+            "totalCount": main_module.MAX_TRANSACTION_SCAN_ITEMS + 1,
+            "results": [],
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get("/transactions?merchant_query=invented")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "transaction_query_too_broad"
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_unknown_transaction_filter_fails_before_upstream_call(client, monkeypatch):
+    provider = AsyncMock()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    get_client = AsyncMock(return_value=provider)
+    monkeypatch.setattr(main_module, "get_client", get_client)
+
+    response = await client.get("/transactions?needs_review=true")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_request"
+    get_client.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -526,6 +868,54 @@ async def test_live_transactions_map_malformed_upstream_page_to_stable_error(
         },
     }
     assert_contract(resp)
+
+
+@pytest.mark.anyio
+async def test_live_transactions_reject_page_that_contradicts_total(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.get_transactions.return_value = {
+        "allTransactions": {
+            "totalCount": 0,
+            "results": [{
+                "id": "tx-1",
+                "date": "2026-08-01",
+                "amount": -10,
+                "merchant": {"name": "Invented Market"},
+                "account": {"id": "acc-1", "displayName": "Checking"},
+            }],
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get("/transactions?limit=1")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_error"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("total", [None, "1", True])
+async def test_live_transactions_require_integer_total_count(
+    client,
+    monkeypatch,
+    total,
+):
+    provider = AsyncMock()
+    container = {"results": []}
+    if total is not None:
+        container["totalCount"] = total
+    provider.get_transactions.return_value = {"allTransactions": container}
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get("/transactions?limit=1")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_error"
 
 
 @pytest.mark.anyio
@@ -605,6 +995,124 @@ async def test_live_transaction_detail_enriches_category_name(client, monkeypatc
         "id": "cat-1",
         "name": "Shopping",
     }
+
+
+@pytest.mark.anyio
+async def test_live_transaction_splits_are_normalized(client, monkeypatch):
+    provider = AsyncMock()
+    provider.get_transaction_splits.return_value = {
+        "getTransaction": {
+            "id": "tx-1",
+            "splitTransactions": [{
+                "id": "split-1",
+                "amount": "-4.25",
+                "merchant": {"name": "Invented Market"},
+                "category": None,
+                "notes": "not exposed",
+            }],
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get("/transactions/tx-1/splits")
+
+    assert response.status_code == 200
+    assert response.json()["splits"] == [{
+        "id": "split-1",
+        "amount": -4.25,
+        "merchantName": "Invented Market",
+        "category": None,
+    }]
+    provider.get_transaction_splits.assert_awaited_once_with("tx-1")
+
+
+@pytest.mark.anyio
+async def test_live_transaction_splits_allow_empty_detail(client, monkeypatch):
+    provider = AsyncMock()
+    provider.get_transaction_splits.return_value = {
+        "getTransaction": {"id": "tx-1", "splitTransactions": []},
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get("/transactions/tx-1/splits")
+
+    assert response.status_code == 200
+    assert response.json()["splits"] == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("payload", "status", "code"),
+    [
+        ({"getTransaction": None}, 404, "transaction_not_found"),
+        ({"getTransaction": {"splitTransactions": {}}}, 502, "upstream_error"),
+        (
+            {
+                "getTransaction": {
+                    "splitTransactions": [
+                        {
+                            "id": f"split-{index}",
+                            "amount": -1,
+                            "merchant": {"name": "Invented Market"},
+                        }
+                        for index in range(main_module.MAX_SPLIT_ITEMS + 1)
+                    ],
+                },
+            },
+            502,
+            "upstream_error",
+        ),
+    ],
+)
+async def test_live_transaction_splits_have_exact_failure_behavior(
+    client,
+    monkeypatch,
+    payload,
+    status,
+    code,
+):
+    provider = AsyncMock()
+    provider.get_transaction_splits.return_value = payload
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get("/transactions/tx-1/splits")
+
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("failure", "status", "code"),
+    [
+        (TimeoutError("private timeout detail"), 504, "upstream_timeout"),
+        (Exception("429 private rate detail"), 429, "upstream_rate_limited"),
+        (Exception("401 private expiry detail"), 401, "session_expired"),
+        (Exception("private upstream detail"), 502, "upstream_error"),
+    ],
+)
+async def test_live_transaction_splits_preserve_sanitized_upstream_errors(
+    client,
+    monkeypatch,
+    failure,
+    status,
+    code,
+):
+    provider = AsyncMock()
+    provider.get_transaction_splits.side_effect = failure
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get("/transactions/tx-1/splits")
+
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert "private" not in response.text
+    assert_contract(response)
 
 
 @pytest.mark.anyio
