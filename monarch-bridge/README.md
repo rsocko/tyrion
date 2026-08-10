@@ -195,9 +195,9 @@ or deleting the session while it is owned. To revoke access held by another devi
 revoke Monarch sessions upstream as well.
 
 The public Tyrion connector does not expose `/auth/status`. Its authenticated
-`GET /api/connector/v1/health` handler calls this protected route server-to-server,
-combines the verified authentication state with Bridge `/health` service status, and
-discards email and all other authentication context.
+`GET /api/connector/v1/health` handler calls this protected route exactly once
+server-to-server, derives the normalized health status and reachability from the
+verified result, and discards email and all other authentication context.
 
 Browser cookies cannot be refreshed automatically because Monarch does not provide the
 bridge a refresh credential. When an upstream request explicitly rejects the session,

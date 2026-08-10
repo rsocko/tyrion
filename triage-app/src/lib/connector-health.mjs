@@ -9,43 +9,33 @@ const authStates = new Set([
   "degraded",
 ]);
 const modes = new Set(["demo", "live"]);
-const healthStatuses = new Set(["ok", "degraded"]);
-
 export async function composeConnectorHealth({
   baseUrl,
   token,
   fetchImpl = fetch,
   timeoutMs = CONNECTOR_HEALTH_TIMEOUT_MS,
 }) {
-  const [health, authStatus] = await Promise.all([
-    fetchBridgeComponent({
-      baseUrl,
-      token,
-      path: "/health",
-      fetchImpl,
-      timeoutMs,
-      parse: parseHealthResponse,
-    }),
-    fetchBridgeComponent({
-      baseUrl,
-      token,
-      path: "/auth/status",
-      fetchImpl,
-      timeoutMs,
-      parse: parseAuthStatusResponse,
-    }),
-  ]);
-
-  const failure = health.ok ? (authStatus.ok ? null : authStatus) : health;
-  if (failure) return failure;
+  const authStatus = await fetchBridgeComponent({
+    baseUrl,
+    token,
+    path: "/auth/status",
+    fetchImpl,
+    timeoutMs,
+    parse: parseAuthStatusResponse,
+  });
+  if (!authStatus.ok) return authStatus;
 
   return {
     ok: true,
     body: {
       contractVersion: MONARCH_CONTRACT_VERSION,
-      status: health.value.status,
+      status:
+        authStatus.value.authState === "connected" ||
+        authStatus.value.authState === "unauthenticated"
+          ? "ok"
+          : "degraded",
       mode: authStatus.value.mode,
-      reachable: health.value.reachable,
+      reachable: true,
       authenticated: authStatus.value.authenticated,
       authState: authStatus.value.authState,
     },
@@ -163,27 +153,6 @@ async function readBoundedResponse(response) {
     offset += chunk.byteLength;
   }
   return bytes;
-}
-
-function parseHealthResponse(value) {
-  if (
-    !isRecord(value) ||
-    !healthStatuses.has(value.status) ||
-    !modes.has(value.mode) ||
-    typeof value.reachable !== "boolean" ||
-    typeof value.authenticated !== "boolean" ||
-    !authStates.has(value.authState) ||
-    value.authenticated !== (value.authState === "connected")
-  ) {
-    return null;
-  }
-  return {
-    status: value.status,
-    mode: value.mode,
-    reachable: value.reachable,
-    authenticated: value.authenticated,
-    authState: value.authState,
-  };
 }
 
 function parseAuthStatusResponse(value) {

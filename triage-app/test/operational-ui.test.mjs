@@ -813,7 +813,7 @@ test("public connector gateway forwards every allowlisted operation with caller 
   );
 });
 
-test("connector health composes every verified authentication state", async () => {
+test("connector health derives connected, unauthenticated, expired, and transient degraded states", async () => {
   for (const state of [
     "connected",
     "unauthenticated",
@@ -821,14 +821,6 @@ test("connector health composes every verified authentication state", async () =
     "degraded",
   ]) {
     authState = state;
-    healthPayloadOverride = {
-      contractVersion: "1.0",
-      status: state === "connected" || state === "unauthenticated" ? "ok" : "degraded",
-      mode: "live",
-      reachable: true,
-      authenticated: state === "connected",
-      authState: state,
-    };
     const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
       headers: { Authorization: `Bearer ${serviceToken}` },
     });
@@ -837,7 +829,7 @@ test("connector health composes every verified authentication state", async () =
     assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
     assert.deepEqual(await response.json(), {
       contractVersion: "1.0",
-      status: healthPayloadOverride.status,
+      status: state === "connected" || state === "unauthenticated" ? "ok" : "degraded",
       mode: "live",
       reachable: true,
       authenticated: state === "connected",
@@ -846,7 +838,7 @@ test("connector health composes every verified authentication state", async () =
   }
 });
 
-test("connector health uses live auth status without exposing auth details", async () => {
+test("connector health repairs restart-stale state from one live verification", async () => {
   healthPayloadOverride = {
     contractVersion: "1.0",
     status: "degraded",
@@ -869,7 +861,7 @@ test("connector health uses live auth status without exposing auth details", asy
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     contractVersion: "1.0",
-    status: "degraded",
+    status: "ok",
     mode: "live",
     reachable: true,
     authenticated: true,
@@ -883,7 +875,6 @@ test("connector health uses live auth status without exposing auth details", asy
       hasBody,
     })),
     [
-      { path: "/health", method: "GET", authorized: true, hasBody: false },
       {
         path: "/auth/status",
         method: "GET",
@@ -935,19 +926,13 @@ test("connector health fails closed for each invalid auth-status response", asyn
   }
 });
 
-test("connector health bounds both private responses", async () => {
-  for (const path of ["/health", "/auth/status"]) {
-    bridgePathResponseModes.set(path, "oversized");
-    const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
-      headers: { Authorization: `Bearer ${serviceToken}` },
-    });
-    assert.equal(response.status, 502, path);
-    assert.equal(
-      (await response.json()).error.code,
-      "invalid_bridge_response"
-    );
-    bridgePathResponseModes.clear();
-  }
+test("connector health bounds the private verification response", async () => {
+  bridgePathResponseModes.set("/auth/status", "oversized");
+  const response = await fetch(`${uiUrl}/api/connector/v1/health`, {
+    headers: { Authorization: `Bearer ${serviceToken}` },
+  });
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, "invalid_bridge_response");
 });
 
 test("connector health maps bounded timeouts without leaking failures", async () => {
@@ -976,11 +961,6 @@ test("connector health maps bounded timeouts without leaking failures", async ()
     },
   });
   assert.deepEqual(calls, [
-    {
-      url: "https://bridge.invalid/health",
-      method: "GET",
-      authorization: `Bearer ${serviceToken}`,
-    },
     {
       url: "https://bridge.invalid/auth/status",
       method: "GET",

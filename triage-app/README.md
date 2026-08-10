@@ -62,12 +62,13 @@ query expansion, bodies on bodyless operations, request bodies above 1 KiB, and
 responses above 8 MiB. Bridge JSON bodies, status, and safe contract headers are
 preserved after validation; proxy and invalid-response failures are sanitized.
 
-Connector `GET /health` is composed rather than passed through. The server calls
-private Bridge `/health` and protected `/auth/status` with `BRIDGE_API_TOKEN`, bounds
-each response to 4 KiB, validates both explicit v1 shapes and contract versions, then
+Connector `GET /health` is composed rather than passed through. The server makes one
+protected Bridge `/auth/status` verification with `BRIDGE_API_TOKEN`, bounds the
+response to 4 KiB, validates its explicit v1 shape and contract version, then
 returns only `contractVersion`, `status`, `mode`, `reachable`, `authenticated`, and
-`authState`. Verified auth status owns the latter three authentication fields and
-mode; health owns service status and reachability. Email is never returned.
+`authState`. A successful verification sets reachability, supplies mode and auth
+state, and derives `ok` for connected/unauthenticated or `degraded` for
+expired/degraded. Email is never returned.
 Non-2xx, timeout/network, invalid, oversized, and contract-mismatch failures are
 sanitized non-success responses. `/api/connector/v1/auth/status` remains blocked by
 both route policy and Traefik.
