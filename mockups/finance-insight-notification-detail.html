@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Mission Control Finance insight notification detail - static design artifact</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0f16;
+    --panel: #121925;
+    --raised: #182231;
+    --line: #2a3648;
+    --text: #eef4ff;
+    --muted: #a7b3c5;
+    --dim: #7e8ca2;
+    --accent: #7dc7ff;
+    --accent-bg: #102a42;
+    --warning: #ffd27a;
+    --warning-bg: #382910;
+    --danger: #ff9b93;
+    --danger-bg: #3a1c1e;
+    --good: #83ddb1;
+    --good-bg: #123225;
+    --purple: #c8b2ff;
+    --purple-bg: #251d3c;
+    --radius: 14px;
+    --shadow: 0 18px 44px rgba(0, 0, 0, .22);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.48;
+  }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible, summary:focus-visible, select:focus-visible {
+    outline: 3px solid #f8dc8c;
+    outline-offset: 3px;
+  }
+  button, .button, select {
+    min-height: 44px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--raised);
+    color: var(--text);
+    padding: 10px 14px;
+    font: inherit;
+  }
+  button, .button { font-weight: 750; cursor: pointer; }
+  .button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+  .button.primary { border-color: #3c88ba; background: #15547d; }
+  .button.danger { border-color: #77494d; background: var(--danger-bg); color: #ffd2ce; }
+  .button.quiet { background: transparent; }
+  .skip {
+    position: fixed;
+    left: 12px;
+    top: -80px;
+    z-index: 20;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--text);
+    color: var(--bg);
+  }
+  .skip:focus { top: 12px; }
+  .artifact-note {
+    padding: 9px 18px;
+    border-bottom: 1px solid #57491f;
+    background: #2b250f;
+    color: #f8e6aa;
+    font-size: .82rem;
+    text-align: center;
+  }
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    min-height: 64px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(11, 15, 22, .96);
+    padding: 10px clamp(16px, 4vw, 48px);
+    backdrop-filter: blur(12px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 850; }
+  .mark {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #2f8cc4, #725fc4);
+  }
+  .jump { display: flex; gap: 6px; overflow-x: auto; }
+  .jump a {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--muted);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .jump a:hover { background: var(--raised); color: var(--text); }
+  main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 30px 0 60px; }
+  .breadcrumbs { margin-bottom: 16px; color: var(--muted); font-size: .82rem; }
+  .breadcrumbs a { color: var(--muted); }
+  h1, h2, h3, h4, p { margin-top: 0; }
+  h1 { margin-bottom: 7px; font-size: clamp(1.8rem, 3vw, 2.6rem); letter-spacing: -.035em; }
+  h2 { margin-bottom: 5px; font-size: 1.35rem; letter-spacing: -.015em; }
+  h3 { margin-bottom: 5px; font-size: 1.03rem; }
+  h4 { margin-bottom: 5px; font-size: .93rem; }
+  .lede, .muted { color: var(--muted); }
+  .eyebrow {
+    color: var(--dim);
+    font-size: .7rem;
+    font-weight: 850;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .page-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .status {
+    display: inline-flex;
+    min-height: 27px;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 9px;
+    color: var(--muted);
+    font-size: .73rem;
+    font-weight: 800;
+  }
+  .status.open { border-color: #76544d; background: var(--danger-bg); color: var(--danger); }
+  .status.high, .status.resolved { border-color: #55745f; background: var(--good-bg); color: var(--good); }
+  .status.medium, .status.limited { border-color: #736239; background: var(--warning-bg); color: var(--warning); }
+  .status.info, .status.ack { border-color: #315d7c; background: var(--accent-bg); color: var(--accent); }
+  .status.suppressed { border-color: #5b4f78; background: var(--purple-bg); color: var(--purple); }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 18px;
+    align-items: start;
+  }
+  .stack { display: grid; gap: 16px; }
+  .panel, .detail, .state-card, .dialog {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  .panel, .detail { padding: clamp(17px, 3vw, 24px); }
+  .sticky { position: sticky; top: 82px; }
+  .section-head, .title-row, .facts, .actions, .source-row, .state-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .title-row { align-items: flex-start; margin-bottom: 18px; }
+  .labels { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 9px; }
+  .amount { text-align: right; white-space: nowrap; }
+  .amount strong { display: block; font-size: 1.75rem; letter-spacing: -.03em; }
+  .amount span { color: var(--danger); font-size: .85rem; font-weight: 750; }
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 16px 0;
+  }
+  .fact {
+    min-height: 88px;
+    padding: 13px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--raised);
+  }
+  .fact span { display: block; color: var(--dim); font-size: .7rem; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+  .fact strong { display: block; margin-top: 7px; font-size: 1rem; }
+  .explanation {
+    margin: 16px 0;
+    padding: 14px 16px;
+    border-left: 4px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    background: #0f1824;
+  }
+  .explanation p:last-child { margin-bottom: 0; color: var(--muted); }
+  .rule-list { margin: 9px 0 0; padding-left: 20px; color: var(--muted); }
+  .rule-list li + li { margin-top: 6px; }
+  .comparison {
+    overflow-x: auto;
+    margin: 16px 0;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  th, td { padding: 11px 13px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { background: #101722; color: var(--dim); font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.current { background: var(--warning-bg); }
+  .source-list { display: grid; gap: 9px; margin-top: 12px; }
+  .source-row {
+    align-items: flex-start;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--raised);
+  }
+  .source-row p { margin: 2px 0 0; color: var(--muted); font-size: .78rem; }
+  .source-row span { color: var(--dim); font-size: .75rem; white-space: nowrap; }
+  .actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .action-note { width: 100%; margin: 0; color: var(--dim); font-size: .75rem; }
+  .queue { display: grid; gap: 9px; }
+  .queue a {
+    display: block;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--raised);
+    padding: 12px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .queue a[aria-current="true"] { border-color: #3c88ba; box-shadow: inset 3px 0 var(--accent); }
+  .queue span { display: block; margin-top: 4px; color: var(--muted); font-size: .76rem; }
+  .boundary {
+    margin-top: 14px;
+    padding: 12px;
+    border: 1px dashed #4b5c73;
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: .78rem;
+  }
+  .boundary strong { color: var(--text); }
+  .contributors {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 14px 0;
+  }
+  .contributor {
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--raised);
+  }
+  .contributor strong, .contributor span { display: block; }
+  .contributor span { margin-top: 3px; color: var(--muted); font-size: .76rem; }
+  .detail + .detail { margin-top: 22px; }
+  .states { margin-top: 30px; }
+  .state-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .state-card { padding: 15px; box-shadow: none; }
+  .state-top { align-items: flex-start; margin-bottom: 10px; }
+  .state-card p { margin-bottom: 10px; color: var(--muted); font-size: .82rem; }
+  .state-card .next { margin: 0; color: var(--dim); font-size: .74rem; }
+  .insufficient { border-style: dashed; }
+  .skeleton {
+    height: 10px;
+    margin: 10px 0;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #243044, #344157, #243044);
+  }
+  .skeleton.short { width: 62%; }
+  .dialog {
+    max-width: 650px;
+    margin: 18px auto 0;
+    padding: 20px;
+    border-color: #48647c;
+  }
+  fieldset { margin: 15px 0; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  legend { padding: 0 6px; font-weight: 750; }
+  label.option {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 4px;
+    color: var(--muted);
+  }
+  label.option input { margin-top: 4px; }
+  .select-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: .78rem; }
+  .field select { width: 100%; }
+  .transition {
+    margin: 16px 0 0;
+    padding: 13px;
+    border: 1px dashed #4b5c73;
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: .8rem;
+    text-align: center;
+  }
+  .transition strong { color: var(--text); }
+  .footer-note { margin: 24px 0 0; color: var(--dim); font-size: .76rem; }
+
+  @media (max-width: 930px) {
+    .layout { grid-template-columns: 1fr; }
+    .sticky { position: static; order: -1; }
+    .queue { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .boundary { display: none; }
+    .facts { grid-template-columns: 1fr 1fr; }
+    .state-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 680px) {
+    .top { position: static; align-items: flex-start; flex-direction: column; }
+    .jump { width: 100%; }
+    main { width: min(100% - 24px, 1180px); padding-top: 20px; }
+    .page-head, .title-row, .section-head { align-items: flex-start; flex-direction: column; }
+    .amount { text-align: left; }
+    .queue { grid-template-columns: 1fr; }
+    .contributors, .state-grid { grid-template-columns: 1fr; }
+    .select-row { grid-template-columns: 1fr; }
+    .actions .button, .actions button { width: 100%; }
+  }
+  @media (max-width: 460px) {
+    .facts { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+  @media print {
+    .artifact-note, .top, .sticky, .actions, .dialog { display: none; }
+    main { width: 100%; padding: 0; }
+    body, .panel, .detail, .state-card, .fact, .source-row, .contributor { background: white; color: black; box-shadow: none; }
+    .muted, .lede, .source-row p, .state-card p { color: #3f4750; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#bill-detail">Skip to selected insight</a>
+<div class="artifact-note" role="note">
+  Static UX artifact. Invented financial data only; controls illustrate behavior and do not change data.
+</div>
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true">MC</span><span>Mission Control / Finance notification detail</span></div>
+  <nav class="jump" aria-label="Finance insight artifact sections">
+    <a href="#bill-detail">Recurring bill</a>
+    <a href="#transaction-detail">Large transaction</a>
+    <a href="#variance-detail">Spending variance</a>
+    <a href="#states">Lifecycle states</a>
+    <a href="#feedback">Feedback</a>
+  </nav>
+</header>
+
+<main>
+  <div class="breadcrumbs"><a href="finance-insights-overview.html">Finance</a> <span aria-hidden="true">/</span> Notification detail</div>
+  <header class="page-head">
+    <div>
+      <div class="eyebrow">Notification and Finance detail context</div>
+      <h1>Understand the change, then choose a disposition</h1>
+      <p class="lede">This is not `/finance/review`, which remains attribution-specific. Each insight separates source facts, Tyrion's derivation, baseline sufficiency, confidence, and Mission Control disposition.</p>
+    </div>
+    <span class="status info">3 notification groups / 5 source occurrences</span>
+  </header>
+
+  <div class="layout">
+    <div>
+      <article class="detail" id="bill-detail" aria-labelledby="bill-heading">
+        <div class="title-row">
+          <div>
+            <div class="labels">
+              <span class="status">Recurring change</span>
+              <span class="status open">Open</span>
+              <span class="status medium">High severity</span>
+              <span class="status high">High confidence</span>
+              <span class="status">Sufficient baseline</span>
+            </div>
+            <h2 id="bill-heading">Electric bill is above its seasonal range</h2>
+            <p class="muted">Pine State Electric &middot; recurring monthly obligation &middot; posted Aug 9</p>
+          </div>
+          <div class="amount"><strong>$286.40</strong><span>+$91.10 / +47%</span></div>
+        </div>
+
+        <div class="facts" aria-label="Recurring bill insight facts">
+          <div class="fact"><span>Expected range</span><strong>$168-$213</strong></div>
+          <div class="fact"><span>Seasonal baseline</span><strong>$195.30 median</strong></div>
+          <div class="fact"><span>Comparable history</span><strong>14 bills / 3 summers</strong></div>
+          <div class="fact"><span>Billing period</span><strong>31 days, normalized</strong></div>
+        </div>
+
+        <section class="explanation" aria-labelledby="bill-why">
+          <h3 id="bill-why">Why Tyrion surfaced this</h3>
+          <p>This charge exceeded both configured conditions: at least $70 above the seasonal baseline and at least 25% above it. Same-season bills were weighted ahead of the general rolling history. The optional OWL bill shows a 31-day period, so period length does not explain the increase.</p>
+          <ul class="rule-list">
+            <li>Absolute difference: $91.10 above the $70 rule.</li>
+            <li>Relative difference: 47% above the 25% rule.</li>
+            <li>No correction, refund, duplicate, or newer recurring charge is present.</li>
+          </ul>
+        </section>
+
+        <div class="comparison">
+          <table>
+            <caption class="eyebrow" style="padding:12px;text-align:left">Seasonally comparable bills</caption>
+            <thead><tr><th>Period</th><th class="num">Amount</th><th class="num">Days</th><th>Use in baseline</th></tr></thead>
+            <tbody>
+              <tr class="current"><td>Aug 2026</td><td class="num">$286.40</td><td class="num">31</td><td>Current observation</td></tr>
+              <tr><td>Jul 2026</td><td class="num">$208.15</td><td class="num">30</td><td>Summer comparable</td></tr>
+              <tr><td>Aug 2025</td><td class="num">$193.70</td><td class="num">31</td><td>Summer comparable</td></tr>
+              <tr><td>Jul 2025</td><td class="num">$187.40</td><td class="num">30</td><td>Summer comparable</td></tr>
+              <tr><td>Aug 2024</td><td class="num">$201.55</td><td class="num">31</td><td>Summer comparable</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <section aria-labelledby="bill-provenance">
+          <h3 id="bill-provenance">Provenance and freshness</h3>
+          <div class="source-list">
+            <div class="source-row"><div><strong>Monarch transaction and recurring profile</strong><p>Normalized Bridge v1 source facts; current through Aug 10, 7:12 PM.</p></div><span>via Monarch</span></div>
+            <div class="source-row"><div><strong>Utility bill evidence</strong><p>Amount, usage, and billing-period facts; source document remains in OWL.</p></div><a href="https://owl.example.invalid/documents/doc-demo-pine-2026-08" target="_blank" rel="noreferrer">Open source bill in OWL</a></div>
+            <div class="source-row"><div><strong>Seasonal recurring baseline v1</strong><p>Expected range, threshold evaluation, and confidence produced at 7:13 PM.</p></div><span>derived by Tyrion</span></div>
+          </div>
+        </section>
+
+        <div class="boundary" id="owl-document-handoff"><strong>OWL handoff:</strong> typed source-document target <code>doc-demo-pine-2026-08</code> for the Aug 2026 bill. The reserved <code>.invalid</code> host marks this as invented mockup data; production Mission Control constructs its allowlisted document route.</div>
+
+        <div class="actions" aria-label="Recurring bill insight actions">
+          <button type="button" class="button primary">Dismiss notification</button>
+          <button type="button" class="button quiet">Snooze</button>
+          <a class="button quiet" href="#feedback">This change is expected</a>
+          <button type="button" class="button quiet">Change future alerts</button>
+          <a class="button quiet" href="https://app.monarchmoney.com/transactions/tx-demo-pine-2026-08-09" target="_blank" rel="noreferrer">Open transaction in Monarch</a>
+          <a class="button quiet" href="https://app.monarchmoney.com/recurring/rec-demo-pine-electric" target="_blank" rel="noreferrer">Manage recurring item in Monarch</a>
+          <p class="action-note">Dismiss and snooze are Mission Control notification disposition only; they do not resolve the Tyrion occurrence. Only the separate confirmed policy action changes future Tyrion detection. Monarch links are built by Mission Control from a typed, allowlisted target and never imply a write occurred.</p>
+        </div>
+      </article>
+
+      <article class="detail" id="transaction-detail" aria-labelledby="transaction-heading">
+        <div class="title-row">
+          <div>
+            <div class="labels">
+              <span class="status">Large transaction</span>
+              <span class="status open">Open</span>
+              <span class="status medium">High severity</span>
+              <span class="status high">High confidence</span>
+              <span class="status">Sufficient history</span>
+            </div>
+            <h2 id="transaction-heading">$1,840 purchase is unusually large</h2>
+            <p class="muted">Trailside Cycles &middot; Sporting Goods &middot; Household card &middot; posted Aug 10</p>
+          </div>
+          <div class="amount"><strong>$1,840.00</strong><span>5.8x merchant median</span></div>
+        </div>
+
+        <div class="facts" aria-label="Large transaction insight facts">
+          <div class="fact"><span>Household rule</span><strong>$1,000 review</strong></div>
+          <div class="fact"><span>Merchant median</span><strong>$318.25</strong></div>
+          <div class="fact"><span>Merchant sample</span><strong>9 posted charges</strong></div>
+          <div class="fact"><span>Household card baseline</span><strong>$592 median / 3.1x</strong></div>
+          <div class="fact"><span>Category percentile</span><strong>Above 99th</strong></div>
+        </div>
+
+        <section class="explanation" aria-labelledby="transaction-why">
+          <h3 id="transaction-why">Why Tyrion surfaced this</h3>
+          <p>The posted charge crossed the explicit household rule and the adaptive merchant, account, and category baselines. It is 3.1 times the Household card's comparable-purchase median; that account comparison reinforced the alert but did not trigger it alone. Transfers, income, recurring obligations, refunds, pending charges, and approved merchants were excluded before evaluation.</p>
+          <p><strong>Important:</strong> This is an explainable household spending exception. It does not replace bank or card fraud monitoring, and the UI does not label the transaction fraudulent.</p>
+        </section>
+
+        <div class="contributors" aria-label="Comparable transaction history">
+          <div class="contributor"><strong>$318.25</strong><span>Merchant median across 9 charges</span></div>
+          <div class="contributor"><strong>$612.80</strong><span>Prior merchant maximum</span></div>
+          <div class="contributor"><strong>$1,120.00</strong><span>Prior category maximum in 12 months</span></div>
+        </div>
+
+        <div class="source-list">
+          <div class="source-row"><div><strong>Posted transaction and references</strong><p>Merchant, amount, date, category, recurring/pending state, and opaque source reference.</p></div><span>via Monarch</span></div>
+          <div class="source-row"><div><strong>Large-transaction baseline v1</strong><p>Rule match, exclusions, merchant/category comparison, and evaluation result.</p></div><span>derived by Tyrion</span></div>
+        </div>
+
+        <div class="actions" aria-label="Large transaction insight actions">
+          <button type="button" class="button primary">Dismiss notification</button>
+          <button type="button" class="button quiet">Snooze</button>
+          <a class="button quiet" href="#merchant-feedback">Adjust alerts for this merchant</a>
+          <a class="button quiet" href="https://app.monarchmoney.com/transactions/tx-demo-trailside-2026-08-10" target="_blank" rel="noreferrer">Open transaction in Monarch</a>
+        </div>
+      </article>
+
+      <article class="detail" id="variance-detail" aria-labelledby="variance-heading">
+        <div class="title-row">
+          <div>
+            <div class="labels">
+              <span class="status">Month-over-month change</span>
+              <span class="status open">Open</span>
+              <span class="status">Medium severity</span>
+              <span class="status medium">Medium confidence</span>
+              <span class="status limited">Partial period</span>
+            </div>
+            <h2 id="variance-heading">Dining out is running above its usual pace</h2>
+            <p class="muted">Category variance &middot; Aug 1-10 compared with equivalent prior periods</p>
+          </div>
+          <div class="amount"><strong>$624.30</strong><span>+$222.20 / +55%</span></div>
+        </div>
+
+        <div class="facts" aria-label="Spending variance insight facts">
+          <div class="fact"><span>Equivalent baseline</span><strong>$402.10</strong></div>
+          <div class="fact"><span>Meaningful impact rule</span><strong>$150 minimum</strong></div>
+          <div class="fact"><span>Historical coverage</span><strong>12 months</strong></div>
+          <div class="fact"><span>Current period</span><strong>10 of 31 days</strong></div>
+        </div>
+
+        <section class="explanation" aria-labelledby="variance-why">
+          <h3 id="variance-why">Why Tyrion surfaced this</h3>
+          <p>The current ten-day total is compared only with days 1-10 of prior months, not with completed months. It exceeded both the 30% variance rule and the $150 meaningful-impact rule. Refunds and transfers were excluded; category reassignment history was normalized before aggregation.</p>
+        </section>
+
+        <div class="contributors" aria-label="Top contributing transactions">
+          <div class="contributor"><strong>Harbor Table &middot; Aug 3 &middot; $96</strong><span>+$61 contribution versus typical transaction</span></div>
+          <div class="contributor"><strong>North Pier Cafe &middot; Aug 7 &middot; $74</strong><span>+$48 contribution versus typical transaction</span></div>
+          <div class="contributor"><strong>Harbor Table &middot; Aug 9 &middot; $68</strong><span>+$43 contribution versus typical transaction</span></div>
+        </div>
+
+        <div class="comparison">
+          <table>
+            <caption class="eyebrow" style="padding:12px;text-align:left">Grouped monthly movers</caption>
+            <thead><tr><th>Category or merchant</th><th>Baseline</th><th class="num">Current</th><th class="num">Prior equivalent</th><th class="num">Delta</th><th>Confidence / sufficiency</th></tr></thead>
+            <tbody>
+              <tr class="current"><td>Dining out</td><td>Days 1-10 across 12 months</td><td class="num">$624.30</td><td class="num">$402.10</td><td class="num">+$222.20 / +55%</td><td>Medium / Sufficient</td></tr>
+              <tr><td>Transit</td><td>Days 1-10 across 12 months</td><td class="num">$181.20</td><td class="num">$251.70</td><td class="num">-$70.50 / -28%</td><td>Medium / Sufficient</td></tr>
+              <tr><td>Harbor Table</td><td>Same merchant across 7 active months</td><td class="num">$178.00</td><td class="num">$14.00</td><td class="num">+$164.00</td><td>Medium / Limited</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="source-list" aria-label="Grouped mover explanations">
+          <div class="source-row"><div><strong>Dining out</strong><p>Eight posted transactions drove the increase; the top three transaction-level contributors are shown above.</p></div><span>open occurrence</span></div>
+          <div class="source-row"><div><strong>Transit</strong><p>Fourteen rides versus a 23-ride equivalent-period median explain the decrease. Refunds were excluded.</p></div><span>open occurrence</span></div>
+          <div class="source-row"><div><strong>Harbor Table</strong><p>Three visits this period versus one typical visit. Seven active months provide only a limited merchant baseline.</p></div><span>open occurrence</span></div>
+        </div>
+
+        <div class="source-list">
+          <div class="source-row"><div><strong>Posted transaction projection</strong><p>Equivalent-period source facts current through Aug 10, 7:12 PM.</p></div><span>via Monarch</span></div>
+          <div class="source-row"><div><strong>Equivalent-period variance v1</strong><p>Deterministic aggregation, exclusions, baseline, contributors, and confidence.</p></div><span>derived by Tyrion</span></div>
+        </div>
+
+        <div class="actions" aria-label="Spending variance insight actions">
+          <button type="button" class="button primary">Dismiss grouped digest</button>
+          <button type="button" class="button quiet">Snooze</button>
+          <a class="button quiet" href="#variance-feedback">This month is expected</a>
+          <a class="button quiet" href="https://app.monarchmoney.com/reports?category=cat-demo-dining&amp;period=2026-08" target="_blank" rel="noreferrer">Open category report in Monarch</a>
+        </div>
+      </article>
+    </div>
+
+    <aside class="panel sticky" aria-labelledby="queue-title">
+      <div class="eyebrow">Related Finance insights</div>
+      <h2 id="queue-title">3 notification groups / 5 source occurrences</h2>
+      <div class="queue">
+        <a href="#bill-detail" aria-current="true"><strong>Electric bill</strong><span>+$91 / High confidence</span></a>
+        <a href="#transaction-detail"><strong>Trailside Cycles</strong><span>$1,840 / High confidence</span></a>
+        <a href="#variance-detail"><strong>Dining out</strong><span>+55% / Medium confidence</span></a>
+      </div>
+      <div class="boundary"><strong>Not shown here:</strong> a general transaction browser, recurring-bill manager, category editor, or report suite. Those workflows deep-link to Monarch.</div>
+      <div class="source-list" aria-label="Stable identity and delivery metadata">
+        <div class="source-row"><div><strong>Stable identity</strong><p>insight: recurring-change / pine-electric<br>occurrence: 2026-08-bill</p></div></div>
+        <div class="source-row"><div><strong>Independent state</strong><p>Tyrion source: open<br>Mission Control delivery: unread</p></div></div>
+        <div class="source-row"><div><strong>Safe handoff</strong><p>Connector: Monarch household<br>Target type: recurring item</p></div></div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="states" id="states" aria-labelledby="states-title">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Lifecycle and system states</div>
+        <h2 id="states-title">The same component must explain why it is or is not actionable</h2>
+        <p class="muted">Baseline sufficiency and source freshness gate alerting; they are not hidden inside a confidence score.</p>
+      </div>
+    </div>
+
+    <div class="state-grid">
+      <article class="state-card" aria-labelledby="state-analyzing">
+        <div class="state-top"><h3 id="state-analyzing">Analyzing</h3><span class="status info">In progress</span></div>
+        <div class="skeleton"></div><div class="skeleton short"></div>
+        <p>Shown only after fresh source data arrives and before a conclusion is available.</p>
+        <p class="next">No notification disposition or Tyrion policy actions yet.</p>
+      </article>
+
+      <article class="state-card insufficient" aria-labelledby="state-insufficient">
+        <div class="state-top"><h3 id="state-insufficient">Insufficient baseline</h3><span class="status limited">Not an alert</span></div>
+        <p>Only two comparable electric bills are available. Tyrion cannot establish a seasonal range yet.</p>
+        <p class="next">Show coverage and optionally the explicit rule result; never imply an adaptive anomaly.</p>
+      </article>
+
+      <article class="state-card" aria-labelledby="state-open">
+        <div class="state-top"><h3 id="state-open">Open source occurrence</h3><span class="status open">Tyrion lifecycle</span></div>
+        <p>New qualifying evidence produced an explainable exception. It may appear in Finance and notifications.</p>
+        <p class="next">A changed occurrence can resurface even if an earlier notification was dismissed.</p>
+      </article>
+
+      <article class="state-card" aria-labelledby="state-ack">
+        <div class="state-top"><h3 id="state-ack">Snoozed notification</h3><span class="status ack">Until tomorrow</span></div>
+        <p>Mission Control hides this delivery until the selected time. Tyrion's source occurrence remains open.</p>
+        <p class="next">Stable occurrence identity prevents duplicate delivery during the snooze window.</p>
+      </article>
+
+      <article class="state-card" aria-labelledby="state-suppressed">
+        <div class="state-top"><h3 id="state-suppressed">Dismissed notification</h3><span class="status suppressed">Mission Control</span></div>
+        <p>Mission Control settles this delivery locally. It does not claim that Tyrion resolved the occurrence.</p>
+        <p class="next">A new occurrence key or materially changed occurrence may produce a new notification.</p>
+      </article>
+
+      <article class="state-card" aria-labelledby="state-resolved">
+        <div class="state-top"><h3 id="state-resolved">Resolved or superseded</h3><span class="status resolved">No action</span></div>
+        <p>A refund/correction, source mutation, newer analysis, or restored baseline means the exception is no longer active.</p>
+        <p class="next">Preserve history and provenance; remove it from active attention.</p>
+      </article>
+
+      <article class="state-card" aria-labelledby="state-policy-suppressed">
+        <div class="state-top"><h3 id="state-policy-suppressed">Policy-suppressed</h3><span class="status suppressed">Tyrion policy</span></div>
+        <p>A separately confirmed Tyrion policy suppresses matching future occurrences for a bounded scope and duration.</p>
+        <p class="next">Show scope, expiration, actor, policy version, reason code, and undo route.</p>
+      </article>
+
+      <article class="state-card" aria-labelledby="state-stale">
+        <div class="state-top"><h3 id="state-stale">Stale or unavailable</h3><span class="status limited">Source warning</span></div>
+        <p>Monarch coverage is stale, partial, or unavailable. Last reliable analysis: Aug 9, 6:00 PM.</p>
+        <p class="next">Do not create fresh alerts from incomplete data. Keep prior insight visible with a warning.</p>
+      </article>
+    </div>
+
+    <p class="transition"><strong>Two state machines:</strong> Tyrion source lifecycle is analyzing &rarr; open &rarr; resolved/superseded. Mission Control delivery disposition is unread/read, snoozed, or dismissed. Policy suppression is a separate confirmed Tyrion action. Insufficient and unavailable are explicit non-alert states.</p>
+  </section>
+
+  <section class="states" id="feedback" aria-labelledby="feedback-title">
+    <div class="eyebrow">Structured feedback example</div>
+    <h2 id="feedback-title">Confirm intent before changing future detection</h2>
+    <p class="muted">Dismiss and snooze affect only Mission Control delivery. Suppression and policy feedback are separate, explicit Tyrion actions initiated from Mission Control.</p>
+
+    <form class="dialog" aria-label="Recurring bill expected change feedback mockup">
+      <div class="section-head">
+        <div><h3>This electric bill change was expected</h3><p class="muted">Tell Tyrion how broadly this should affect future insights.</p></div>
+        <span class="status info">No Monarch write</span>
+      </div>
+      <fieldset>
+        <legend>Why was it expected?</legend>
+        <label class="option"><input type="radio" name="reason" checked> Seasonal or usage change I understand</label>
+        <label class="option"><input type="radio" name="reason"> Known rate or plan change</label>
+        <label class="option"><input type="radio" name="reason"> One-time household event</label>
+        <label class="option"><input type="radio" name="reason"> This insight was not useful</label>
+      </fieldset>
+      <div class="select-row">
+        <div class="field"><label for="scope">Apply to</label><select id="scope"><option>This occurrence only</option><option>This recurring obligation</option><option>All utility bills</option></select></div>
+        <div class="field"><label for="duration">Duration</label><select id="duration"><option>No future suppression</option><option>30 days</option><option>90 days</option><option>180 days maximum</option></select></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="button primary">Confirm expected change</button>
+        <button type="button" class="button quiet">Cancel</button>
+        <p class="action-note">The confirmation records a bounded reason code, scope, duration, policy version, and actor. Free-form financial notes are not required.</p>
+      </div>
+    </form>
+
+    <form class="dialog" id="merchant-feedback" aria-label="Large transaction merchant feedback mockup">
+      <div class="section-head">
+        <div><h3>Adjust alerts for Trailside Cycles</h3><p class="muted">Use merchant-appropriate scope; this does not alter the Monarch transaction.</p></div>
+        <span class="status info">Separate Tyrion policy action</span>
+      </div>
+      <fieldset>
+        <legend>Why was this purchase expected?</legend>
+        <label class="option"><input type="radio" name="merchant-reason" checked> Planned one-time purchase</label>
+        <label class="option"><input type="radio" name="merchant-reason"> This merchant commonly has large purchases</label>
+        <label class="option"><input type="radio" name="merchant-reason"> This insight was not useful</label>
+      </fieldset>
+      <div class="select-row">
+        <div class="field"><label for="merchant-scope">Apply to</label><select id="merchant-scope"><option>This occurrence only</option><option>Trailside Cycles</option><option>Sporting Goods category</option></select></div>
+        <div class="field"><label for="merchant-duration">Duration</label><select id="merchant-duration"><option>No future suppression</option><option>30 days</option><option>90 days</option><option>180 days maximum</option></select></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="button primary">Confirm merchant feedback</button>
+        <button type="button" class="button quiet">Cancel</button>
+      </div>
+    </form>
+
+    <form class="dialog" id="variance-feedback" aria-label="Monthly variance feedback mockup">
+      <div class="section-head">
+        <div><h3>This month's dining change is expected</h3><p class="muted">Apply feedback only to the selected category/merchant variance scope.</p></div>
+        <span class="status info">Separate Tyrion policy action</span>
+      </div>
+      <fieldset>
+        <legend>Why is this period different?</legend>
+        <label class="option"><input type="radio" name="variance-reason" checked> Known one-time household event</label>
+        <label class="option"><input type="radio" name="variance-reason"> Expected seasonal change</label>
+        <label class="option"><input type="radio" name="variance-reason"> This grouped mover was not useful</label>
+      </fieldset>
+      <div class="select-row">
+        <div class="field"><label for="variance-scope">Apply to</label><select id="variance-scope"><option>This occurrence only</option><option>Dining out this month</option><option>Dining out variance alerts</option></select></div>
+        <div class="field"><label for="variance-duration">Duration</label><select id="variance-duration"><option>No future suppression</option><option>30 days</option><option>90 days</option><option>180 days maximum</option></select></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="button primary">Confirm variance feedback</button>
+        <button type="button" class="button quiet">Cancel</button>
+      </div>
+    </form>
+  </section>
+
+  <p class="footer-note">Responsive intent: related insights move above details on narrow screens; evidence tables scroll horizontally; mobile category/merchant filter parity is required; action targets remain at least 44px; state meaning never depends on color; reduced-motion and print modes are supported.</p>
+</main>
+</body>
+</html>
