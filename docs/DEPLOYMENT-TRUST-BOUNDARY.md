@@ -168,6 +168,22 @@ routes are unavailable through it. `/api/internal/` remains excluded from every
 public router and the attribution handler independently enforces its private Docker
 authority.
 
+The finance insight service shares that private-authority posture under
+`/api/internal/v1/finance/insights`. It rejects browser fetch metadata and is not
+included in either public route tree. The UI container mounts a separate
+access-restricted `/var/lib/tyrion-finance-insights` volume for its SQLite store
+and operator-supplied policy snapshot. Cursor and identity keys are injected
+only into the server process, contain at least 32 bytes, and are backed up with
+the state volume. The store and policy paths must be absolute and outside the
+application image.
+
+`TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED`,
+`TYRION_FINANCE_INSIGHT_READ_ENABLED`, and
+`TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED` default to `false`. Deployment enables
+them in rollout order only after mounting state, restoring keys, and validating
+the metadata-only health state. No gate, key, private authority, or state path is
+exposed to browser code.
+
 Connector `GET /health` is composed inside the server-only gateway: it makes exactly
 one protected Bridge `/auth/status` verification with `BRIDGE_API_TOKEN`, validates
 the bounded v1 response, derives reachability and service status from that result,

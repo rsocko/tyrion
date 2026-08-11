@@ -60,6 +60,7 @@ services:
       - traefik
     volumes:
       - tyrion-policy:/var/lib/tyrion-policy
+      - tyrion-finance-insights:/var/lib/tyrion-finance-insights
     environment:
       BRIDGE_URL: http://tyrion-monarch-bridge:8100
       BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a secret}
@@ -68,6 +69,13 @@ services:
       TYRION_REATTRIBUTION_TOKEN: ${TYRION_REATTRIBUTION_TOKEN:-}
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "false"
       TYRION_POLICY_DEMO_MODE: "false"
+      TYRION_FINANCE_INSIGHT_STORE_PATH: /var/lib/tyrion-finance-insights/state.sqlite
+      TYRION_FINANCE_INSIGHT_POLICY_PATH: /var/lib/tyrion-finance-insights/policy.json
+      TYRION_FINANCE_INSIGHT_CURSOR_KEY: ${TYRION_FINANCE_INSIGHT_CURSOR_KEY:?Provision the finance insight cursor key as a secret}
+      TYRION_FINANCE_INSIGHT_IDENTITY_KEY: ${TYRION_FINANCE_INSIGHT_IDENTITY_KEY:?Provision the finance insight identity key as a secret}
+      TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "${TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED:-false}"
+      TYRION_FINANCE_INSIGHT_READ_ENABLED: "${TYRION_FINANCE_INSIGHT_READ_ENABLED:-false}"
+      TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "${TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED:-false}"
       NEXT_TELEMETRY_DISABLED: "1"
     labels:
       - "traefik.enable=true"
@@ -106,6 +114,8 @@ volumes:
     name: ${TYRION_SESSION_VOLUME:-tyrion-session}
   tyrion-policy:
     name: ${TYRION_POLICY_VOLUME:-tyrion-policy}
+  tyrion-finance-insights:
+    name: ${TYRION_FINANCE_INSIGHT_VOLUME:-tyrion-finance-insights}
 
 networks:
   tyrion-backend:
