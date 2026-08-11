@@ -1,7 +1,8 @@
 # Finance Insights UX
 
-**Status:** Design proposal for issues #22, #23, and #24
+**Status:** Approved design for issues #22, #23, and #24
 **Artifacts:** [`finance-insights-overview.html`](../mockups/finance-insights-overview.html) and [`finance-insight-notification-detail.html`](../mockups/finance-insight-notification-detail.html)
+**Delivery plan:** [`FINANCE-INSIGHTS-DELIVERY-PLAN.md`](./FINANCE-INSIGHTS-DELIVERY-PLAN.md)
 
 This proposal follows [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md). The HTML files
 are static review artifacts with invented data, not routes or production UI.
@@ -130,8 +131,8 @@ Actions are intentionally distinct:
 - **Expected/approved** records a structured reason and may optionally propose a
   bounded suppression.
 - **Suppress** requires explicit scope and duration, shows who created it and when it
-  expires, and provides an undo path. This proposal caps suppression at 180 days;
-  permanent suppression would require separate policy authorization and design review.
+  expires, and provides an undo path. V1 allows 30, 90, or 180 days and prohibits
+  permanent suppression.
 - **Not useful** is structured feedback. It does not silently mutate thresholds.
 - **Open in Monarch** starts the comprehensive source workflow; it is not presented as
   a Tyrion or Mission Control write.
@@ -169,17 +170,22 @@ retaining only minimal references to Tyrion occurrences.
 - Compact surfaces preserve the critical state, value, confidence, sufficiency, and
   freshness text instead of relying on hover or hidden detail.
 
-## Decisions to validate with Mission Control
+## Approved v1 delivery decisions
 
-- Map the proposal onto Mission Control's existing card, notification, dialog,
-  and status components rather than creating finance-only primitives.
-- Confirm allowed deep-link formats for transaction, recurring, and report targets.
-- Decide which suppressions require a separate policy-management permission and
-  whether permanent suppression is allowed.
-- Set default ranking and notification policy so medium-confidence variance does not
-  crowd out higher-impact cross-domain work.
-- Confirm whether Finance insight detail is a `/finance` drawer, a notification detail
-  route, or both, without routing anomalies through attribution-specific
-  `/finance/review`.
-- Confirm source-occurrence lifecycle semantics for corrected and materially changed
-  transactions so notification resurfacing is predictable.
+- Use existing Mission Control primitives and one shared detail component in both the
+  canonical notification detail route and a `/finance` drawer. `/finance/review`
+  remains attribution-only.
+- Use verified allowlisted Monarch entity links when supported and safe
+  Transactions/Recurring/Reports root fallbacks otherwise.
+- The fixed single operator may use all feedback and 30/90/180-day suppression actions
+  with undo. Permanent suppression is prohibited; no permission model is introduced.
+- Candidate detector thresholds are versioned, feature-gated defaults. Recurring
+  decreases are analysis-only, and adaptive large-transaction alerts below the
+  explicit rule require at least two eligible baseline dimensions to agree. Canary
+  tuning affects future source generations and never retroactively relabels prior
+  occurrences.
+- A dismissed insight resurfaces only for a new occurrence or materially changed source
+  value/classification. Corrections resolve or supersede the old occurrence.
+- New alerts require source data no more than 48 hours old. The monthly digest runs on
+  day 2 at 9:00 AM household-local time; medium-confidence movers remain visible on
+  `/finance` but do not notify.
