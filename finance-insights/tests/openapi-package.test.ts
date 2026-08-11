@@ -146,8 +146,12 @@ describe('executable contract and internal package boundary', () => {
       '.',
       './contracts/v1',
       './core',
+      './evidence',
+      './persistence',
       './policy',
       './ports',
+      './projection',
+      './services',
     ]);
   });
 });
