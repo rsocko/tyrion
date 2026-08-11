@@ -72,7 +72,7 @@ without reproducing Monarch's workspace.
   reconciliation mismatches, and failed write-backs.
 - [ ] Build the bounded Tyrion configuration UI for kid profiles, card and merchant
   rules, limits, policy versions, and controlled re-attribution.
-- [ ] Add Mission Control attribution explanations, correction, unassignment, and
+- [x] Add Mission Control attribution explanations, correction, unassignment, and
   exception actions against Tyrion's versioned domain contract.
 - [ ] Repair finance notification actions and deep-link ordinary workflows to
   Monarch.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   AttributionBatchError,
+  AttributionActionError,
   AttributionEvaluationError,
   ContractValidationError,
   PolicyAuthorizationError,
@@ -11,7 +12,10 @@ import {
   PolicyStoreUnavailableError,
 } from "@rsocko/tyrion-kid-engine";
 import { AttributionAuthError } from "@/lib/attribution-auth";
-import { PolicyRuntimeConfigurationError } from "@/lib/policy-runtime";
+import {
+  PolicyRuntimeConfigurationError,
+  ReattributionIntegrationError,
+} from "@/lib/policy-runtime";
 
 export const MAX_ATTRIBUTION_BODY_BYTES = 64 * 1_024;
 
@@ -134,6 +138,21 @@ export function handleAttributionError(error: unknown) {
       error.message
     );
   }
+  if (error instanceof AttributionActionError) {
+    const status =
+      error.code === "attribution_not_found"
+        ? 404
+        : error.code === "kid_not_assignable" ||
+            error.code === "invalid_defer_window"
+          ? 422
+          : error.code === "policy_conflict" ||
+              error.code === "attribution_state_conflict" ||
+              error.code === "idempotency_conflict" ||
+              error.code === "action_not_available"
+            ? 409
+            : 503;
+    return jsonError(status, error.code, error.message);
+  }
   if (error instanceof ContractValidationError) {
     return jsonError(400, "invalid_request", "Attribution request is invalid");
   }
@@ -161,6 +180,13 @@ export function handleAttributionError(error: unknown) {
       503,
       "attribution_service_unavailable",
       "Attribution service is unavailable"
+    );
+  }
+  if (error instanceof ReattributionIntegrationError) {
+    return jsonError(
+      503,
+      "attribution_state_unavailable",
+      "Attribution state is unavailable"
     );
   }
   return jsonError(

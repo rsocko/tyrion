@@ -17,7 +17,8 @@ export type PolicyPermissionV1 =
   | 'policy:write'
   | 'reattribution:preview'
   | 'reattribution:apply'
-  | 'attribution:batch';
+  | 'attribution:batch'
+  | 'attribution:actions';
 
 export interface KidProfileV1 {
   id: string;
@@ -128,7 +129,7 @@ export interface HistoricalAttributionV1 {
 }
 
 export interface ManualAttributionDecisionV1 {
-  action: 'assign-kid' | 'parent-expense';
+  action: 'assign-kid' | 'parent-expense' | 'unassign';
   kidId: string | null;
   actorId: string;
   decidedAt: string;
@@ -509,6 +510,7 @@ export function parsePolicyActorV1(value: unknown): PolicyActorV1 {
           'reattribution:preview',
           'reattribution:apply',
           'attribution:batch',
+          'attribution:actions',
         ] as const,
         `permissions[${index}]`
       )
@@ -809,7 +811,7 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
     ]);
     const action = enumeration(
       decision.action,
-      ['assign-kid', 'parent-expense'] as const,
+      ['assign-kid', 'parent-expense', 'unassign'] as const,
       'existingManualDecision.action'
     );
     const kidId =
@@ -818,7 +820,7 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
         : identifier(decision.kidId, 'existingManualDecision.kidId');
     if (
       (action === 'assign-kid' && kidId === null) ||
-      (action === 'parent-expense' && kidId !== null)
+      (action !== 'assign-kid' && kidId !== null)
     ) {
       invalid('existingManualDecision action and kidId are inconsistent');
     }

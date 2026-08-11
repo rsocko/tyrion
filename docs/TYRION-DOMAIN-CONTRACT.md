@@ -2,7 +2,8 @@
 
 **Contract version:** `1.0`
 **Engine version:** `1.0.0`
-**Service:** `POST /api/internal/v1/attribution/batch`
+**Services:** `POST /api/internal/v1/attribution/batch` and
+`POST /api/internal/v1/attribution/actions`
 
 ## Boundary
 
@@ -20,6 +21,42 @@ repository or PR content.
 The machine-readable service contract is
 [`attribution-service-v1.openapi.json`](./attribution-service-v1.openapi.json).
 Removing a field or changing its type or meaning requires a new major API version.
+
+## Mission Control attribution actions
+
+Mission Control explains and resolves one synchronized attribution through
+`POST /api/internal/v1/attribution/actions`. The route uses the same private authority,
+server-only bearer credential, body bound, fixed service actor, and public-router
+exclusion as batch attribution.
+
+Every request carries contract/provenance versions, an opaque consumer `sourceRef`,
+and `expectedPolicyVersion`. `explain` is read-only. State-changing actions additionally
+require `confirm: true`, `expectedStateVersion`, and a bounded idempotency key:
+
+- `assign-kid` assigns or corrects an active policy kid.
+- `mark-parent-expense` records a manual parent decision.
+- `unassign` records an explicit manual unassignment without editing Monarch.
+- `resolve-exception` confirms a current suggested kid.
+- `defer-exception` preserves the attribution and defers its open reasons for no more
+  than 30 days.
+
+The response contains the understandable attribution explanation, exception state,
+active assignable kid references, available native actions, metadata for an
+authoritative Monarch transaction deep link, Monarch/Bridge/Tyrion provenance, and
+the latest metadata-only action audit. It never returns normalized transaction input,
+raw Monarch data, credentials, or reusable session material. Ordinary transaction
+editing remains an `open-in-monarch` workflow.
+
+`AttributionActionRepository` is the consumer-owned state port. Its implementation
+loads the synchronized input/result and atomically applies a mutation only when the
+expected state version still matches. Successful writes persist the updated structured
+manual decision, resolved or deferred exception state, and audit metadata. Repeated
+idempotency keys with the same canonical mutation parameters replay the original
+result, including after later actions. Reusing a key with different parameters returns
+`idempotency_conflict`. The repository must check retained replay history before the
+state version in the same atomic write transaction. Tyrion executes the write inside
+the policy version fence; changed policy returns `policy_conflict`, while changed
+consumer state returns `attribution_state_conflict`.
 
 ## Protected batch service
 
@@ -79,6 +116,11 @@ Stable errors use `{ "error": { "code": "...", "message": "..." } }` and include
 `attribution_auth_not_configured`, `policy_unavailable`, or
 `attribution_service_unavailable` (503), and sanitized
 `attribution_operation_failed` (500).
+
+The actions route additionally returns `attribution_not_found` (404),
+`attribution_state_conflict` or `action_not_available` (409),
+`kid_not_assignable` or `invalid_defer_window` (422), and
+`attribution_state_unavailable` or `attribution_state_invalid` (503).
 
 Mission Control treats every non-200 response as an attribution-only failure. It
 persists transaction generation with pending review and retries attribution later;

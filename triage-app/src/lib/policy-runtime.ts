@@ -8,14 +8,20 @@ import {
 import { dirname } from "node:path";
 import {
   FilePolicyRepository,
+  AttributionActionService,
   AttributionBatchService,
   PolicyService,
   PolicyVersionConflictError,
   ReattributionService,
   parseAttributionInputV1,
+  parseAttributionActionRecordV1,
   parseAttributionResultV1,
   parseReattributionPreviewV1,
   type AttributionResultV1,
+  type AttributionActionApplyResultV1,
+  type AttributionActionMutationV1,
+  type AttributionActionRecordV1,
+  type AttributionActionRepository,
   type PolicyAuditEventV1,
   type PolicyRepository,
   type PolicySnapshotV1,
@@ -34,6 +40,7 @@ export interface PolicyRuntime {
   mode: "demo" | "production";
   policyService: PolicyService;
   attributionBatchService: AttributionBatchService;
+  getAttributionActionService(): AttributionActionService;
   getReattributionService(): ReattributionService;
   fingerprintInstrument(householdId: string, instrumentReference: string): string;
 }
@@ -74,15 +81,33 @@ export function getPolicyRuntime(
   const fingerprintKey = loadFingerprintKey(environment, demo);
 
   let reattributionService: ReattributionService | undefined;
+  let attributionActionService: AttributionActionService | undefined;
+  let integrationClient: AttributionStateIntegrationClient | undefined;
+  const getIntegrationClient = () => {
+    integrationClient ??= new AttributionStateIntegrationClient(environment);
+    return integrationClient;
+  };
   cachedRuntime = {
     mode: demo ? "demo" : "production",
     policyService: new PolicyService(policyRepository),
     attributionBatchService: new AttributionBatchService(policyRepository),
+    getAttributionActionService() {
+      if (!attributionActionService) {
+        const repository: AttributionActionRepository = demo
+          ? new DemoAttributionActionRepository()
+          : new HttpAttributionActionRepository(getIntegrationClient());
+        attributionActionService = new AttributionActionService(
+          policyRepository,
+          repository
+        );
+      }
+      return attributionActionService;
+    },
     getReattributionService() {
       if (!reattributionService) {
         const repository: ReattributionRepository = demo
           ? new DemoReattributionRepository()
-          : new HttpReattributionRepository(environment);
+          : new HttpReattributionRepository(getIntegrationClient());
         reattributionService = new ReattributionService(
           policyRepository,
           repository
@@ -299,6 +324,85 @@ class DemoReattributionRepository implements ReattributionRepository {
 }
 
 class HttpReattributionRepository implements ReattributionRepository {
+  constructor(private readonly client: AttributionStateIntegrationClient) {}
+
+  async loadRecords(
+    householdId: string,
+    sourceRefs: string[]
+  ): Promise<ReattributionRecordV1[]> {
+    const value = await this.client.request("v1/reattribution/records:resolve", {
+      householdId,
+      sourceRefs,
+    });
+    const record = exactObject(value, ["records"]);
+    if (!Array.isArray(record.records)) throw new ReattributionIntegrationError();
+    try {
+      return record.records.map((item) => {
+        const candidate = exactObject(item, ["input", "current"]);
+        return {
+          input: parseAttributionInputV1(candidate.input),
+          current: parseAttributionResultV1(candidate.current),
+        };
+      });
+    } catch {
+      throw new ReattributionIntegrationError();
+    }
+  }
+
+  async savePreview(preview: ReattributionPreviewV1): Promise<void> {
+    const result = exactObject(
+      await this.client.request("v1/reattribution/previews", { preview }),
+      ["stored"]
+    );
+    if (result.stored !== true) throw new ReattributionIntegrationError();
+  }
+
+  async loadPreview(
+    householdId: string,
+    previewId: string
+  ): Promise<ReattributionPreviewV1 | null> {
+    const value = await this.client.request("v1/reattribution/previews:resolve", {
+      householdId,
+      previewId,
+    });
+    const record = exactObject(value, ["preview"]);
+    if (record.preview === null) return null;
+    try {
+      return parseReattributionPreviewV1(record.preview);
+    } catch {
+      throw new ReattributionIntegrationError();
+    }
+  }
+
+  async applyPreviewIfPolicyVersion(
+    preview: ReattributionPreviewV1,
+    appliedAt: string,
+    expectedPolicyVersion: number
+  ): Promise<ReattributionApplyCountsV1 | null> {
+    const value = await this.client.request("v1/reattribution/previews:apply", {
+      preview,
+      appliedAt,
+      expectedPolicyVersion,
+    });
+    const record = exactObject(value, ["counts"]);
+    if (record.counts === null) return null;
+    const counts = exactObject(record.counts, [
+      "applied",
+      "unchanged",
+      "manualPreserved",
+      "pendingReview",
+    ]);
+    return {
+      applied: count(counts.applied),
+      unchanged: count(counts.unchanged),
+      manualPreserved: count(counts.manualPreserved),
+      pendingReview: count(counts.pendingReview),
+    };
+  }
+
+}
+
+class AttributionStateIntegrationClient {
   private readonly baseUrl: URL;
   private readonly token: string;
 
@@ -328,81 +432,7 @@ class HttpReattributionRepository implements ReattributionRepository {
     }
   }
 
-  async loadRecords(
-    householdId: string,
-    sourceRefs: string[]
-  ): Promise<ReattributionRecordV1[]> {
-    const value = await this.request("v1/reattribution/records:resolve", {
-      householdId,
-      sourceRefs,
-    });
-    const record = exactObject(value, ["records"]);
-    if (!Array.isArray(record.records)) throw new ReattributionIntegrationError();
-    try {
-      return record.records.map((item) => {
-        const candidate = exactObject(item, ["input", "current"]);
-        return {
-          input: parseAttributionInputV1(candidate.input),
-          current: parseAttributionResultV1(candidate.current),
-        };
-      });
-    } catch {
-      throw new ReattributionIntegrationError();
-    }
-  }
-
-  async savePreview(preview: ReattributionPreviewV1): Promise<void> {
-    const result = exactObject(
-      await this.request("v1/reattribution/previews", { preview }),
-      ["stored"]
-    );
-    if (result.stored !== true) throw new ReattributionIntegrationError();
-  }
-
-  async loadPreview(
-    householdId: string,
-    previewId: string
-  ): Promise<ReattributionPreviewV1 | null> {
-    const value = await this.request("v1/reattribution/previews:resolve", {
-      householdId,
-      previewId,
-    });
-    const record = exactObject(value, ["preview"]);
-    if (record.preview === null) return null;
-    try {
-      return parseReattributionPreviewV1(record.preview);
-    } catch {
-      throw new ReattributionIntegrationError();
-    }
-  }
-
-  async applyPreviewIfPolicyVersion(
-    preview: ReattributionPreviewV1,
-    appliedAt: string,
-    expectedPolicyVersion: number
-  ): Promise<ReattributionApplyCountsV1 | null> {
-    const value = await this.request("v1/reattribution/previews:apply", {
-      preview,
-      appliedAt,
-      expectedPolicyVersion,
-    });
-    const record = exactObject(value, ["counts"]);
-    if (record.counts === null) return null;
-    const counts = exactObject(record.counts, [
-      "applied",
-      "unchanged",
-      "manualPreserved",
-      "pendingReview",
-    ]);
-    return {
-      applied: count(counts.applied),
-      unchanged: count(counts.unchanged),
-      manualPreserved: count(counts.manualPreserved),
-      pendingReview: count(counts.pendingReview),
-    };
-  }
-
-  private async request(path: string, body: unknown): Promise<unknown> {
+  async request(path: string, body: unknown): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), INTEGRATION_TIMEOUT_MS);
     try {
@@ -436,6 +466,124 @@ class HttpReattributionRepository implements ReattributionRepository {
     } finally {
       clearTimeout(timeout);
     }
+  }
+}
+
+class DemoAttributionActionRepository implements AttributionActionRepository {
+  private readonly records = new Map<string, AttributionActionRecordV1>([
+    ["demo-record-1", demoActionRecord("demo-record-1")],
+  ]);
+  private readonly replays = new Map<
+    string,
+    AttributionActionApplyResultV1
+  >();
+
+  async load(
+    householdId: string,
+    sourceRef: string
+  ): Promise<AttributionActionRecordV1 | null> {
+    if (householdId !== HOMELAB_HOUSEHOLD_ID) return null;
+    const record = this.records.get(sourceRef);
+    return record ? structuredClone(record) : null;
+  }
+
+  async loadReplay(
+    householdId: string,
+    _sourceRef: string,
+    idempotencyKey: string
+  ): Promise<AttributionActionApplyResultV1 | null> {
+    if (householdId !== HOMELAB_HOUSEHOLD_ID) return null;
+    const replay = this.replays.get(idempotencyKey);
+    return replay ? { ...structuredClone(replay), replayed: true } : null;
+  }
+
+  async applyIfCurrent(
+    householdId: string,
+    mutation: AttributionActionMutationV1
+  ): Promise<AttributionActionApplyResultV1 | null> {
+    if (householdId !== HOMELAB_HOUSEHOLD_ID) return null;
+    const replay = this.replays.get(mutation.request.idempotencyKey);
+    if (replay) return { ...structuredClone(replay), replayed: true };
+    const current = this.records.get(mutation.request.sourceRef);
+    if (
+      !current ||
+      current.stateVersion !== mutation.request.expectedStateVersion
+    ) {
+      return null;
+    }
+    const stateVersion = current.stateVersion + 1;
+    const record: AttributionActionRecordV1 = {
+      input: structuredClone(mutation.input),
+      attribution: structuredClone(mutation.attribution),
+      stateVersion,
+      exception: structuredClone(mutation.exception),
+      lastAction: {
+        ...structuredClone(mutation.audit),
+        outcome: "applied",
+        stateVersion,
+      },
+    };
+    this.records.set(mutation.request.sourceRef, record);
+    const result = {
+      record: structuredClone(record),
+      replayed: false,
+      requestFingerprint: mutation.requestFingerprint,
+    };
+    this.replays.set(mutation.request.idempotencyKey, structuredClone(result));
+    return result;
+  }
+}
+
+class HttpAttributionActionRepository implements AttributionActionRepository {
+  constructor(private readonly client: AttributionStateIntegrationClient) {}
+
+  async load(
+    householdId: string,
+    sourceRef: string
+  ): Promise<AttributionActionRecordV1 | null> {
+    const value = exactObject(
+      await this.client.request("v1/attribution-actions/records:resolve", {
+        householdId,
+        sourceRef,
+      }),
+      ["record"]
+    );
+    if (value.record === null) return null;
+    try {
+      return parseAttributionActionRecordV1(value.record);
+    } catch {
+      throw new ReattributionIntegrationError();
+    }
+  }
+
+  async loadReplay(
+    householdId: string,
+    sourceRef: string,
+    idempotencyKey: string
+  ): Promise<AttributionActionApplyResultV1 | null> {
+    const value = exactObject(
+      await this.client.request("v1/attribution-actions/actions:resolve", {
+        householdId,
+        sourceRef,
+        idempotencyKey,
+      }),
+      ["result"]
+    );
+    return parseAttributionActionApplyResult(value.result);
+  }
+
+  async applyIfCurrent(
+    householdId: string,
+    mutation: AttributionActionMutationV1
+  ): Promise<AttributionActionApplyResultV1 | null> {
+    const value = exactObject(
+      await this.client.request("v1/attribution-actions/actions:apply", {
+        householdId,
+        mutation,
+      }),
+      ["result"]
+    );
+    return parseAttributionActionApplyResult(value.result);
   }
 }
 
@@ -492,6 +640,22 @@ function demoRecord(
   };
 }
 
+function demoActionRecord(sourceRef: string): AttributionActionRecordV1 {
+  const record = demoRecord(sourceRef, null);
+  return {
+    input: record.input,
+    attribution: record.current,
+    stateVersion: 1,
+    exception: {
+      status: "open",
+      reasons: structuredClone(record.current.review.reasons),
+      deferredUntil: null,
+      updatedAt: record.current.provenance.evaluatedAt,
+    },
+    lastAction: null,
+  };
+}
+
 function summarizePreview(
   preview: ReattributionPreviewV1
 ): ReattributionApplyCountsV1 {
@@ -523,6 +687,32 @@ function exactObject(
     throw new ReattributionIntegrationError();
   }
   return record;
+}
+
+function parseAttributionActionApplyResult(
+  value: unknown
+): AttributionActionApplyResultV1 | null {
+  if (value === null) return null;
+  const result = exactObject(value, [
+    "record",
+    "replayed",
+    "requestFingerprint",
+  ]);
+  if (
+    typeof result.replayed !== "boolean" ||
+    typeof result.requestFingerprint !== "string"
+  ) {
+    throw new ReattributionIntegrationError();
+  }
+  try {
+    return {
+      record: parseAttributionActionRecordV1(result.record),
+      replayed: result.replayed,
+      requestFingerprint: result.requestFingerprint,
+    };
+  } catch {
+    throw new ReattributionIntegrationError();
+  }
 }
 
 function count(value: unknown): number {
