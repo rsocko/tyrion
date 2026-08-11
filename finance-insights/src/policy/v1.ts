@@ -4,6 +4,7 @@ import {
   amountMinorSchema,
   contractVersionSchema,
   currencySchema,
+  merchantKeySchema,
   nonNegativeAmountMinorSchema,
   nonNegativeBasisPointsSchema,
   parseContractV1,
@@ -21,6 +22,40 @@ const uniqueSourceRefsSchema = z
   .array(sourceReferenceSchema)
   .max(500)
   .refine((values) => new Set(values).size === values.length, 'must contain unique values');
+
+const uniqueMerchantKeysSchema = z
+  .array(merchantKeySchema)
+  .max(500)
+  .refine((values) => new Set(values).size === values.length, 'must contain unique values');
+
+const largeTransactionScopeSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('transaction'),
+    sourceRef: sourceReferenceSchema,
+  }),
+  z.strictObject({
+    kind: z.literal('merchant'),
+    sourceRef: merchantKeySchema,
+  }),
+  z.strictObject({
+    kind: z.literal('category'),
+    sourceRef: sourceReferenceSchema,
+  }),
+  z.strictObject({
+    kind: z.literal('account'),
+    sourceRef: sourceReferenceSchema,
+  }),
+]);
+
+const uniqueLargeTransactionScopesSchema = z
+  .array(largeTransactionScopeSchema)
+  .max(500)
+  .refine(
+    (values) =>
+      new Set(values.map((value) => `${value.kind}:${value.sourceRef}`)).size ===
+      values.length,
+    'must contain unique scopes'
+  );
 
 export const financeInsightPolicySnapshotSchema = z.strictObject({
   contractVersion: contractVersionSchema,
@@ -71,6 +106,18 @@ export const financeInsightPolicySnapshotSchema = z.strictObject({
         z.literal('account'),
         z.literal('household'),
       ]),
+    historyWindowDays: z.number().int().positive().max(3_660),
+    minimumBaselineSampleCount: z.number().int().positive().max(1_000),
+    robustDeviationMultiplierMilli: z.number().int().positive().max(20_000),
+    minimumSpreadMinor: nonNegativeAmountMinorSchema,
+    empiricalPercentileGateBasisPoints: z.number().int().min(0).max(10_000),
+    ratioGateBasisPoints: nonNegativeBasisPointsSchema,
+    highSeverityAmountMinor: nonNegativeAmountMinorSchema,
+    publicationLimit: z.number().int().positive().max(100),
+    lifecycleTransitionLimit: z.number().int().positive().max(1_000),
+    approvedMerchantKeys: uniqueMerchantKeysSchema,
+    expectedScopes: uniqueLargeTransactionScopesSchema,
+    suppressedScopes: uniqueLargeTransactionScopesSchema,
   }),
   variance: z.strictObject({
     absoluteGateMinor: nonNegativeAmountMinorSchema,
@@ -186,6 +233,18 @@ export function createCandidatePolicySnapshotV1(
       adaptiveMeaningfulDollarFloorMinor: 15_000,
       adaptiveMinimumAgreement: 2,
       eligibleDimensions: ['merchant', 'category', 'account', 'household'],
+      historyWindowDays: 365,
+      minimumBaselineSampleCount: 5,
+      robustDeviationMultiplierMilli: 3_000,
+      minimumSpreadMinor: 1_000,
+      empiricalPercentileGateBasisPoints: 9_000,
+      ratioGateBasisPoints: 20_000,
+      highSeverityAmountMinor: 250_000,
+      publicationLimit: 50,
+      lifecycleTransitionLimit: 100,
+      approvedMerchantKeys: [],
+      expectedScopes: [],
+      suppressedScopes: [],
     },
     variance: {
       absoluteGateMinor: 15_000,
