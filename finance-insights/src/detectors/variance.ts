@@ -566,9 +566,11 @@ function buildCandidate(
   const previousSameOccurrence = previous.find(
     (item) => item.detail.occurrenceId === occurrenceId
   );
+  const analysisState = qualified ? 'qualified' : 'insufficientBaseline';
   const deliveryRevision = deliveryRevisionFor(
     previousSameOccurrence?.detail,
     currentTotal,
+    analysisState,
     policy
   );
   const createdAt =
@@ -604,7 +606,6 @@ function buildCandidate(
     confidence,
     isZeroBaseline: zeroBaseline,
   } as const;
-  const analysisState = qualified ? 'qualified' : 'insufficientBaseline';
   if (
     !qualified &&
     previousSameOccurrence?.detail.analysisState === 'qualified' &&
@@ -1181,6 +1182,7 @@ function lifecycleFor(
 function deliveryRevisionFor(
   previous: InsightOccurrenceDetailV1 | undefined,
   currentTotal: number,
+  nextClassification: 'qualified' | 'insufficientBaseline',
   policy: FinanceInsightPolicySnapshotV1
 ): number {
   if (!previous) return 1;
@@ -1189,7 +1191,7 @@ function deliveryRevisionFor(
     previousAmountMinor: previous.observedValue.amountMinor,
     nextAmountMinor: currentTotal,
     previousClassification: previous.analysisState,
-    nextClassification: previous.analysisState,
+    nextClassification,
     amountBoundaryMinor: policy.materialChange.amountBoundaryMinor,
     changeKind: 'reevaluation',
   });

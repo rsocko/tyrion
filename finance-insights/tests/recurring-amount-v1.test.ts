@@ -339,6 +339,45 @@ describe('recurring amount detector v1', () => {
     ]);
   });
 
+  it('resolves an open occurrence when new evidence alone removes qualification', async () => {
+    const first = await evaluate(projectionWithCurrent(28_640));
+    const prior = priorFrom(first, 28_640);
+    const reevaluated = await evaluate(projectionWithCurrent(28_640), {
+      prior: [prior],
+      evidence: [billingPeriodEvidence(35)],
+    });
+
+    expect(reevaluated.analyses[0]?.state).toBe('withinExpectedRange');
+    expect(reevaluated.publication?.occurrences).toHaveLength(0);
+    expect(reevaluated.publication?.transitions).toEqual([
+      {
+        occurrenceId: prior.detail.occurrenceId,
+        state: 'resolved',
+        reasonCode: 'correction_resolved',
+        replacementOccurrenceId: null,
+        occurredAt: COMPLETED_AT,
+      },
+    ]);
+  });
+
+  it('resolves open alerts for recurring entities absent from a complete projection', async () => {
+    const first = await evaluate(projectionWithCurrent(28_640));
+    const prior = priorFrom(first, 28_640);
+    const removed = await evaluate(projection([], []), { prior: [prior] });
+
+    expect(removed.analyses).toHaveLength(0);
+    expect(removed.publication?.occurrences).toHaveLength(0);
+    expect(removed.publication?.transitions).toEqual([
+      {
+        occurrenceId: prior.detail.occurrenceId,
+        state: 'resolved',
+        reasonCode: 'correction_resolved',
+        replacementOccurrenceId: null,
+        occurredAt: COMPLETED_AT,
+      },
+    ]);
+  });
+
   it('supersedes a corrected same-period occurrence when the successor qualifies', async () => {
     const first = await evaluate(projectionWithCurrent(28_640));
     const prior = priorFrom(first, 28_640);

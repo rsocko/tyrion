@@ -5,6 +5,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import Database from 'better-sqlite3';
 import {
   FINANCE_INSIGHTS_CONTRACT_VERSION,
+  SOURCE_GENERATION_ITEM_LIMITS_V1,
   type AssignedEvaluationV1,
   type EvaluationIdentityV1,
   type EvaluationRequestV1,
@@ -76,6 +77,7 @@ const HISTORICAL_SOURCE_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
 const EVALUATION_RETENTION_MS = 180 * 24 * 60 * 60 * 1_000;
 const TERMINAL_OCCURRENCE_RETENTION_MS = 365 * 24 * 60 * 60 * 1_000;
 const CURSOR_TTL_MS = 15 * 60 * 1_000;
+const EVALUATION_CLAIM_LEASE_MS = 5 * 60 * 1_000;
 const MAX_POLICY_SNAPSHOTS = 100;
 const MAX_LIST_SNAPSHOT_ITEMS = 10_000;
 
@@ -133,6 +135,7 @@ export interface OccurrenceTransitionV1 {
 export interface EvaluationPublicationV1 {
   occurrences: readonly OccurrencePublicationV1[];
   transitions: readonly OccurrenceTransitionV1[];
+  recurringAssociations?: readonly RecurringAssociationV1[];
   exclusionSummary?: Readonly<Record<string, number>>;
 }
 
@@ -203,6 +206,7 @@ interface EvaluationRow {
   state: EvaluationRecordV1['state'];
   accepted_at: string;
   completed_at: string | null;
+  claim_expires_at: string | null;
   request_idempotency_key: string | null;
   request_digest: string | null;
 }
@@ -437,6 +441,22 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         request.sourceGeneration
       );
     });
+  }
+
+  async findSourceGenerationById(
+    sourceGeneration: string
+  ): Promise<SourceGenerationRecordV1 | null> {
+    if (!this.connectionContext.getStore()) {
+      return this.withConnection(() =>
+        this.findSourceGenerationById(sourceGeneration)
+      );
+    }
+    const row = this.database
+      .prepare(
+        'SELECT * FROM finance_insight_source_generations WHERE source_generation = ?'
+      )
+      .get(sourceGeneration) as SourceGenerationRow | undefined;
+    return row ? sourceRecord(row) : null;
   }
 
   async putSourceBatch(input: SourceFactBatchV1): Promise<void> {
@@ -753,31 +773,68 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
       policyVersion: request.expectedPolicyVersion,
     };
     const requestDigest = canonicalDigestV1(request as CanonicalJsonValue);
-    return this.inImmediateTransaction(() => {
+    const retried = this.inImmediateTransaction<EvaluationRecordV1 | null>(() => {
       const generation = this.findSourceGenerationRowRequired(
         request.connectorRef,
         request.sourceGeneration
       );
+      const existing = this.findEvaluationRow(identity);
       if (
         generation.state !== 'promoted' ||
         generation.assigned_detector_set_version !== request.detectorSetVersion ||
         generation.assigned_policy_version !== request.expectedPolicyVersion
       ) {
-        return storeError('stale_evaluation');
+        if (existing) {
+          const completedAt = this.now();
+          this.database
+            .prepare(
+              `UPDATE finance_insight_evaluations
+               SET state = 'failed', completed_at = ?, claim_expires_at = NULL
+               WHERE evaluation_key = ? AND evaluation_sequence = ?
+                 AND state IN ('queued', 'evaluating')`
+            )
+            .run(
+              completedAt,
+              existing.evaluation_key,
+              existing.evaluation_sequence
+            );
+          this.markEvaluationAttemptStale(
+            existing.evaluation_key,
+            existing.evaluation_sequence,
+            completedAt
+          );
+        }
+        return null;
       }
-      const existing = this.findEvaluationRow(identity);
-      if (!existing) return storeError('stale_evaluation');
+      if (!existing) return null;
       const replay = this.database
         .prepare(
-          `SELECT request_digest FROM finance_insight_evaluation_attempts
+          `SELECT evaluation_sequence, state, accepted_at, completed_at,
+                  request_digest
+           FROM finance_insight_evaluation_attempts
            WHERE request_idempotency_key = ?`
         )
-        .get(request.idempotencyKey) as { request_digest: string } | undefined;
+        .get(request.idempotencyKey) as
+        | {
+            evaluation_sequence: number;
+            state:
+              | EvaluationRecordV1['state']
+              | 'stale';
+            accepted_at: string;
+            completed_at: string | null;
+            request_digest: string;
+          }
+        | undefined;
       if (replay) {
         if (replay.request_digest !== requestDigest) {
           return storeError('idempotency_conflict');
         }
-        return evaluationRecord(existing);
+        const replayState = replay.state;
+        if (replayState === 'stale') return storeError('stale_evaluation');
+        return evaluationAttemptRecord(existing, {
+          ...replay,
+          state: replayState,
+        });
       }
       const keyConflict = this.database
         .prepare(
@@ -785,10 +842,52 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         )
         .get(request.idempotencyKey) as { request_digest: string } | undefined;
       if (keyConflict) return storeError('idempotency_conflict');
-      if (existing.state === 'queued' || existing.state === 'evaluating') {
-        return existing.state === 'queued'
-          ? evaluationRecord(existing)
-          : storeError('evaluation_in_progress');
+      if (existing.state === 'queued') {
+        if (existing.request_idempotency_key !== null) {
+          return storeError('evaluation_in_progress');
+        }
+        this.database
+          .prepare(
+            `UPDATE finance_insight_evaluations
+             SET request_idempotency_key = ?, request_digest = ?
+             WHERE evaluation_key = ? AND evaluation_sequence = ?`
+          )
+          .run(
+            request.idempotencyKey,
+            requestDigest,
+            existing.evaluation_key,
+            existing.evaluation_sequence
+          );
+        this.database
+          .prepare(
+            `UPDATE finance_insight_evaluation_attempts
+             SET request_idempotency_key = ?, request_digest = ?
+             WHERE evaluation_key = ? AND evaluation_sequence = ?`
+          )
+          .run(
+            request.idempotencyKey,
+            requestDigest,
+            existing.evaluation_key,
+            existing.evaluation_sequence
+          );
+        return this.findEvaluationRequired(identity);
+      }
+      if (existing.state === 'evaluating') {
+        const now = this.now();
+        if (
+          existing.claim_expires_at !== null &&
+          Date.parse(existing.claim_expires_at) > Date.parse(now)
+        ) {
+          return storeError('evaluation_in_progress');
+        }
+        this.database
+          .prepare(
+            `UPDATE finance_insight_evaluation_attempts
+             SET state = 'failed', completed_at = ?
+             WHERE evaluation_key = ? AND evaluation_sequence = ?
+               AND state = 'evaluating'`
+          )
+          .run(now, existing.evaluation_key, existing.evaluation_sequence);
       }
       this.ensureConnectorState(request.connectorRef);
       const connector = this.database
@@ -804,7 +903,25 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         connector.current_source_sequence !== generation.source_sequence ||
         connector.current_source_generation !== generation.source_generation
       ) {
-        return storeError('stale_evaluation');
+        const completedAt = this.now();
+        this.database
+          .prepare(
+            `UPDATE finance_insight_evaluations
+             SET state = 'failed', completed_at = ?, claim_expires_at = NULL
+             WHERE evaluation_key = ? AND evaluation_sequence = ?
+               AND state IN ('queued', 'evaluating')`
+          )
+          .run(
+            completedAt,
+            existing.evaluation_key,
+            existing.evaluation_sequence
+          );
+        this.markEvaluationAttemptStale(
+          existing.evaluation_key,
+          existing.evaluation_sequence,
+          completedAt
+        );
+        return null;
       }
       const evaluationSequence = safeIncrement(
         connector.current_evaluation_sequence,
@@ -826,7 +943,8 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         .prepare(
           `UPDATE finance_insight_evaluations
            SET evaluation_sequence = ?, state = 'queued', accepted_at = ?,
-               completed_at = NULL, request_idempotency_key = ?, request_digest = ?
+               completed_at = NULL, claim_expires_at = NULL,
+               request_idempotency_key = ?, request_digest = ?
            WHERE evaluation_key = ?`
         )
         .run(
@@ -852,6 +970,8 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         );
       return this.findEvaluationRequired(identity);
     });
+    if (!retried) return storeError('stale_evaluation');
+    return retried;
   }
 
   async completeEvaluation(
@@ -900,6 +1020,17 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         connector.current_evaluation_sequence !== assignment.evaluationSequence
       ) {
         this.database
+          .prepare(
+            `UPDATE finance_insight_evaluations
+             SET state = 'failed', completed_at = ?, claim_expires_at = NULL
+             WHERE evaluation_key = ? AND evaluation_sequence = ?
+               AND state IN ('queued', 'evaluating')`
+          )
+          .run(
+            result.completedAt,
+            evaluation.evaluation_key,
+            assignment.evaluationSequence
+          );
         this.markEvaluationAttemptStale(
           evaluation.evaluation_key,
           assignment.evaluationSequence,
@@ -922,12 +1053,16 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
       }
       if (result.state === 'completed' && publication) {
         this.validateEvaluationPublication(assignment, result, publication);
+        for (const association of publication.recurringAssociations ?? []) {
+          this.persistRecurringAssociation(association);
+        }
         this.publishOccurrences(assignment, publication);
       }
       this.database
         .prepare(
           `UPDATE finance_insight_evaluations
-           SET state = ?, completed_at = ?, exclusion_summary_json = ?
+           SET state = ?, completed_at = ?, claim_expires_at = NULL,
+               exclusion_summary_json = ?
            WHERE evaluation_key = ? AND evaluation_sequence = ?`
         )
         .run(
@@ -963,14 +1098,21 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     if (!this.connectionContext.getStore()) {
       return this.withConnection(() => this.claimEvaluation(assignment));
     }
-    return this.inImmediateTransaction(() => {
+    const claimed = this.inImmediateTransaction<EvaluationRecordV1 | null>(() => {
       const evaluation = this.findEvaluationRow(assignment.identity);
       if (
         !evaluation ||
         evaluation.evaluation_sequence !== assignment.evaluationSequence ||
         evaluation.source_sequence !== assignment.sourceSequence
       ) {
-        return storeError('stale_evaluation');
+        if (evaluation) {
+          this.markEvaluationAttemptStale(
+            evaluation.evaluation_key,
+            assignment.evaluationSequence,
+            this.now()
+          );
+        }
+        return null;
       }
       const connector = this.database
         .prepare(
@@ -992,7 +1134,25 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
           assignment.identity.sourceGeneration ||
         connector.current_evaluation_sequence !== assignment.evaluationSequence
       ) {
-        return storeError('stale_evaluation');
+        const completedAt = this.now();
+        this.database
+          .prepare(
+            `UPDATE finance_insight_evaluations
+             SET state = 'failed', completed_at = ?, claim_expires_at = NULL
+             WHERE evaluation_key = ? AND evaluation_sequence = ?
+               AND state IN ('queued', 'evaluating')`
+          )
+          .run(
+            completedAt,
+            evaluation.evaluation_key,
+            assignment.evaluationSequence
+          );
+        this.markEvaluationAttemptStale(
+          evaluation.evaluation_key,
+          assignment.evaluationSequence,
+          completedAt
+        );
+        return null;
       }
       if (evaluation.state === 'evaluating') {
         return storeError('evaluation_in_progress');
@@ -1000,10 +1160,15 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
       if (evaluation.state !== 'queued') return storeError('stale_evaluation');
       this.database
         .prepare(
-          `UPDATE finance_insight_evaluations SET state = 'evaluating'
+          `UPDATE finance_insight_evaluations
+           SET state = 'evaluating', claim_expires_at = ?
            WHERE evaluation_key = ? AND evaluation_sequence = ? AND state = 'queued'`
         )
-        .run(evaluation.evaluation_key, assignment.evaluationSequence);
+        .run(
+          addMilliseconds(this.now(), EVALUATION_CLAIM_LEASE_MS),
+          evaluation.evaluation_key,
+          assignment.evaluationSequence
+        );
       this.database
         .prepare(
           `UPDATE finance_insight_evaluation_attempts SET state = 'evaluating'
@@ -1012,11 +1177,18 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         .run(evaluation.evaluation_key, assignment.evaluationSequence);
       return this.findEvaluationRequired(assignment.identity);
     });
+    if (!claimed) return storeError('stale_evaluation');
+    return claimed;
   }
 
-  async loadCurrentProjection(connectorRef: string): Promise<SourceProjectionV1 | null> {
+  async loadCurrentProjection(
+    connectorRef: string,
+    expectedSourceGeneration?: string
+  ): Promise<SourceProjectionV1 | null> {
     if (!this.connectionContext.getStore()) {
-      return this.withConnection(() => this.loadCurrentProjection(connectorRef));
+      return this.withConnection(() =>
+        this.loadCurrentProjection(connectorRef, expectedSourceGeneration)
+      );
     }
     const connector = this.database
       .prepare(
@@ -1025,6 +1197,12 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
       .get(connectorRef) as { current_source_generation: string | null } | undefined;
     if (!connector?.current_source_generation) return null;
     const generation = connector.current_source_generation;
+    if (
+      expectedSourceGeneration !== undefined &&
+      generation !== expectedSourceGeneration
+    ) {
+      return storeError('stale_evaluation');
+    }
     return {
       transactions: this.readProjectionFacts(
         'finance_insight_transaction_facts',
@@ -1070,83 +1248,9 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     ) {
       return storeError('invalid_request');
     }
-    return this.inImmediateTransaction(() => {
-      const generation = this.database
-        .prepare(
-          `SELECT source_generation
-           FROM finance_insight_source_generations
-           WHERE connector_ref = ? AND source_sequence = ? AND state = 'promoted'`
-        )
-        .get(association.connectorRef, association.sourceSequence) as
-        | { source_generation: string }
-        | undefined;
-      if (!generation) return storeError('stale_source_generation');
-      const transaction = this.database
-        .prepare(
-          `SELECT 1 FROM finance_insight_transaction_facts
-           WHERE source_generation = ? AND source_ref = ?`
-        )
-        .get(
-          generation.source_generation,
-          association.transactionSourceRef
-        );
-      const recurring = this.database
-        .prepare(
-          `SELECT 1 FROM finance_insight_recurring_facts
-           WHERE source_generation = ? AND source_ref = ?`
-        )
-        .get(generation.source_generation, association.recurringSourceRef);
-      if (!transaction || !recurring) {
-        return storeError('source_generation_conflict');
-      }
-      const existing = this.database
-        .prepare(
-          `SELECT * FROM finance_insight_recurring_associations
-           WHERE connector_ref = ? AND transaction_source_ref = ? AND source_sequence = ?`
-        )
-        .get(
-          association.connectorRef,
-          association.transactionSourceRef,
-          association.sourceSequence
-        ) as
-        | {
-            recurring_source_ref: string;
-            association_version: string;
-            confidence: RecurringAssociationV1['confidence'];
-            created_at: string;
-          }
-        | undefined;
-      if (existing) {
-        if (
-          existing.recurring_source_ref !== association.recurringSourceRef ||
-          existing.association_version !== association.associationVersion ||
-          existing.confidence !== association.confidence
-        ) {
-          return storeError('source_generation_conflict');
-        }
-        return {
-          ...association,
-          createdAt: existing.created_at,
-        };
-      }
-      this.database
-        .prepare(
-          `INSERT INTO finance_insight_recurring_associations(
-            connector_ref, transaction_source_ref, recurring_source_ref,
-            association_version, confidence, source_sequence, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          association.connectorRef,
-          association.transactionSourceRef,
-          association.recurringSourceRef,
-          association.associationVersion,
-          association.confidence,
-          association.sourceSequence,
-          association.createdAt
-        );
-      return association;
-    });
+    return this.inImmediateTransaction(() =>
+      this.persistRecurringAssociation(association)
+    );
   }
 
   async associateMerchantIdentity(
@@ -1202,11 +1306,16 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
 
   async classifyCurrentTransactions(
     connectorRef: string,
-    policyVersion: number
+    policyVersion: number,
+    expectedSourceGeneration?: string
   ): Promise<readonly PersistedTransactionClassificationV1[]> {
     if (!this.connectionContext.getStore()) {
       return this.withConnection(() =>
-        this.classifyCurrentTransactions(connectorRef, policyVersion)
+        this.classifyCurrentTransactions(
+          connectorRef,
+          policyVersion,
+          expectedSourceGeneration
+        )
       );
     }
     const policy = this.findPolicy(policyVersion);
@@ -1225,6 +1334,12 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         return storeError('insight_source_unavailable');
       }
       const sourceGeneration = connector.current_source_generation;
+      if (
+        expectedSourceGeneration !== undefined &&
+        sourceGeneration !== expectedSourceGeneration
+      ) {
+        return storeError('stale_evaluation');
+      }
       const transactions = this.readProjectionFacts(
         'finance_insight_transaction_facts',
         sourceGeneration,
@@ -1359,6 +1474,9 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     const request = parseOccurrenceActionRequestV1(input);
     const requestDigest = canonicalDigestV1(request as CanonicalJsonValue);
     return this.inImmediateTransaction(() => {
+      const replay = this.findOccurrenceActionReplay(request, requestDigest);
+      if (replay) return replay;
+      this.rejectActionIdempotencyConflict(request.idempotencyKey);
       const occurrence = this.findOccurrenceRow(request.occurrenceId);
       if (!occurrence) return storeError('occurrence_not_found');
       const detail = this.detailFromRow(occurrence);
@@ -1674,7 +1792,7 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         parameters.push(query.connectorRef);
       }
       if (query.updatedAfter) {
-        clauses.push('updated_at > ?');
+        clauses.push('julianday(updated_at) > julianday(?)');
         parameters.push(query.updatedAfter);
       }
       const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
@@ -1682,7 +1800,7 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         .prepare(
           `SELECT rowid, * FROM finance_insight_occurrences
            ${where}
-           ORDER BY updated_at DESC, occurrence_id ASC`
+           ORDER BY julianday(updated_at) DESC, occurrence_id ASC`
         )
         .all(...parameters) as OccurrenceRow[];
       const summaries = candidates
@@ -1876,6 +1994,104 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     return detail ? toSummary(detail) : null;
   }
 
+  async listOccurrencePublications(
+    connectorRef: string,
+    limit: number
+  ): Promise<OccurrencePublicationV1[]> {
+    if (!this.connectionContext.getStore()) {
+      return this.withConnection(() =>
+        this.listOccurrencePublications(connectorRef, limit)
+      );
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10_000) {
+      return storeError('invalid_request');
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT detail_json, source_revision_ref
+         FROM finance_insight_occurrences
+         WHERE connector_ref = ?
+         ORDER BY julianday(updated_at) DESC, occurrence_id ASC
+         LIMIT ?`
+      )
+      .all(connectorRef, limit + 1) as {
+      detail_json: string;
+      source_revision_ref: string | null;
+    }[];
+    if (rows.length > limit) return storeError('page_too_large');
+    return rows.map((row) => ({
+      detail: parseInsightOccurrenceDetailV1(parseJson(row.detail_json)),
+      sourceRevisionRef: row.source_revision_ref,
+    }));
+  }
+
+  async listLatestOccurrencePublicationsByInsightIds(
+    connectorRef: string,
+    insightIds: readonly string[]
+  ): Promise<OccurrencePublicationV1[]> {
+    if (!this.connectionContext.getStore()) {
+      return this.withConnection(() =>
+        this.listLatestOccurrencePublicationsByInsightIds(
+          connectorRef,
+          insightIds
+        )
+      );
+    }
+    if (insightIds.length > 107_000) return storeError('invalid_request');
+    const uniqueInsightIds = [...new Set(insightIds)].sort();
+    const openRows = this.database
+      .prepare(
+        `SELECT detail_json, source_revision_ref
+         FROM finance_insight_occurrences
+         WHERE connector_ref = ? AND source_lifecycle = 'open'
+         ORDER BY julianday(updated_at) DESC, occurrence_id ASC
+         LIMIT 5111`
+      )
+      .all(connectorRef) as {
+      detail_json: string;
+      source_revision_ref: string | null;
+    }[];
+    if (openRows.length > 5_110) return storeError('page_too_large');
+    const publications = new Map<string, OccurrencePublicationV1>();
+    for (const row of openRows) {
+      const publication = {
+        detail: parseInsightOccurrenceDetailV1(parseJson(row.detail_json)),
+        sourceRevisionRef: row.source_revision_ref,
+      };
+      publications.set(publication.detail.occurrenceId, publication);
+    }
+    for (let offset = 0; offset < uniqueInsightIds.length; offset += 400) {
+      const chunk = uniqueInsightIds.slice(offset, offset + 400);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const rows = this.database
+        .prepare(
+          `SELECT current.detail_json, current.source_revision_ref
+           FROM finance_insight_occurrences AS current
+           JOIN (
+             SELECT insight_id, MAX(rowid) AS latest_rowid
+             FROM finance_insight_occurrences
+             WHERE connector_ref = ? AND insight_id IN (${placeholders})
+             GROUP BY insight_id
+           ) AS latest ON latest.latest_rowid = current.rowid
+           ORDER BY current.insight_id`
+        )
+        .all(connectorRef, ...chunk) as {
+        detail_json: string;
+        source_revision_ref: string | null;
+      }[];
+      for (const row of rows) {
+        const publication = {
+          detail: parseInsightOccurrenceDetailV1(parseJson(row.detail_json)),
+          sourceRevisionRef: row.source_revision_ref,
+        };
+        publications.set(publication.detail.occurrenceId, publication);
+      }
+    }
+    return [...publications.values()].sort((left, right) =>
+      left.detail.occurrenceId.localeCompare(right.detail.occurrenceId)
+    );
+  }
+
   private publishOccurrences(
     assignment: AssignedEvaluationV1,
     publication: EvaluationPublicationV1
@@ -1922,6 +2138,26 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     result: Extract<EvaluationTerminalResultV1, { state: 'completed' }>,
     publication: EvaluationPublicationV1
   ): void {
+    const associations = publication.recurringAssociations ?? [];
+    if (
+      associations.length > SOURCE_GENERATION_ITEM_LIMITS_V1.recurring
+    ) {
+      return storeError('source_generation_too_large');
+    }
+    const associationKeys = new Set<string>();
+    for (const association of associations) {
+      if (
+        association.connectorRef !== assignment.identity.connectorRef ||
+        association.sourceSequence !== assignment.sourceSequence
+      ) {
+        return storeError('stale_evaluation');
+      }
+      const key = `${association.transactionSourceRef}\u0000${association.recurringSourceRef}`;
+      if (associationKeys.has(key)) {
+        return storeError('source_generation_conflict');
+      }
+      associationKeys.add(key);
+    }
     const summaries = publication.occurrences
       .map((item) => {
         if (
@@ -1944,6 +2180,83 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     ) {
       return storeError('stale_evaluation');
     }
+  }
+
+  private persistRecurringAssociation(
+    association: RecurringAssociationV1
+  ): RecurringAssociationV1 {
+    const generation = this.database
+      .prepare(
+        `SELECT source_generation
+         FROM finance_insight_source_generations
+         WHERE connector_ref = ? AND source_sequence = ? AND state = 'promoted'`
+      )
+      .get(association.connectorRef, association.sourceSequence) as
+      | { source_generation: string }
+      | undefined;
+    if (!generation) return storeError('stale_source_generation');
+    const transaction = this.database
+      .prepare(
+        `SELECT 1 FROM finance_insight_transaction_facts
+         WHERE source_generation = ? AND source_ref = ?`
+      )
+      .get(generation.source_generation, association.transactionSourceRef);
+    const recurring = this.database
+      .prepare(
+        `SELECT 1 FROM finance_insight_recurring_facts
+         WHERE source_generation = ? AND source_ref = ?`
+      )
+      .get(generation.source_generation, association.recurringSourceRef);
+    if (!transaction || !recurring) {
+      return storeError('source_generation_conflict');
+    }
+    const existing = this.database
+      .prepare(
+        `SELECT * FROM finance_insight_recurring_associations
+         WHERE connector_ref = ? AND transaction_source_ref = ? AND source_sequence = ?`
+      )
+      .get(
+        association.connectorRef,
+        association.transactionSourceRef,
+        association.sourceSequence
+      ) as
+      | {
+          recurring_source_ref: string;
+          association_version: string;
+          confidence: RecurringAssociationV1['confidence'];
+          created_at: string;
+        }
+      | undefined;
+    if (existing) {
+      if (
+        existing.recurring_source_ref !== association.recurringSourceRef ||
+        existing.association_version !== association.associationVersion ||
+        existing.confidence !== association.confidence
+      ) {
+        return storeError('source_generation_conflict');
+      }
+      return {
+        ...association,
+        createdAt: existing.created_at,
+      };
+    }
+    this.database
+      .prepare(
+        `INSERT INTO finance_insight_recurring_associations(
+          connector_ref, transaction_source_ref, recurring_source_ref,
+          association_version, confidence, source_sequence, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        association.connectorRef,
+        association.transactionSourceRef,
+        association.recurringSourceRef,
+        association.associationVersion,
+        association.confidence,
+        association.sourceSequence,
+        association.createdAt
+      );
+    return association;
   }
 
   private upsertOccurrence(
@@ -2665,7 +2978,7 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
       .get(
         occurrence.connector_ref,
         occurrenceId,
-        detail.entity.sourceRef,
+        entityScopeRef(detail),
         categoryRef,
         categoryRef,
         at
@@ -2722,6 +3035,89 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
       )
       .get(idempotencyKey, idempotencyKey);
     if (feedback || suppression) return storeError('idempotency_conflict');
+  }
+
+  private findOccurrenceActionReplay(
+    request: OccurrenceActionRequestV1,
+    requestDigest: string
+  ): OccurrenceActionResultV1 | null {
+    const feedback = this.database
+      .prepare(
+        `SELECT occurrence_id, action, policy_version, delivery_revision,
+                request_digest, action_ref, applied_at
+         FROM finance_insight_feedback WHERE idempotency_key = ?`
+      )
+      .get(request.idempotencyKey) as
+      | {
+          occurrence_id: string;
+          action: 'expected' | 'notUseful';
+          policy_version: number;
+          delivery_revision: number;
+          request_digest: string;
+          action_ref: string;
+          applied_at: string;
+        }
+      | undefined;
+    if (feedback) {
+      if (feedback.request_digest !== requestDigest) {
+        return storeError('idempotency_conflict');
+      }
+      return {
+        contractVersion: FINANCE_INSIGHTS_CONTRACT_VERSION,
+        occurrenceId: feedback.occurrence_id,
+        deliveryRevision: feedback.delivery_revision,
+        policyVersion: feedback.policy_version,
+        action: feedback.action,
+        actionRef: feedback.action_ref,
+        appliedAt: feedback.applied_at,
+        suppressionId: null,
+      };
+    }
+    const suppression = this.database
+      .prepare(
+        `SELECT occurrence_id, policy_version, delivery_revision,
+                idempotency_key, request_digest, created_at, suppression_id,
+                undo_idempotency_key, undo_request_digest, undone_at
+         FROM finance_insight_suppressions
+         WHERE idempotency_key = ? OR undo_idempotency_key = ?`
+      )
+      .get(request.idempotencyKey, request.idempotencyKey) as
+      | {
+          occurrence_id: string;
+          policy_version: number;
+          delivery_revision: number;
+          idempotency_key: string;
+          request_digest: string;
+          created_at: string;
+          suppression_id: string;
+          undo_idempotency_key: string | null;
+          undo_request_digest: string | null;
+          undone_at: string | null;
+        }
+      | undefined;
+    if (!suppression) return null;
+    const isUndo = suppression.undo_idempotency_key === request.idempotencyKey;
+    const storedDigest = isUndo
+      ? suppression.undo_request_digest
+      : suppression.request_digest;
+    if (storedDigest !== requestDigest) return storeError('idempotency_conflict');
+    if (isUndo && suppression.undone_at === null) {
+      return storeError('insight_operation_failed');
+    }
+    const appliedAt = isUndo
+      ? suppression.undone_at
+      : suppression.created_at;
+    if (appliedAt === null) return storeError('insight_operation_failed');
+    return {
+      contractVersion: FINANCE_INSIGHTS_CONTRACT_VERSION,
+      occurrenceId: suppression.occurrence_id,
+      deliveryRevision: suppression.delivery_revision,
+      policyVersion: suppression.policy_version,
+      action: isUndo ? 'undoSuppression' : 'suppress',
+      actionRef: stableReference('action', request.idempotencyKey),
+      appliedAt,
+      suppressionId: suppression.suppression_id,
+    };
   }
 
   private ensureConnectorState(connectorRef: string): void {
@@ -2867,7 +3263,40 @@ function evaluationRecord(row: EvaluationRow): EvaluationRecordV1 {
   if (row.state === 'queued' || row.state === 'evaluating') {
     return { assignment, state: row.state, completedAt: null };
   }
+
   return { assignment, state: row.state, completedAt: row.completed_at! };
+}
+
+function evaluationAttemptRecord(
+  row: EvaluationRow,
+  attempt: {
+    evaluation_sequence: number;
+    state: EvaluationRecordV1['state'];
+    accepted_at: string;
+    completed_at: string | null;
+  }
+): EvaluationRecordV1 {
+  const assignment: AssignedEvaluationV1 = {
+    identity: {
+      householdScope: row.household_scope,
+      connectorRef: row.connector_ref,
+      sourceGeneration: row.source_generation,
+      detectorSetVersion: row.detector_set_version,
+      policyVersion: row.policy_version,
+    },
+    sourceSequence: row.source_sequence,
+    evaluationSequence: attempt.evaluation_sequence,
+    acceptedAt: attempt.accepted_at,
+  };
+  if (attempt.state === 'queued' || attempt.state === 'evaluating') {
+    return { assignment, state: attempt.state, completedAt: null };
+  }
+  if (attempt.completed_at === null) return storeError('insight_operation_failed');
+  return {
+    assignment,
+    state: attempt.state,
+    completedAt: attempt.completed_at,
+  };
 }
 
 function toSummary(
@@ -3006,7 +3435,7 @@ function suppressionAppliesToDetail(
     return suppression.scope_ref === detail.occurrenceId;
   }
   if (suppression.scope === 'entity') {
-    return suppression.scope_ref === detail.entity.sourceRef;
+    return suppression.scope_ref === entityScopeRef(detail);
   }
   return suppression.scope_ref === categoryScopeRef(detail);
 }
@@ -3016,10 +3445,14 @@ function suppressionScopeRef(
   detail: InsightOccurrenceDetailV1
 ): string {
   if (scope === 'occurrence') return detail.occurrenceId;
-  if (scope === 'entity') return detail.entity.sourceRef;
+  if (scope === 'entity') return entityScopeRef(detail);
   const categoryRef = categoryScopeRef(detail);
   if (!categoryRef) return storeError('unsupported_action');
   return categoryRef;
+}
+
+function entityScopeRef(detail: InsightOccurrenceDetailV1): string {
+  return `${detail.entity.kind}:${detail.entity.sourceRef}`;
 }
 
 function categoryScopeRef(detail: InsightOccurrenceDetailV1): string | null {
