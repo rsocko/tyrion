@@ -26,6 +26,8 @@ RETIRED_BRAND_PHRASES = (
 
 REVIEWED_NPM_LICENSES = {
     "(MIT OR CC0-1.0)",
+    "(MIT OR WTFPL)",
+    "(BSD-2-Clause OR MIT OR Apache-2.0)",
     "0BSD",
     "Apache-2.0",
     "Apache-2.0 AND LGPL-3.0-or-later",
@@ -74,7 +76,11 @@ def main() -> int:
                         f"{candidate.relative_to(ROOT)}: {phrase}"
                     )
 
-    for relative in ("kid-engine/package-lock.json", "triage-app/package-lock.json"):
+    for relative in (
+        "kid-engine/package-lock.json",
+        "finance-insights/package-lock.json",
+        "triage-app/package-lock.json",
+    ):
         lock = json.loads((ROOT / relative).read_text(encoding="utf-8"))
         for package_path, metadata in lock["packages"].items():
             license_expression = metadata.get("license")

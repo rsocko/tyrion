@@ -25,19 +25,34 @@ export interface TransactionClassificationResultV1 {
   classifierVersion: string;
 }
 
+const classificationSetCache = new WeakMap<
+  FinanceInsightPolicySnapshotV1['sourceClassification'],
+  {
+    transferCategoryRefs: ReadonlySet<string>;
+    transferTagRefs: ReadonlySet<string>;
+    incomeCategoryRefs: ReadonlySet<string>;
+    incomeTagRefs: ReadonlySet<string>;
+    refundCategoryRefs: ReadonlySet<string>;
+    refundTagRefs: ReadonlySet<string>;
+    excludedCategoryRefs: ReadonlySet<string>;
+    excludedTagRefs: ReadonlySet<string>;
+  }
+>();
+
 export function classifyTransactionV1(
   fact: TransactionSourceFactV1,
   policy: FinanceInsightPolicySnapshotV1
 ): TransactionClassificationResultV1 {
   const classification = policy.sourceClassification;
+  const sets = classificationSets(classification);
   if (fact.isPending) {
     return result('pending', 'pending_excluded', classification.classifierVersion);
   }
   if (
     matchesConfiguredSet(
       fact,
-      classification.transferCategoryRefs,
-      classification.transferTagRefs
+      sets.transferCategoryRefs,
+      sets.transferTagRefs
     )
   ) {
     return result('transfer', 'transfer_excluded', classification.classifierVersion);
@@ -45,8 +60,8 @@ export function classifyTransactionV1(
   if (
     matchesConfiguredSet(
       fact,
-      classification.incomeCategoryRefs,
-      classification.incomeTagRefs
+      sets.incomeCategoryRefs,
+      sets.incomeTagRefs
     )
   ) {
     return result('income', 'income_excluded', classification.classifierVersion);
@@ -54,8 +69,8 @@ export function classifyTransactionV1(
   if (
     matchesConfiguredSet(
       fact,
-      classification.refundCategoryRefs,
-      classification.refundTagRefs
+      sets.refundCategoryRefs,
+      sets.refundTagRefs
     )
   ) {
     return result('refund', 'refund_excluded', classification.classifierVersion);
@@ -63,8 +78,8 @@ export function classifyTransactionV1(
   if (
     matchesConfiguredSet(
       fact,
-      classification.excludedCategoryRefs,
-      classification.excludedTagRefs
+      sets.excludedCategoryRefs,
+      sets.excludedTagRefs
     )
   ) {
     return result(
@@ -92,13 +107,32 @@ export function classifyTransactionV1(
 
 function matchesConfiguredSet(
   fact: TransactionSourceFactV1,
-  categoryRefs: readonly string[],
-  tagRefs: readonly string[]
+  categoryRefs: ReadonlySet<string>,
+  tagRefs: ReadonlySet<string>
 ): boolean {
   return (
-    (fact.categoryRef !== null && categoryRefs.includes(fact.categoryRef)) ||
-    fact.tagRefs.some((tagRef) => tagRefs.includes(tagRef))
+    (fact.categoryRef !== null && categoryRefs.has(fact.categoryRef)) ||
+    fact.tagRefs.some((tagRef) => tagRefs.has(tagRef))
   );
+}
+
+function classificationSets(
+  classification: FinanceInsightPolicySnapshotV1['sourceClassification']
+) {
+  const cached = classificationSetCache.get(classification);
+  if (cached) return cached;
+  const sets = {
+    transferCategoryRefs: new Set(classification.transferCategoryRefs),
+    transferTagRefs: new Set(classification.transferTagRefs),
+    incomeCategoryRefs: new Set(classification.incomeCategoryRefs),
+    incomeTagRefs: new Set(classification.incomeTagRefs),
+    refundCategoryRefs: new Set(classification.refundCategoryRefs),
+    refundTagRefs: new Set(classification.refundTagRefs),
+    excludedCategoryRefs: new Set(classification.excludedCategoryRefs),
+    excludedTagRefs: new Set(classification.excludedTagRefs),
+  };
+  classificationSetCache.set(classification, sets);
+  return sets;
 }
 
 function result(

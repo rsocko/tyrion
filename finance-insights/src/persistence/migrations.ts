@@ -376,6 +376,29 @@ CREATE INDEX finance_insight_active_suppressions
   );
 `,
     },
+    {
+      version: 2,
+      name: 'evaluation-claim-lease',
+      sql: `
+ALTER TABLE finance_insight_evaluations
+  ADD COLUMN claim_expires_at TEXT;
+`,
+    },
+    {
+      version: 3,
+      name: 'kind-qualified-entity-suppression',
+      sql: `
+UPDATE finance_insight_suppressions
+SET scope_ref = (
+  SELECT json_extract(finance_insight_occurrences.detail_json, '$.entity.kind')
+         || ':' || finance_insight_suppressions.scope_ref
+  FROM finance_insight_occurrences
+  WHERE finance_insight_occurrences.occurrence_id =
+        finance_insight_suppressions.occurrence_id
+)
+WHERE scope = 'entity';
+`,
+    },
   ]);
 
 export function migrateFinanceInsightStoreV1(

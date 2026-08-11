@@ -4,6 +4,7 @@ import {
   fallbackTargetForV1,
   notificationEligibilityV1,
   parseInsightOccurrenceDetailV1,
+  varianceHeadlineV1,
 } from '../src/index.js';
 import {
   categoryResult,
@@ -473,15 +474,14 @@ describe('category and merchant variance detector', () => {
     const first = evaluateVarianceProjectionV1(
       varianceInput(sixMonthSeries(Array(6).fill(50_000), 65_000))
     );
+    const category = first.series.find(
+      (detail) => detail.kind === 'categoryVariance'
+    )!;
     const foreign = parseInsightOccurrenceDetailV1({
-      ...first.series.find(
-        (detail) => detail.kind === 'categoryVariance'
-      )!,
+      ...category,
       observationPeriod: { start: '2026-07-01', end: '2026-07-31' },
       provenance: {
-        ...first.series.find(
-          (detail) => detail.kind === 'categoryVariance'
-        )!.provenance,
+        ...category.provenance,
         connectorRef: 'demo-other-connector-v1',
       },
     });
@@ -513,6 +513,40 @@ describe('category and merchant variance detector', () => {
     expect(below.deliveryRevision).toBe(1);
     expect(exact.deliveryRevision).toBe(2);
     expect(below.createdAt).toBe(first.series[0]?.createdAt);
+  });
+
+  it('increments revision when classification changes without an amount change', () => {
+    const first = evaluateVarianceProjectionV1(
+      varianceInput(sixMonthSeries(Array(6).fill(50_000), 65_000), {
+        coverageStart: '2026-07-01',
+      })
+    );
+    const changed = categoryResult(
+      varianceInput(sixMonthSeries(Array(6).fill(50_000), 65_000), {
+        previousOccurrences: first.publication.occurrences,
+      })
+    )!;
+    expect(changed.analysisState).toBe('qualified');
+    expect(changed.deliveryRevision).toBe(2);
+  });
+
+  it('bounds contract-valid headlines for maximum display names and amounts', () => {
+    expect(
+      varianceHeadlineV1({
+        displayName: 'M'.repeat(120),
+        entityKind: 'merchant',
+        direction: 'increase',
+        currency: 'USD',
+        observedMinor: 9_007_199_254_740_991,
+        baselineMinor: 0,
+        absoluteDeltaMinor: 9_007_199_254_740_991,
+        percentageDeltaBasisPoints: null,
+        baselinePeriods: 6,
+        baselineSufficiency: 'sufficient',
+        confidence: 'high',
+        isZeroBaseline: true,
+      })
+    ).toHaveLength(160);
   });
 
   it('produces contract-valid details and deterministic digest retry identity', () => {
