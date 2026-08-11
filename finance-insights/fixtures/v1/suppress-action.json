@@ -1,0 +1,12 @@
+{
+  "contractVersion": "1.0",
+  "occurrenceId": "occurrence-v1_LWrUx-lNUiYwXByUG0Nv_QNvSvbHsKmQA0PyLB3K-rU",
+  "expectedDeliveryRevision": 1,
+  "expectedPolicyVersion": 1,
+  "idempotencyKey": "demo-suppress-action-30-days-v1",
+  "action": "suppress",
+  "confirm": true,
+  "scope": "entity",
+  "durationDays": 30,
+  "reason": "expectedRecurringPattern"
+}

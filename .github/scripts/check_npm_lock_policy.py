@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCKFILES = (
+    ROOT / "finance-insights" / "package-lock.json",
     ROOT / "kid-engine" / "package-lock.json",
     ROOT / "triage-app" / "package-lock.json",
 )
