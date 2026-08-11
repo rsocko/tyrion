@@ -146,7 +146,10 @@ When transactions need human review:
 Actions:
 - **Assign to kid** → Updates attribution + adds to kid's spending total
 - **Mine** → Marks as parent expense, removes from kid tracking
-- **Flag** → Marks for discussion (creates a task: "Talk to Jake about $14 Chick-fil-A")
+- **Unassign** → Records an explicit manual unassignment
+- **Resolve** → Confirms the current suggested kid
+- **Defer** → Keeps the exception open for review at a bounded future time
+- **Open in Monarch** → Deep-links ordinary transaction editing to the system of record
 
 ---
 

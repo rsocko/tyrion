@@ -19,7 +19,7 @@ export const ATTRIBUTION_BATCH_PROVENANCE =
   'mission-control-normalized-v1' as const;
 
 export interface AttributionBatchManualDecisionV1 {
-  action: 'assign-kid' | 'parent-expense';
+  action: 'assign-kid' | 'parent-expense' | 'unassign';
   kidId: string | null;
   decidedAt: string;
 }

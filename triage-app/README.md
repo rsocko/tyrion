@@ -122,32 +122,40 @@ record references and returns only policy/version/expiry metadata plus determini
 impact counts. Apply requires a separately authorized request with `confirm: true`,
 an unexpired persisted preview, and the same policy version.
 
-Production re-attribution uses the server-only
+Production re-attribution and Mission Control attribution actions use the server-only
 `TYRION_REATTRIBUTION_URL`/`TYRION_REATTRIBUTION_TOKEN` adapter. It calls fixed
 internal `POST` operations under `/v1/reattribution/` to resolve records, persist and
-resolve previews, and atomically apply a preview. That implementation must preserve
-newer manual decisions and compare the active policy version in its transaction.
+resolve previews, and atomically apply a preview, plus
+`/v1/attribution-actions/records:resolve` and
+`/v1/attribution-actions/actions:resolve` to replay prior actions, and
+`/v1/attribution-actions/actions:apply` for versioned exception state. That
+implementation must preserve newer manual decisions, retain replay history, bind each
+idempotency key to the original mutation parameters, enforce state versions, and
+compare the active policy version in its transaction.
 HTTPS is required unless
 `TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL=true` explicitly authorizes private
 network HTTP. Re-attribution fails closed when this optional adapter is absent;
 policy CRUD and connector operations remain available.
 
-## Internal batch attribution service
+## Internal attribution services
 
-Mission Control calls `POST /api/internal/v1/attribution/batch` by private backend
-DNS. This is a Tyrion domain endpoint, not a Bridge proxy or browser route. The
+Mission Control calls `POST /api/internal/v1/attribution/batch` and
+`POST /api/internal/v1/attribution/actions` by private backend DNS. These are Tyrion
+domain endpoints, not Bridge proxies or browser routes. The
 public `tyrion.socko.us` Traefik routers must exclude `/api/internal/`; the service
 also requires `Host: tyrion-operations-ui:3000` and, when present, the same value in
 `x-forwarded-host`.
 
 The exact v1 request, response, header, status, and schema contract is
 [`../docs/attribution-service-v1.openapi.json`](../docs/attribution-service-v1.openapi.json).
-Requests are limited to 64 KiB and 100 unique items. Mission Control sends the
+Requests are limited to 64 KiB; batch requests contain at most 100 unique items.
+Mission Control sends the
 existing server-only
 `BRIDGE_API_TOKEN`/finance-manager token as a standard bearer credential. Tyrion
 derives the fixed `mission-control-finance-manager` actor, `homelab-household` scope,
-and sole `attribution:batch` permission internally; request headers and bodies cannot
-override them. Mission Control must treat any non-200 response as an
+and least-privilege `attribution:batch` and `attribution:actions` permissions
+internally; request headers and bodies cannot override them. Mission Control must
+treat any non-200 response as an
 attribution-only failure: persist the transaction with pending review, do not
 tombstone transaction generation, and retry according to the stable error code.
 
@@ -195,5 +203,5 @@ Runtime configuration:
 | `BRIDGE_URL` | Private server-side bridge endpoint |
 | `BRIDGE_API_TOKEN` | Shared server-only bridge/finance-manager token (minimum 32 characters); authenticates the public connector gateway and private attribution, and domain-separates fingerprinting |
 | `TYRION_POLICY_STORE_PATH` | External absolute policy/audit store path |
-| `TYRION_REATTRIBUTION_URL` | Optional protected internal re-attribution repository service |
-| `TYRION_REATTRIBUTION_TOKEN` | Optional server-only integration token |
+| `TYRION_REATTRIBUTION_URL` | Optional protected internal re-attribution and attribution-action state service |
+| `TYRION_REATTRIBUTION_TOKEN` | Optional server-only attribution-state integration token |
