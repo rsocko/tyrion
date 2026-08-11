@@ -121,7 +121,10 @@ export interface OccurrenceTransitionV1 {
   state: 'resolved' | 'superseded';
   reasonCode: Extract<
     ReasonCodeV1,
-    'correction_resolved' | 'correction_superseded'
+    | 'correction_resolved'
+    | 'correction_superseded'
+    | 'variance_rank_omitted'
+    | 'variance_period_closed'
   >;
   replacementOccurrenceId: string | null;
   occurredAt: string;
@@ -2065,7 +2068,10 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
   ): void {
     const row = this.findOccurrenceRow(transition.occurrenceId);
     if (!row) return storeError('occurrence_not_found');
-    if (assignment.evaluationSequence < row.evaluation_sequence) {
+    if (
+      row.connector_ref !== assignment.identity.connectorRef ||
+      assignment.evaluationSequence < row.evaluation_sequence
+    ) {
       return storeError('stale_evaluation');
     }
     if (
