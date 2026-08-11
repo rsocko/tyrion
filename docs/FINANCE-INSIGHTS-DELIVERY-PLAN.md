@@ -710,7 +710,11 @@ Finance stack:
 - `src/lib/notifications/service.ts`, `src/lib/notifications/lifecycle.ts`, and
   `src/lib/notifications/providers/finance.ts` own notification persistence,
   lifecycle, and presentation. New Finance code must not insert notification rows
-  directly.
+  directly. The provider registry must resolve canonical `finance-manager` and legacy
+  `monarch-money` aliases rather than only the old `finance` source type.
+- `src/lib/notifications/templates.ts` currently gives some legacy Finance templates
+  a `create_task` action despite the connector's notification-only capability. Provider
+  cleanup must remove every Finance task action and test all Finance aliases.
 - `src/lib/finance/external-links.ts` owns allowlisted Finance external origins and
   roots. Typed entity builders belong there; optional document targets should follow
   document-hub mapping patterns while adding Finance-specific origin validation.
@@ -776,7 +780,10 @@ notification ID, and occurrence key.
 Extend `financeNotificationProvider` with explicit large-transaction,
 recurring-change, and monthly-movers signatures. `NotificationCard` already bounds
 metadata chips, rich content, and primary/secondary actions; add Finance provider/card
-tests instead of a second card renderer.
+tests instead of a second card renderer. Register the provider for canonical
+`finance-manager`, legacy `monarch-money`, and persisted migration alias `finance`.
+Normalize those three as one Finance source family for provider resolution and source
+filtering until M6. No Finance signature or template may expose `create_task`.
 
 For filter parity, category must round-trip through mobile route consumption and show
 an applied-filter/clear affordance. Merchant is a new bounded exact filter through
@@ -978,7 +985,9 @@ R1 canary -> M6 Mission Control legacy cleanup
   `src/lib/notifications/service.ts`; publish each completed durable normalized
   connector generation through the staged Tyrion source contract; use actual connector
   identity, stable source/occurrence/group/dedupe keys, local projection refresh,
-  retry/resurface rules, and a mutually exclusive legacy/new producer fence
+  retry/resurface rules, and a mutually exclusive legacy/new producer fence. Wire the
+  synchronizer into `FinanceManagerConnector.syncDomainData()` and the canonical
+  connector sync/worker, not process-local cron or the manual legacy check route.
 - **Tests:** source batch/commit replay and conflict; incomplete generation rejection;
   stale publication fence; replay/restart/concurrency notification dedupe; lifecycle
   independence; one active notification row across delivery revisions; zero/multiple
@@ -1005,10 +1014,14 @@ R1 canary -> M6 Mission Control legacy cleanup
 - **Scope:** explicit signatures in
   `src/lib/notifications/providers/finance.ts`, immediate large-transaction card,
   recurring-change card, one deterministic monthly-movers rich notification, local
-  disposition, safe Monarch/optional OWL actions, and `NotificationCard` integration
+  disposition, safe Monarch/optional OWL actions, canonical/legacy provider aliases,
+  removal of Finance `create_task` template actions, and `NotificationCard`
+  integration
 - **Tests:** digest membership/revision; read/dismiss/snooze independence; material
   resurface; no task creation; actual connector identity; safe notification actions;
-  bounded/invalid rich content
+  bounded/invalid rich content; provider registry resolution for `finance`,
+  `finance-manager`, and `monarch-money`; both connector types absent from task
+  destinations
 - **Acceptance:** notification-first large transaction, no fraud copy, and no reliance
   on `groupKey` for visual aggregation
 
@@ -1019,9 +1032,14 @@ R1 canary -> M6 Mission Control legacy cleanup
 - **Scope:** bounded merchant filter in `src/lib/notifications/query.ts`,
   `query-server.ts`, notifications API, desktop filter UI, and mobile; fix category
   query handoff in `src/app/notifications/page.tsx` and
-  `MobileNotificationsScreen.tsx`; add bounded facets and applied-filter/clear UI
+  `MobileNotificationsScreen.tsx`; add mobile Finance category/source chips, bounded
+  facets, and applied-filter/clear UI. Use one shared responsive
+  `dimension=category|merchant` control for the `/finance` mover groups. Treat
+  `finance`, `finance-manager`, and `monarch-money` as one Finance source-filter family
+  during migration rather than issuing one exact-type query.
 - **Tests:** shared query parse/serialize/equality/SQL tests; desktop/mobile category
-  and merchant deep links; selected count; clear; 44px and keyboard/focus behavior
+  and merchant deep links; Finance source deep links/results for all three aliases;
+  selected count; clear; 44px and keyboard/focus behavior
 - **Acceptance:** desktop and mobile send and display the same normalized Finance
   filters without SQL interpolation or unbounded merchant enumeration
 
@@ -1040,7 +1058,11 @@ R1 canary -> M6 Mission Control legacy cleanup
 - **Repository/session:** Mission Control child from current `main` after R1 canary
 - **Scope:** delete `checkAnomalies`, timestamp/random identity, direct legacy
   notification persistence, `finance-alerts`, compatibility gates, scheduler call
-  sites, and dead tests; retain regression tests for safe outage and filter parity
+  sites, `generateWeeklySummary`/`weekly_summary`, the manual
+  `/api/finance/notifications/check` path, deprecated `/api/finance/alerts*` routes,
+  and dead tests. Retire or redirect the legacy list/dismiss/weekly-summary routes only
+  after confirming no supported caller remains; retain regression tests for safe
+  outage and filter parity.
 - **Acceptance:** repository search and tests prove all four hazards are retired;
   existing unrelated finance notifications and attribution review remain intact
 
@@ -1073,14 +1095,14 @@ For the Mission Control contract/projection PR:
 
 ```powershell
 npm run db:generate
-npm test -- tests\lib\finance-request.test.ts tests\api\finance-overview.test.ts tests\api\finance-insights.test.ts tests\db\finance-insight-projection-migration.test.ts
+npm test -- tests\db\finance-snapshot-migration.test.ts tests\db\finance-dataset-migration.test.ts tests\connectors\monarch-dataset-sync.test.ts tests\connectors\monarch-projection-concurrency.test.ts tests\api\finance-overview.test.ts tests\api\finance-insights.test.ts tests\db\finance-insight-projection-migration.test.ts
 ```
 
 For Mission Control identity, presentation, and provider PRs:
 
 ```powershell
-npm test -- tests\notifications\notification-lifecycle.test.ts tests\notifications\notification-card-di.test.tsx tests\lib\finance-notifications.test.ts
-npm test -- tests\components\finance-overview.test.tsx tests\components\finance-review.test.tsx
+npm test -- tests\notifications\notification-lifecycle.test.ts tests\notifications\durable-push-outbox.test.ts tests\notifications\provider-registry.test.ts tests\notifications\notification-card-di.test.tsx tests\lib\finance-notifications.test.ts
+npm test -- tests\components\money-page.test.tsx tests\components\finance-review.test.tsx tests\api\features-notification-only.test.ts
 ```
 
 For Mission Control filter parity:
@@ -1110,6 +1132,8 @@ sensitive-file/content checks.
 - M1 may proceed in parallel with T2/T3 from the frozen T1 OpenAPI and synthetic
   fixtures. Contract changes require coordinated T1 amendment before either side
   merges.
+- M1 owns the only Mission Control Drizzle generation in this stack. Do not generate
+  migrations concurrently; later Mission Control PRs stack on and reuse its schema.
 - M2, M3, and M4 remain a Mission Control stack because ingestion, presentation,
   detail navigation, and rich notification cards share local occurrence persistence.
 - M5 may proceed from M2 in parallel because it owns the shared notification query and
