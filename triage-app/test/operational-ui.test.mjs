@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, request as httpRequest } from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { after, before, beforeEach, test } from "node:test";
 import {
   evaluateBridgeRequest,
@@ -45,8 +46,14 @@ let fakeReattribution;
 let fakeReattributionUrl;
 let uiProcess;
 let uiUrl;
+let standaloneRoot;
+let standaloneServer;
 let temporaryStateDirectory;
 let policyStorePath;
+let financeInsightStorePath;
+let financeInsightPolicyPath;
+let staleFinanceInsightGeneration;
+let financeContract;
 let receivedRequests = [];
 let bridgeResponseMode = "normal";
 let bridgePathResponseModes = new Map();
@@ -80,25 +87,18 @@ async function freePort() {
   return address.port;
 }
 
-async function waitForUi() {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    if (uiProcess.exitCode !== null) {
-      throw new Error("The production UI exited before becoming ready");
-    }
-    try {
-      const response = await fetch(`${uiUrl}/api/health`);
-      if (response.ok) return;
-    } catch {
-      // Startup is still in progress.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("The production UI did not become ready");
+async function stopProcess(processHandle) {
+  if (processHandle.exitCode !== null) return;
+  const exited = new Promise((resolvePromise) =>
+    processHandle.once("exit", resolvePromise)
+  );
+  processHandle.kill();
+  await exited;
 }
 
 before(async () => {
-  const standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
-  const standaloneServer = join(standaloneRoot, "server.js");
+  standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
+  standaloneServer = join(standaloneRoot, "server.js");
   assert.equal(existsSync(standaloneServer), true, "Run npm run build before npm test");
 
   fakeBridge = createServer((request, response) => {
@@ -351,6 +351,82 @@ before(async () => {
     resolve(tmpdir(), "tyrion-ui-policy-test-")
   );
   policyStorePath = resolve(temporaryStateDirectory, "policies.json");
+  financeInsightStorePath = resolve(
+    temporaryStateDirectory,
+    "finance-insights.sqlite"
+  );
+  financeInsightPolicyPath = resolve(
+    temporaryStateDirectory,
+    "finance-insights-policy.json"
+  );
+  financeContract = await import(
+    pathToFileURL(
+      resolve(appRoot, "..", "finance-insights", "dist", "index.js")
+    ).href
+  );
+  const baseFinancePolicy = financeContract.createCandidatePolicySnapshotV1({
+    policyVersion: 1,
+    effectiveAt: "2026-08-01T00:00:00Z",
+    currency: "USD",
+    timezone: "America/New_York",
+  });
+  await writeFile(
+    financeInsightPolicyPath,
+    JSON.stringify(
+      financeContract.parseFinanceInsightPolicySnapshotV1({
+        ...baseFinancePolicy,
+        featureGates: {
+          ...baseFinancePolicy.featureGates,
+          recurringAmountAnalysis: true,
+          recurringAmountNotifications: false,
+          largeTransactionAnalysis: true,
+          varianceAnalysis: true,
+          immediateLargeTransactionNotifications: false,
+          monthlyMoverDigestNotifications: false,
+          confirmedActions: true,
+        },
+      })
+    ),
+    { encoding: "utf8", mode: 0o600 }
+  );
+  const staleStore = new financeContract.FinanceInsightSqliteStoreV1({
+    path: financeInsightStorePath,
+    cursorKey: Buffer.from(
+      "invented-finance-cursor-key-value-0001",
+      "utf8"
+    ),
+    clock: () => "2026-08-09T03:00:00.000Z",
+  });
+  await staleStore.policies.append(
+    financeContract.parseFinanceInsightPolicySnapshotV1({
+      ...baseFinancePolicy,
+      featureGates: {
+        ...baseFinancePolicy.featureGates,
+        recurringAmountAnalysis: true,
+        recurringAmountNotifications: false,
+        largeTransactionAnalysis: true,
+        varianceAnalysis: true,
+        immediateLargeTransactionNotifications: false,
+        monthlyMoverDigestNotifications: false,
+        confirmedActions: true,
+      },
+    })
+  );
+  const staleLifecycle = new financeContract.FinanceInsightLifecycleServiceV1({
+    store: staleStore,
+    householdScope: "homelab-household",
+    detectorSetVersion: "detectors-v1",
+  });
+  const stalePublication = financePublication(99);
+  staleFinanceInsightGeneration =
+    financeContract.parseSourceGenerationCreateRequestV1({
+      ...stalePublication.request,
+      connectorRef: "stale-service-connector",
+      sourceGeneration: "stale-service-generation",
+      idempotencyKey: "stale-service-generation-idempotency",
+    });
+  await staleLifecycle.beginSourceGeneration(staleFinanceInsightGeneration);
+  staleStore.close();
 
   const port = await freePort();
   uiUrl = `http://127.0.0.1:${port}`;
@@ -361,6 +437,15 @@ before(async () => {
       BRIDGE_URL: fakeBridgeUrl,
       BRIDGE_API_TOKEN: serviceToken,
       TYRION_POLICY_STORE_PATH: policyStorePath,
+      TYRION_FINANCE_INSIGHT_STORE_PATH: financeInsightStorePath,
+      TYRION_FINANCE_INSIGHT_POLICY_PATH: financeInsightPolicyPath,
+      TYRION_FINANCE_INSIGHT_CURSOR_KEY:
+        "invented-finance-cursor-key-value-0001",
+      TYRION_FINANCE_INSIGHT_IDENTITY_KEY:
+        "invented-finance-identity-key-value-001",
+      TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "true",
+      TYRION_FINANCE_INSIGHT_READ_ENABLED: "true",
+      TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "true",
       TYRION_REATTRIBUTION_URL: fakeReattributionUrl,
       TYRION_REATTRIBUTION_TOKEN: reattributionToken,
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "true",
@@ -369,13 +454,11 @@ before(async () => {
     },
     stdio: "ignore",
   });
-  await waitForUi();
+  await waitForServer(uiUrl, uiProcess);
 });
 
 after(async () => {
-  if (uiProcess && uiProcess.exitCode === null) {
-    uiProcess.kill();
-  }
+  if (uiProcess) await stopProcess(uiProcess);
   if (fakeBridge?.listening) {
     await close(fakeBridge);
   }
@@ -383,7 +466,650 @@ after(async () => {
     await close(fakeReattribution);
   }
   if (temporaryStateDirectory) {
-    await rm(temporaryStateDirectory, { recursive: true, force: true });
+    await rm(temporaryStateDirectory, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+  }
+});
+
+function insightHeaders(overrides = {}) {
+  return Object.fromEntries(
+    Object.entries({
+      Host: internalAttributionHost,
+      Authorization: `Bearer ${serviceToken}`,
+      "Content-Type": "application/json",
+      ...overrides,
+    }).filter(([, value]) => value !== undefined)
+  );
+}
+
+function insightRequest(path, options = {}, baseUrl = uiUrl) {
+  const target = new URL(baseUrl);
+  const body = options.body;
+  return new Promise((resolvePromise, reject) => {
+    const request = httpRequest({
+      hostname: target.hostname,
+      port: target.port,
+      path: `/api/internal/v1/finance/insights${path}`,
+      method: options.method ?? "GET",
+      headers: insightHeaders(options.headers),
+    }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        resolvePromise(
+          new Response(Buffer.concat(chunks), {
+            status: response.statusCode,
+            headers: response.headers,
+          })
+        );
+      });
+    });
+    request.on("error", reject);
+    if (body !== undefined) request.write(body);
+    request.end();
+  });
+}
+
+function financePublication(sequence, transactions = []) {
+  const sourceGeneration = `service-generation-${sequence}`;
+  const facts = {
+    transaction: transactions,
+    recurring: [],
+    category: [],
+    account: [],
+    tag: [],
+  };
+  const batches = [];
+  if (transactions.length > 0) {
+    batches.push(
+      financeContract.parseSourceFactBatchV1({
+        contractVersion: "1.0",
+        sourceGeneration,
+        kind: "transaction",
+        batchIndex: 0,
+        facts: transactions,
+        digest: financeContract.canonicalDigestV1(transactions),
+        idempotencyKey: `service-transaction-batch-${sequence}`,
+      })
+    );
+  }
+  const kinds = ["transaction", "recurring", "category", "account", "tag"];
+  const manifest = kinds.map((kind) => ({
+    kind,
+    batchCount: kind === "transaction" && transactions.length > 0 ? 1 : 0,
+    itemCount: facts[kind].length,
+    digest: financeContract.sourceManifestKindDigestV1(kind, batches),
+  }));
+  const sourceAsOf = "2026-08-11T03:30:00Z";
+  const request = financeContract.parseSourceGenerationCreateRequestV1({
+    contractVersion: "1.0",
+    connectorRef: "service-connector",
+    sourceGeneration,
+    sourceSequence: sequence,
+    sourceAsOf,
+    coverageStart: "2026-01-01",
+    coverageEnd: "2026-08-10",
+    currency: "USD",
+    bridgeContractVersion: "bridge-v1",
+    capturedConstituents: manifest.map((entry) => ({
+      kind: entry.kind,
+      generationRef: `service-${entry.kind}-constituent-${sequence}`,
+      sourceAsOf,
+      itemCount: entry.itemCount,
+      digest: financeContract.canonicalDigestV1(facts[entry.kind]),
+    })),
+    manifest,
+    idempotencyKey: `service-generation-idempotency-${sequence}`,
+  });
+  return {
+    request,
+    batches,
+    commit: {
+      contractVersion: "1.0",
+      sourceGeneration,
+      expectedSourceSequence: sequence,
+      manifestDigest: financeContract.sourceManifestDigestV1(manifest),
+      idempotencyKey: `service-generation-commit-${sequence}`,
+    },
+  };
+}
+
+test("finance insight runtime applies retention cleanup on startup", async () => {
+  const health = await fetch(`${uiUrl}/api/health`);
+  assert.equal(health.status, 200);
+  assert.equal((await health.json()).financeInsights.status, "ready");
+  const store = new financeContract.FinanceInsightSqliteStoreV1({
+    path: financeInsightStorePath,
+    cursorKey: Buffer.from(
+      "invented-finance-cursor-key-value-0001",
+      "utf8"
+    ),
+  });
+  try {
+    const generation = await store.sourceGenerations.find(
+      staleFinanceInsightGeneration.connectorRef,
+      staleFinanceInsightGeneration.sourceGeneration
+    );
+    assert.equal(generation.state, "expired");
+  } finally {
+    store.close();
+  }
+});
+
+async function publishFinanceGeneration(publication) {
+  const begin = await insightRequest("/source-generations", {
+    method: "POST",
+    body: JSON.stringify(publication.request),
+  });
+  assert.equal(begin.status, 202);
+  for (const batch of publication.batches) {
+    const receipt = await insightRequest(
+      `/source-generations/${batch.sourceGeneration}/batches/${batch.batchIndex}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(batch),
+      }
+    );
+    assert.equal(receipt.status, 200);
+  }
+  return insightRequest(
+    `/source-generations/${publication.request.sourceGeneration}/commit`,
+    {
+      method: "POST",
+      body: JSON.stringify(publication.commit),
+    }
+  );
+}
+
+test("finance insight routes enforce fixed private authority and bearer auth", async () => {
+  const wrongAuthority = await fetch(
+    `${uiUrl}/api/internal/v1/finance/insights/source-generations`,
+    { method: "POST" }
+  );
+  assert.equal(wrongAuthority.status, 404);
+  assert.deepEqual(await wrongAuthority.json(), {
+    contractVersion: "1.0",
+    error: {
+      code: "insight_route_not_available",
+      message: "Finance insight route is not available",
+    },
+  });
+
+  const missing = await insightRequest("/source-generations", {
+    method: "POST",
+    headers: { Authorization: undefined },
+  });
+  assert.equal(missing.status, 401);
+  assert.equal((await missing.json()).error.code, "insight_auth_required");
+
+  const invalid = await insightRequest("/source-generations", {
+    method: "POST",
+    headers: { Authorization: "Bearer invented-invalid-service-token-value" },
+  });
+  assert.equal(invalid.status, 401);
+  assert.equal((await invalid.json()).error.code, "insight_auth_invalid");
+
+  const forbidden = await insightRequest("/source-generations", {
+    method: "POST",
+    headers: { Origin: "https://invented.example" },
+  });
+  assert.equal(forbidden.status, 403);
+  assert.equal((await forbidden.json()).error.code, "insight_forbidden");
+
+  const unsupportedMedia = await insightRequest("/source-generations", {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: "{}",
+  });
+  assert.equal(unsupportedMedia.status, 415);
+  assert.equal(
+    (await unsupportedMedia.json()).error.code,
+    "unsupported_media_type"
+  );
+});
+
+test("finance insight service promotes an exact empty generation idempotently", async () => {
+  const publication = financePublication(1);
+  const committed = await publishFinanceGeneration(publication);
+  assert.equal(committed.status, 200);
+  assert.deepEqual(await committed.json(), {
+    contractVersion: "1.0",
+    connectorRef: "service-connector",
+    sourceGeneration: "service-generation-1",
+    sourceSequence: 1,
+    state: "promoted",
+    detectorSetVersion: "detectors-v1",
+    policyVersion: 1,
+  });
+
+  const replay = await insightRequest("/source-generations", {
+    method: "POST",
+    body: JSON.stringify(publication.request),
+  });
+  assert.equal(replay.status, 202);
+
+  const listed = await insightRequest("/occurrences");
+  assert.equal(listed.status, 200);
+  assert.deepEqual(await listed.json(), {
+    contractVersion: "1.0",
+    items: [],
+    nextCursor: null,
+  });
+
+  const evaluationRequest = {
+    contractVersion: "1.0",
+    connectorRef: publication.request.connectorRef,
+    sourceGeneration: publication.request.sourceGeneration,
+    detectorSetVersion: "detectors-v1",
+    expectedPolicyVersion: 1,
+    idempotencyKey: "service-evaluation-retry-1",
+  };
+  const retried = await insightRequest("/evaluations", {
+    method: "POST",
+    body: JSON.stringify(evaluationRequest),
+  });
+  assert.equal(retried.status, 202);
+  assert.equal(
+    financeContract.parseEvaluationResultV1(await retried.json()).state,
+    "completed"
+  );
+
+  for (const request of [
+    {
+      ...evaluationRequest,
+      detectorSetVersion: "detectors-v2",
+      idempotencyKey: "service-evaluation-wrong-detector",
+    },
+    {
+      ...evaluationRequest,
+      expectedPolicyVersion: 2,
+      idempotencyKey: "service-evaluation-wrong-policy",
+    },
+  ]) {
+    const fenced = await insightRequest("/evaluations", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+    assert.equal(fenced.status, 409);
+    assert.equal((await fenced.json()).error.code, "stale_evaluation");
+  }
+});
+
+test("finance insight service publishes detail and enforces action CAS and suppression", async () => {
+  const publication = financePublication(2, [
+    {
+      sourceRef: "invented-large-transaction",
+      occurredOn: "2026-08-10",
+      amountMinor: -184000,
+      merchantName: "Invented Market",
+      categoryRef: null,
+      accountRef: null,
+      isPending: false,
+      recurringRef: null,
+      tagRefs: [],
+    },
+  ]);
+  const committed = await publishFinanceGeneration(publication);
+  assert.equal(committed.status, 200);
+
+  const listed = await insightRequest(
+    "/occurrences?kind=largeTransaction&limit=1"
+  );
+  assert.equal(listed.status, 200);
+  const page = await listed.json();
+  assert.equal(page.items.length, 1);
+  assert.equal(page.nextCursor, null);
+  const occurrence = page.items[0];
+
+  const detailResponse = await insightRequest(
+    `/occurrences/${occurrence.occurrenceId}`
+  );
+  assert.equal(detailResponse.status, 200);
+  const detail = await detailResponse.json();
+  assert.equal(detail.kind, "largeTransaction");
+  assert.equal(detail.analysisState, "qualified");
+
+  const staleAction = await insightRequest(
+    `/occurrences/${occurrence.occurrenceId}/actions`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        contractVersion: "1.0",
+        occurrenceId: occurrence.occurrenceId,
+        expectedDeliveryRevision: occurrence.deliveryRevision + 1,
+        expectedPolicyVersion: occurrence.provenance.policyVersion,
+        idempotencyKey: "service-stale-action-idempotency",
+        action: "notUseful",
+        reason: "notActionable",
+      }),
+    }
+  );
+  assert.equal(staleAction.status, 409);
+  assert.equal(
+    (await staleAction.json()).error.code,
+    "occurrence_revision_conflict"
+  );
+
+  const permanent = await insightRequest(
+    `/occurrences/${occurrence.occurrenceId}/actions`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        contractVersion: "1.0",
+        occurrenceId: occurrence.occurrenceId,
+        expectedDeliveryRevision: occurrence.deliveryRevision,
+        expectedPolicyVersion: occurrence.provenance.policyVersion,
+        idempotencyKey: "service-permanent-suppression",
+        action: "suppress",
+        confirm: true,
+        scope: "occurrence",
+        durationDays: 365,
+        reason: "temporaryHouseholdChange",
+      }),
+    }
+  );
+  assert.equal(permanent.status, 400);
+  assert.equal((await permanent.json()).error.code, "invalid_request");
+
+  for (const durationDays of [30, 90, 180]) {
+    const suppressed = await insightRequest(
+      `/occurrences/${occurrence.occurrenceId}/actions`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contractVersion: "1.0",
+          occurrenceId: occurrence.occurrenceId,
+          expectedDeliveryRevision: occurrence.deliveryRevision,
+          expectedPolicyVersion: occurrence.provenance.policyVersion,
+          idempotencyKey: `service-suppression-${durationDays}-days`,
+          action: "suppress",
+          confirm: true,
+          scope: "occurrence",
+          durationDays,
+          reason: "temporaryHouseholdChange",
+        }),
+      }
+    );
+    assert.equal(suppressed.status, 200);
+    const suppression = await suppressed.json();
+    const suppressedDetail = await (
+      await insightRequest(`/occurrences/${occurrence.occurrenceId}`)
+    ).json();
+    assert.equal(suppressedDetail.suppression.durationDays, durationDays);
+    assert.equal(
+      suppressedDetail.suppression.operator,
+      "fixedLocalOperator"
+    );
+    assert.equal(
+      Date.parse(suppressedDetail.suppression.expiresAt) -
+        Date.parse(suppressedDetail.suppression.createdAt),
+      durationDays * 24 * 60 * 60 * 1_000
+    );
+
+    const undo = await insightRequest(
+      `/occurrences/${occurrence.occurrenceId}/actions`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contractVersion: "1.0",
+          occurrenceId: occurrence.occurrenceId,
+          expectedDeliveryRevision: occurrence.deliveryRevision,
+          expectedPolicyVersion: occurrence.provenance.policyVersion,
+          idempotencyKey: `service-undo-suppression-${durationDays}-days`,
+          action: "undoSuppression",
+          suppressionId: suppression.suppressionId,
+          confirm: true,
+        }),
+      }
+    );
+    assert.equal(undo.status, 200);
+    assert.equal((await undo.json()).action, "undoSuppression");
+  }
+});
+
+test("finance insight evaluation claims return bounded Retry-After", async () => {
+  const store = new financeContract.FinanceInsightSqliteStoreV1({
+    path: financeInsightStorePath,
+    cursorKey: Buffer.from(
+      "invented-finance-cursor-key-value-0001",
+      "utf8"
+    ),
+  });
+  const lifecycle = new financeContract.FinanceInsightLifecycleServiceV1({
+    store,
+    householdScope: "homelab-household",
+    detectorSetVersion: "detectors-v1",
+  });
+  const request = {
+    contractVersion: "1.0",
+    connectorRef: "service-connector",
+    sourceGeneration: "service-generation-2",
+    detectorSetVersion: "detectors-v1",
+    expectedPolicyVersion: 1,
+    idempotencyKey: "service-held-evaluation",
+  };
+  const queued = await lifecycle.retryEvaluation(request);
+  await lifecycle.claimEvaluation(queued.assignment);
+  try {
+    const response = await insightRequest("/evaluations", {
+      method: "POST",
+      body: JSON.stringify({
+        ...request,
+        idempotencyKey: "service-concurrent-evaluation",
+      }),
+    });
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get("retry-after"), "30");
+    assert.equal(
+      (await response.json()).error.code,
+      "evaluation_in_progress"
+    );
+  } finally {
+    await lifecycle.completeEvaluation(queued.assignment, {
+      state: "failed",
+      completedAt: new Date().toISOString(),
+    });
+    store.close();
+  }
+});
+
+test("finance insight occurrence cursors bind a stable filtered snapshot", async () => {
+  const transaction = (sourceRef, amountMinor) => ({
+    sourceRef,
+    occurredOn: "2026-08-10",
+    amountMinor,
+    merchantName: `Invented ${sourceRef}`,
+    categoryRef: null,
+    accountRef: null,
+    isPending: false,
+    recurringRef: null,
+    tagRefs: [],
+  });
+  assert.equal(
+    (
+      await publishFinanceGeneration(
+        financePublication(3, [
+          transaction("snapshot-alpha", -150000),
+          transaction("snapshot-beta", -160000),
+        ])
+      )
+    ).status,
+    200
+  );
+  const first = await (
+    await insightRequest("/occurrences?kind=largeTransaction&limit=1")
+  ).json();
+  assert.equal(first.items.length, 1);
+  assert.equal(typeof first.nextCursor, "string");
+
+  assert.equal(
+    (
+      await publishFinanceGeneration(
+        financePublication(4, [
+          transaction("snapshot-alpha", -150000),
+          transaction("snapshot-beta", -160000),
+          transaction("snapshot-gamma", -170000),
+        ])
+      )
+    ).status,
+    200
+  );
+  const second = await (
+    await insightRequest(
+      `/occurrences?kind=largeTransaction&limit=1&cursor=${encodeURIComponent(
+        first.nextCursor
+      )}`
+    )
+  ).json();
+  assert.equal(second.items.length, 1);
+  assert.equal(second.nextCursor, null);
+  assert.equal(
+    new Set([
+      first.items[0].occurrenceId,
+      second.items[0].occurrenceId,
+    ]).size,
+    2
+  );
+
+  const rebound = await insightRequest(
+    `/occurrences?kind=largeTransaction&severity=high&limit=1&cursor=${encodeURIComponent(
+      first.nextCursor
+    )}`
+  );
+  assert.equal(rebound.status, 400);
+  assert.equal((await rebound.json()).error.code, "invalid_cursor");
+});
+
+test("finance insight analysis filters can return nonqualified occurrences", async () => {
+  const transactions = [
+    ["alpha", "2026-08-10", -90000],
+    ["beta", "2026-08-10", -90000],
+    ["baseline", "2026-07-10", -90000],
+  ].map(([suffix, occurredOn, amountMinor]) => ({
+    sourceRef: `nonqualified-${suffix}`,
+    occurredOn,
+    amountMinor,
+    merchantName: "Invented Baseline-Free Merchant",
+    categoryRef: "invented-baseline-free-category",
+    accountRef: null,
+    isPending: false,
+    recurringRef: null,
+    tagRefs: [],
+  }));
+  assert.equal(
+    (await publishFinanceGeneration(financePublication(5, transactions))).status,
+    200
+  );
+
+  const response = await insightRequest(
+    "/occurrences?analysisState=insufficientBaseline&limit=10"
+  );
+  assert.equal(response.status, 200);
+  const page = await response.json();
+  assert.ok(page.items.length > 0);
+  assert.ok(
+    page.items.every(
+      (item) =>
+        item.analysisState === "insufficientBaseline" &&
+        item.sourceLifecycle === null
+    )
+  );
+});
+
+test("finance insight HTTP bounds and filters fail without unexpected 500", async () => {
+  const oversized = await insightRequest("/source-generations", {
+    method: "POST",
+    body: JSON.stringify({ value: "x".repeat(256 * 1024) }),
+  });
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error.code, "payload_too_large");
+
+  for (const query of [
+    "?unknown=value",
+    "?limit=0",
+    "?connectorRef=one&connectorRef=two",
+    "?kind=largeTransaction&kind=largeTransaction",
+    "?cursor=",
+  ]) {
+    const response = await insightRequest(`/occurrences${query}`);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error.code, "invalid_filter");
+  }
+
+  const missing = await insightRequest(
+    "/occurrences/occurrence-v1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  );
+  assert.equal(missing.status, 404);
+  assert.equal((await missing.json()).error.code, "occurrence_not_found");
+
+  const health = await fetch(`${uiUrl}/api/health`);
+  const body = JSON.stringify(await health.json());
+  assert.doesNotMatch(
+    body,
+    /service-connector|invented-large-transaction|Invented Market|184000|sqlite|token|path/i
+  );
+});
+
+test("finance insight rollout gates fail closed and health remains metadata-only", async () => {
+  const port = await freePort();
+  const disabledUrl = `http://127.0.0.1:${port}`;
+  const disabledProcess = spawn(process.execPath, [standaloneServer], {
+    cwd: standaloneRoot,
+    env: {
+      ...process.env,
+      BRIDGE_URL: fakeBridgeUrl,
+      BRIDGE_API_TOKEN: serviceToken,
+      TYRION_POLICY_STORE_PATH: policyStorePath,
+      TYRION_FINANCE_INSIGHT_STORE_PATH: resolve(
+        temporaryStateDirectory,
+        "finance-insights-disabled.sqlite"
+      ),
+      TYRION_FINANCE_INSIGHT_POLICY_PATH: financeInsightPolicyPath,
+      TYRION_FINANCE_INSIGHT_CURSOR_KEY:
+        "invented-disabled-cursor-key-value-001",
+      TYRION_FINANCE_INSIGHT_IDENTITY_KEY:
+        "invented-disabled-identity-key-value-01",
+      TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_READ_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "false",
+      HOSTNAME: "127.0.0.1",
+      PORT: String(port),
+    },
+    stdio: "ignore",
+  });
+  try {
+    await waitForServer(disabledUrl, disabledProcess);
+    for (const [path, options] of [
+      ["/source-generations", { method: "POST", body: "{}" }],
+      ["/occurrences", {}],
+      ["/occurrences/disabled/actions", { method: "POST", body: "{}" }],
+    ]) {
+      const response = await insightRequest(path, options, disabledUrl);
+      assert.equal(response.status, 503);
+      assert.equal(
+        (await response.json()).error.code,
+        "insight_service_not_configured"
+      );
+    }
+    const health = await (await fetch(`${disabledUrl}/api/health`)).json();
+    assert.deepEqual(health.financeInsights, {
+      status: "disabled",
+      telemetry: {
+        evaluationStartedCount: 0,
+        evaluationCompletedCount: 0,
+        evaluationFailedCount: 0,
+      },
+    });
+    assert.doesNotMatch(
+      JSON.stringify(health),
+      /invented-disabled|sqlite|cursor|identity|service-token/i
+    );
+  } finally {
+    await stopProcess(disabledProcess);
   }
 });
 
