@@ -264,6 +264,7 @@ export interface FinanceAutomationDeliveryV1 {
   readonly signalId: string;
   readonly target: 'notification';
   readonly action: 'create' | 'update' | 'settle';
+  readonly signal: FinanceAutomationSignalV1;
 }
 
 export interface FinanceAutomationJobResultV1 {

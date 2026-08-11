@@ -201,6 +201,28 @@ transaction reads and mutations. The same token is configured as
 credential. Never expose it to browser code or place it in a repository environment
 file.
 
+### Protected finance insight service
+
+The Tyrion-private finance insight contract is generated at
+`docs/finance-insights-service-v1.openapi.json` and is mounted only at
+`/api/internal/v1/finance/insights` on the fixed private Docker authority. It
+uses the same minimum-32-character server bearer credential as attribution,
+rejects browser-originated requests, and is excluded from public routers.
+
+The seven v1 operations stage and commit immutable normalized source
+generations, retry assigned evaluations, read snapshot-paginated occurrence
+summaries/details, and apply confirmed structured actions. Each request is
+limited to 256 KiB and parsed with the generated strict v1 schemas. Stable
+errors, status codes, and `Retry-After` behavior are defined by the generated
+contract; raw connection errors, request bodies, source identities, paths, and
+financial values are never returned or logged.
+
+The runtime requires an absolute external SQLite path, an absolute external
+policy snapshot path, and separate server-held cursor and identity keys of at
+least 32 bytes. Evaluation/write, read, and confirmed-action gates are
+server-only and fail closed. Evaluation reads only the current promoted
+projection and never contacts Monarch or loads reusable session material.
+
 ### Errors
 
 All bridge-generated errors have one shape:

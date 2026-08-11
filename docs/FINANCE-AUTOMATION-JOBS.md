@@ -24,6 +24,9 @@ lifecycle changes, and versioned delivery outbox in one immediate transaction.
 - Replaying the same scheduled input returns the stored result with
   `replayed: true` and any unacknowledged outbox delivery. After the consumer
   acknowledges its exact delivery version, replay returns no delivery.
+- Every delivery embeds the immutable bounded signal snapshot for that version.
+  Consumers apply that snapshot rather than pairing a current delivery with the
+  historical run's `signals` evaluation list.
 - Reusing a run identity with different input fails with
   `automation_idempotency_conflict`.
 - A later run reuses stable signal identities. Unchanged open conditions do not
@@ -90,8 +93,8 @@ boundaries. For each durable schedule:
    contract.
 2. Set `scheduledFor` to the durable schedule instant, not the retry instant.
 3. Run the service with the stable external state path and stable identity key.
-4. Apply returned `create`, `update`, and `settle` deliveries idempotently by
-   `deliveryKey` and `version`.
+4. Apply each delivery's embedded signal snapshot for `create`, `update`, and
+   `settle` idempotently by `deliveryKey` and `version`.
 5. Call `acknowledgeDeliveries` with the applied key and exact version. A stale
    acknowledgement conflicts rather than clearing a newer outbox action.
 6. Do not log requests, signals, source references, amounts, merchant names, state

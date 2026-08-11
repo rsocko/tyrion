@@ -558,6 +558,26 @@ describe('durable finance automation jobs v1', () => {
     const second = await harness.service.run(secondRequest);
 
     expect(second.deliveries).toMatchObject([{ version: 2, action: 'create' }]);
+    const staleReplay = await harness.service.run(firstRequest);
+    expect(staleReplay).toMatchObject({
+      replayed: true,
+      signals: [
+        {
+          attention: 'informational',
+          evidence: { reportedState: 'degraded' },
+        },
+      ],
+      deliveries: [
+        {
+          version: 2,
+          action: 'create',
+          signal: {
+            attention: 'actionable',
+            evidence: { reportedState: 'unavailable' },
+          },
+        },
+      ],
+    });
     const staleAck = await harness.service.acknowledgeDeliveries({
       contractVersion: '1.0',
       acknowledgedAt: '2026-08-10T14:01:00Z',

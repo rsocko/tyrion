@@ -536,6 +536,7 @@ export class FinanceAutomationSqliteStoreV1 {
       signalId: signal.signalId,
       target: 'notification',
       action: coalescedAction,
+      signal,
     };
     this.database
       .prepare(
