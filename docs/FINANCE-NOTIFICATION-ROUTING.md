@@ -241,6 +241,12 @@ normal authorization again when the action is invoked.
 | `openFinanceOverview` | Open Finance overview | `/finance` |
 | `openFinanceInsight` | Review finance insight | `/finance`, opening the authorized occurrence in the shared insight drawer from an opaque server-side reference |
 | `openFinanceInsightGroup` | Open spending insights | `/finance`, focusing the authorized spending-insight group from a bounded server-side selector |
+| `markFinanceInsightExpected` | Mark as expected | Protected Tyrion occurrence action with one allowlisted structured reason, expected delivery revision, expected policy version, and idempotency key |
+| `markFinanceInsightNotUseful` | Mark as not useful | Protected Tyrion occurrence action with one allowlisted structured reason, expected delivery revision, expected policy version, and idempotency key |
+| `suppressFinanceInsight30Days` | Suppress for 30 days | Confirmed protected Tyrion occurrence action with explicit scope/reason, expected delivery revision, expected policy version, and idempotency key; permanent suppression is unavailable |
+| `suppressFinanceInsight90Days` | Suppress for 90 days | Confirmed protected Tyrion occurrence action with explicit scope/reason, expected delivery revision, expected policy version, and idempotency key; permanent suppression is unavailable |
+| `suppressFinanceInsight180Days` | Suppress for 180 days | Confirmed protected Tyrion occurrence action with explicit scope/reason, expected delivery revision, expected policy version, and idempotency key; permanent suppression is unavailable |
+| `undoFinanceInsightSuppression` | Undo suppression | Confirmed protected Tyrion occurrence action with the authorized opaque suppression reference, expected delivery revision, expected policy version, and idempotency key |
 | `openFinanceReview` | Review finance exception | `/finance/review`, selecting an authorized opaque exception reference server-side |
 | `resolveFinanceException` | Resolve finance exception | Versioned, confirmed exception action; return to `/finance/review` with success or a sanitized actionable error |
 | `openFinanceReconciliation` | Open reconciliation | `/finance/reconciliation`, selecting an authorized opaque match reference server-side |
@@ -259,7 +265,11 @@ entity target; document targets have no cross-system fallback.
 
 Confirmed mutations expose pending, succeeded, conflicted, failed, and verification
 states. They use stable sanitized errors, preserve audit/provenance, and never print or
-return raw upstream payloads.
+return raw upstream payloads. Mission Control maps Tyrion's occurrence
+`availableActions` values (`expected`, `notUseful`, `suppress30Days`,
+`suppress90Days`, `suppress180Days`, and `undoSuppression`) only to their corresponding
+registry capability above; unavailable actions are omitted. Insight feedback and
+suppression never create a task or imply notification/source settlement.
 
 ## Accessible action behavior
 
