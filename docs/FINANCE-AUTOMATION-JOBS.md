@@ -41,7 +41,9 @@ lifecycle changes, and versioned delivery outbox in one immediate transaction.
   as settled. Stale, partial, unavailable, or out-of-order input cannot settle prior
   reliable attention.
 - Runtime state belongs at an absolute path outside the repository. The store applies
-  restrictive POSIX modes where the platform supports them.
+  restrictive POSIX modes to its database, SQLite sidecars, and directories it creates,
+  but never changes permissions on an existing parent directory. POSIX permission
+  failures abort initialization; Windows ACLs remain a deployment responsibility.
 
 ## Duplicate-candidate evaluation
 

@@ -1,4 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -35,6 +41,27 @@ afterEach(() => {
 });
 
 describe('durable finance automation jobs v1', () => {
+  it.skipIf(process.platform === 'win32')(
+    'preserves permissions on an existing state parent directory',
+    () => {
+      const directory = mkdtempSync(join(tmpdir(), 'tyrion-automation-parent-'));
+      directories.push(directory);
+      chmodSync(directory, 0o755);
+
+      const path = join(directory, 'state.sqlite');
+      const store = new FinanceAutomationSqliteStoreV1({
+        path,
+      });
+      openStores.add(store);
+
+      expect(statSync(directory).mode & 0o777).toBe(0o755);
+      for (const stateFile of [path, `${path}-wal`, `${path}-shm`]) {
+        expect(existsSync(stateFile)).toBe(true);
+        expect(statSync(stateFile).mode & 0o777).toBe(0o600);
+      }
+    }
+  );
+
   it('backfills a v4 schedule watermark by chronological timestamp order', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tyrion-automation-v4-'));
     directories.push(directory);

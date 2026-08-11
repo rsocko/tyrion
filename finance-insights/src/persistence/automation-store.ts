@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import type {
@@ -73,19 +73,25 @@ export class FinanceAutomationSqliteStoreV1 {
       );
     }
     const path = resolve(options.path);
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    try {
-      chmodSync(dirname(path), 0o700);
-    } catch {
-      // Windows does not implement POSIX mode enforcement.
+    const stateDirectory = dirname(path);
+    const createdDirectory = mkdirSync(stateDirectory, {
+      recursive: true,
+      mode: 0o700,
+    });
+    if (createdDirectory !== undefined && process.platform !== 'win32') {
+      chmodSync(stateDirectory, 0o700);
     }
-    this.database = new Database(path);
-    migrateFinanceInsightStoreV1(this.database, new Date().toISOString());
+
+    const database = new Database(path);
     try {
-      chmodSync(path, 0o600);
-    } catch {
-      // Windows access control remains an operator/deployment responsibility.
+      restrictAutomationStateFilesV1(path);
+      migrateFinanceInsightStoreV1(database, new Date().toISOString());
+      restrictAutomationStateFilesV1(path);
+    } catch (error) {
+      database.close();
+      throw error;
     }
+    this.database = database;
   }
 
   close(): void {
@@ -606,4 +612,11 @@ function laterTimestamp(left: string | null, right: string | null): string | nul
   if (left === null) return right;
   if (right === null) return left;
   return Date.parse(left) >= Date.parse(right) ? left : right;
+}
+
+function restrictAutomationStateFilesV1(path: string): void {
+  if (process.platform === 'win32') return;
+  for (const candidate of [path, `${path}-wal`, `${path}-shm`]) {
+    if (existsSync(candidate)) chmodSync(candidate, 0o600);
+  }
 }
