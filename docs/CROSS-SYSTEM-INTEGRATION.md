@@ -384,21 +384,27 @@ All systems feed alerts into Mission Control's alert system:
 
 ### Task Generation
 
-Alerts auto-create tasks in Mission Control when action is needed:
+Finance signals follow the deterministic
+[`Finance notification routing policy`](./FINANCE-NOTIFICATION-ROUTING.md). A signal
+creates either a notification, a task, status-only context, or no user-facing record;
+it never creates both a finance notification and a finance task for the same open
+occurrence. Only durable follow-up becomes a task. Source settlement reconciles that
+task automatically when authoritative evidence permits it.
+
+An obligation that has entered the task route is represented in Mission Control as:
 
 ```typescript
-// Example: Bill needs payment
+// Example: Obligation needs review
 createTask({
-  title: "Pay PSE&G Electric — $185",
-  description: "Due Jun 22. Bill in Paperless doc #1234.",
+  title: "Review overdue finance obligation",
+  description: "Review the mismatch and continue in the authoritative source.",
   priority: daysUntilDue <= 3 ? 'high' : 'medium',
   dueDate: "2026-06-22",
-  source: 'finance-bill-matching',
+  source: 'finance-reconciliation',
   metadata: {
-    paperlessDocId: 1234,
-    amount: 185.00,
-    vendor: "PSE&G",
-    autoResolveOnPayment: true,  // Complete task when Monarch finds matching txn
+    signalRef: "opaque-demo-signal",
+    occurrenceRef: "opaque-demo-occurrence",
+    autoResolveOnAuthoritativeMatch: true,
   },
   tags: ['finance', 'bill-payment'],
 });

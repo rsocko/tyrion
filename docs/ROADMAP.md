@@ -110,6 +110,9 @@ awareness and action.
 - [ ] Make generated notifications and tasks deterministic and idempotent.
 - [ ] Distinguish informational signals from work requiring follow-up.
 - [ ] Reconcile task state when Monarch or a source document resolves the issue.
+- [x] Define the cross-signal notification, task, My Day, deduplication, escalation,
+  settlement, and safe-action matrix in
+  [`FINANCE-NOTIFICATION-ROUTING.md`](./FINANCE-NOTIFICATION-ROUTING.md).
 - [ ] Deliver a weekly decision summary focused on changes and required actions.
 - [ ] Add read-only Tyrion tools to Houston for summaries, transaction search,
   kid totals, pending exceptions, and obligations, following the

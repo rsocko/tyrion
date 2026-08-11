@@ -95,7 +95,9 @@ finance workspace.
 - `/finance/settings` shows connector health and links to Tyrion-owned policy and
   connector configuration.
 - Mission Control notifications, tasks, and My Day carry finance awareness and
-  follow-up through existing cross-domain workflows.
+  follow-up through existing cross-domain workflows. The deterministic routing,
+  deduplication, settlement, and safe-action policy is defined in
+  [`FINANCE-NOTIFICATION-ROUTING.md`](./FINANCE-NOTIFICATION-ROUTING.md).
 - Houston remains the only assistant shell. Tyrion contributes permissioned
   finance tools; mutations require confirmation and write through to Monarch.
 
