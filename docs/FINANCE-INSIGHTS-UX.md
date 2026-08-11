@@ -48,8 +48,11 @@ and confirmed actions.
    may collect a confirmed action through a protected Tyrion domain API.
 
 Finance remains `notificationOnly`: insights do not create ordinary Mission Control
-tasks. Notifications are the mature event-delivery surface across dashboard, desktop,
-and mobile.
+tasks or My Day candidates. Notifications are the mature event-delivery surface across
+dashboard, desktop, and mobile. This insight-specific invariant is one row of the
+broader deterministic
+[`Finance notification routing policy`](./FINANCE-NOTIFICATION-ROUTING.md), which
+allows tasks only for other finance signals that require durable follow-up.
 
 ## Information hierarchy
 
