@@ -515,6 +515,7 @@ export type InsightOccurrenceDetailV1 = z.infer<
 >;
 export type SuppressionStatusV1 = z.infer<typeof suppressionStatusSchema>;
 export type AvailableActionV1 = z.infer<typeof availableActionSchema>;
+export type EvidenceRecordV1 = z.infer<typeof evidenceRecordSchema>;
 
 export function parseInsightOccurrenceSummaryV1(
   value: unknown
