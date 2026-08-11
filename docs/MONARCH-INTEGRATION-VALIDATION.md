@@ -70,6 +70,14 @@ pending attribution review and retries later. No controlled live Monarch validat
 is required for attribution service changes; deterministic tests use invented
 structures only.
 
+The protected finance insight service follows the same separation. Mission
+Control uploads only completed normalized projection generations; Tyrion
+evaluates the promoted local projection and never calls Monarch Bridge, imports
+`monarch-bridge/contract.py`, or loads reusable Monarch session material.
+Finance-insight service validation is therefore deterministic and uses invented
+facts plus temporary external state paths. It does not add a credentialed live
+test requirement.
+
 ## Safe live procedure
 
 1. Use a dedicated controlled account and transaction where possible.

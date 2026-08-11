@@ -27,6 +27,13 @@ The sole public finance-data transport is the backend-only
 credential on every request and has its own strict route/query/body allowlist. The
 Traefik example exposes that path over TLS without the UI private-network middleware;
 all UI routes keep the middleware and all public routers exclude `/api/internal/`.
+The protected finance insight service additionally requires the
+`tyrion-finance-insights` external volume, an operator-installed strict v1
+policy at `/var/lib/tyrion-finance-insights/policy.json`, and independent
+minimum-32-byte cursor and identity keys supplied as platform secrets.
+Back up the volume and keys together. Keep all three finance insight gates off
+until the state, policy, key restore, and metadata-only health checks pass;
+enable evaluation/write, read, and confirmed actions in that order.
 For local/demo development, run the bridge with `python main.py --demo` and the UI with
 `npm run dev`; the homelab compose file is the production contract, not the local
 development launcher.

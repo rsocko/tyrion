@@ -11,10 +11,21 @@ COPY kid-engine/tsconfig.json ./
 COPY kid-engine/src ./src
 RUN npm run build
 
+FROM base AS finance-insights-builder
+WORKDIR /workspace/finance-insights
+COPY finance-insights/package.json finance-insights/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY finance-insights/tsconfig.json ./
+COPY finance-insights/src ./src
+RUN npm run build
+
 FROM base AS dependencies
 COPY --from=domain-builder /workspace/kid-engine/package.json /workspace/kid-engine/package.json
 COPY --from=domain-builder /workspace/kid-engine/dist /workspace/kid-engine/dist
 COPY --from=domain-builder /workspace/kid-engine/node_modules /workspace/kid-engine/node_modules
+COPY --from=finance-insights-builder /workspace/finance-insights/package.json /workspace/finance-insights/package.json
+COPY --from=finance-insights-builder /workspace/finance-insights/dist /workspace/finance-insights/dist
+COPY --from=finance-insights-builder /workspace/finance-insights/node_modules /workspace/finance-insights/node_modules
 WORKDIR /workspace/triage-app
 COPY triage-app/package.json triage-app/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -22,6 +33,7 @@ RUN npm ci --no-audit --no-fund
 FROM base AS builder
 WORKDIR /workspace/triage-app
 COPY --from=dependencies /workspace/kid-engine /workspace/kid-engine
+COPY --from=dependencies /workspace/finance-insights /workspace/finance-insights
 COPY --from=dependencies /workspace/triage-app/node_modules ./node_modules
 COPY triage-app .
 RUN npm run build
@@ -78,7 +90,8 @@ WORKDIR /app
 RUN groupadd --gid "${TYRION_GID}" tyrion \
     && useradd --uid "${TYRION_UID}" --gid tyrion --create-home \
         --home-dir /home/tyrion --shell /usr/sbin/nologin tyrion \
-    && install -d -m 0700 -o tyrion -g tyrion /var/lib/tyrion-policy
+    && install -d -m 0700 -o tyrion -g tyrion /var/lib/tyrion-policy \
+    && install -d -m 0700 -o tyrion -g tyrion /var/lib/tyrion-finance-insights
 
 COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/
 COPY --from=builder --chown=tyrion:tyrion /workspace/runtime-licenses /licenses/npm-runtime
@@ -86,7 +99,7 @@ COPY --from=builder --chown=tyrion:tyrion /workspace/runtime-licenses /licenses/
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/standalone ./
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/static ./triage-app/.next/static
 
-VOLUME ["/var/lib/tyrion-policy"]
+VOLUME ["/var/lib/tyrion-policy", "/var/lib/tyrion-finance-insights"]
 WORKDIR /app/triage-app
 USER tyrion
 EXPOSE 3000

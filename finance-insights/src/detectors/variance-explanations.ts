@@ -20,12 +20,22 @@ export interface VarianceExplanationInputV1 {
 
 export function varianceHeadlineV1(input: VarianceExplanationInputV1): string {
   if (input.baselineSufficiency === 'insufficient') {
-    return `${input.displayName} has insufficient comparable history`;
+    return boundedHeadline(
+      input.displayName,
+      ' has insufficient comparable history'
+    );
   }
-  return `${input.displayName} spending ${input.direction === 'increase' ? 'increased' : 'decreased'} by ${formatMoneyMinorV1(
-    Math.abs(input.absoluteDeltaMinor),
-    input.currency
-  )}`;
+  return boundedHeadline(
+    input.displayName,
+    ` spending ${input.direction === 'increase' ? 'increased' : 'decreased'} by ${formatMoneyMinorV1(
+      Math.abs(input.absoluteDeltaMinor),
+      input.currency
+    )}`
+  );
+}
+
+function boundedHeadline(displayName: string, suffix: string): string {
+  return `${displayName.slice(0, Math.max(0, 160 - suffix.length))}${suffix}`;
 }
 
 export function varianceExplanationV1(input: VarianceExplanationInputV1): string {

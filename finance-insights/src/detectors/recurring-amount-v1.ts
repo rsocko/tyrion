@@ -224,7 +224,7 @@ export async function evaluateRecurringAmountDetectorV1(
   );
   const priorOccurrences = [...(options.priorOccurrences ?? [])].sort(
     (left, right) =>
-      right.detail.updatedAt.localeCompare(left.detail.updatedAt) ||
+      Date.parse(right.detail.updatedAt) - Date.parse(left.detail.updatedAt) ||
       left.detail.occurrenceId.localeCompare(right.detail.occurrenceId)
   );
   const priorTransactionRefs = new Set(
@@ -336,6 +336,28 @@ export async function evaluateRecurringAmountDetectorV1(
       publications.push(result.publication);
     }
     if (result.transition) transitions.push(result.transition);
+  }
+  if (options.source.completeness === 'complete') {
+    const activeRecurringRefs = new Set(recurringFacts.map((fact) => fact.sourceRef));
+    const transitionedOccurrenceIds = new Set(
+      transitions.map((transition) => transition.occurrenceId)
+    );
+    for (const prior of priorOccurrences) {
+      if (
+        prior.detail.sourceLifecycle === 'open' &&
+        !activeRecurringRefs.has(prior.recurringSourceRef) &&
+        !transitionedOccurrenceIds.has(prior.detail.occurrenceId)
+      ) {
+        transitionedOccurrenceIds.add(prior.detail.occurrenceId);
+        transitions.push({
+          occurrenceId: prior.detail.occurrenceId,
+          state: 'resolved',
+          reasonCode: 'correction_resolved',
+          replacementOccurrenceId: null,
+          occurredAt: options.completedAt,
+        });
+      }
+    }
   }
 
   publications.sort((left, right) =>
@@ -614,13 +636,15 @@ function analyzeRecurring(
     computation.state === 'insufficientBaseline' ||
     computation.state === 'unavailable';
   identity.successorQualifies = computation.state === 'qualifiedIncrease';
-  const transition = correctionTransition(
-    identity,
-    shouldPublish &&
-      (computation.state === 'qualifiedIncrease' ||
-        identity.reassignedCorrection),
-    options.completedAt
-  );
+  const transition =
+    correctionTransition(
+      identity,
+      shouldPublish &&
+        (computation.state === 'qualifiedIncrease' ||
+          identity.reassignedCorrection),
+      options.completedAt
+    ) ??
+    reliableReevaluationTransition(identity, computation.state, options.completedAt);
   if (
     identity.priorOccurrence?.detail.sourceLifecycle === 'open' &&
     computation.state === 'unavailable'
@@ -1397,8 +1421,30 @@ function correctionTransition(
       occurredAt,
     };
   }
+
   return {
     occurrenceId: identity.correctionPrior.detail.occurrenceId,
+    state: 'resolved',
+    reasonCode: 'correction_resolved',
+    replacementOccurrenceId: null,
+    occurredAt,
+  };
+}
+
+function reliableReevaluationTransition(
+  identity: IdentityResult,
+  state: RecurringAmountAnalysisStateV1,
+  occurredAt: string
+): EvaluationPublicationV1['transitions'][number] | null {
+  if (
+    identity.correctionPrior ||
+    identity.priorOccurrence?.detail.sourceLifecycle !== 'open' ||
+    (state !== 'withinExpectedRange' && state !== 'decreaseAnalysisOnly')
+  ) {
+    return null;
+  }
+  return {
+    occurrenceId: identity.priorOccurrence.detail.occurrenceId,
     state: 'resolved',
     reasonCode: 'correction_resolved',
     replacementOccurrenceId: null,
