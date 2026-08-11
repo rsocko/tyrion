@@ -76,10 +76,14 @@ pending and recurring state, notes, compatible tag display names, and additive s
 tag references. Categories retain their compatible group display name and add a
 stable group ID. It intentionally does not expose raw Monarch payloads.
 
-Mission Control's connector currently synchronizes normalized transaction pages into
-its finance projection. It does not yet maintain complete local projections for
-accounts, categories, recurring obligations, or budgets. Houston does not yet have
-finance tools registered.
+Mission Control's connector synchronizes normalized transaction pages into its
+finance projection. Tyrion's `finance-insights/inquiry` entry point provides the
+reviewed read-only Houston tool definitions and a framework-neutral service that
+binds to that projection through a fixed-household port. The service validates
+projection records, calculates bounded spending analysis in typed code, reports
+freshness and provenance, and enforces authorization, cancellation, timeout, audit,
+item, date, and byte limits. The Mission Control runtime supplies the projection and
+sanitized audit adapters; it does not receive or create Monarch session material.
 
 ## Data placement and freshness
 
