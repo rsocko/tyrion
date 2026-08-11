@@ -76,10 +76,31 @@ export const financeInsightPolicySnapshotSchema = z.strictObject({
     absoluteGateMinor: nonNegativeAmountMinorSchema,
     relativeGateBasisPoints: nonNegativeBasisPointsSchema,
     robustDeviationMilli: z.number().int().positive().max(20_000),
+    historyMonths: z.number().int().min(3).max(24),
+    minimumActiveMonths: z.number().int().min(1).max(24),
+    sufficientActiveMonths: z.number().int().min(1).max(24),
+    minimumBaselineTransactions: z.number().int().min(1).max(10_000),
+    minimumCurrentTransactions: z.number().int().min(1).max(1_000),
+    minimumSpreadMinor: amountMinorSchema.positive(),
     persistentOccurrenceLimit: z.literal(10),
     digestMemberLimit: z.literal(10),
     contributorLimit: z.literal(10),
     notifyingMinimumConfidence: z.literal('high'),
+  }).superRefine((value, context) => {
+    if (value.minimumActiveMonths > value.sufficientActiveMonths) {
+      context.addIssue({
+        code: 'custom',
+        path: ['minimumActiveMonths'],
+        message: 'must not exceed sufficientActiveMonths',
+      });
+    }
+    if (value.sufficientActiveMonths > value.historyMonths) {
+      context.addIssue({
+        code: 'custom',
+        path: ['sufficientActiveMonths'],
+        message: 'must not exceed historyMonths',
+      });
+    }
   }),
   freshness: z.strictObject({
     newAlertMaxAgeHours: z.literal(48),
@@ -170,6 +191,12 @@ export function createCandidatePolicySnapshotV1(
       absoluteGateMinor: 15_000,
       relativeGateBasisPoints: 3_000,
       robustDeviationMilli: 3_000,
+      historyMonths: 6,
+      minimumActiveMonths: 3,
+      sufficientActiveMonths: 6,
+      minimumBaselineTransactions: 3,
+      minimumCurrentTransactions: 1,
+      minimumSpreadMinor: 5_000,
       persistentOccurrenceLimit: 10,
       digestMemberLimit: 10,
       contributorLimit: 10,
