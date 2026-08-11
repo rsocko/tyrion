@@ -10,7 +10,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PROJECT_NAMES = ("kid-engine", "triage-app")
+PROJECT_NAMES = ("finance-insights", "kid-engine", "triage-app")
 ALLOWED_ADVISORY = "https://github.com/advisories/GHSA-2v37-7h3g-55p8"
 ALLOWED_NANOID_VERSION = "3.3.16"
 ALLOWED_POSTCSS_VERSION = "8.5.25"

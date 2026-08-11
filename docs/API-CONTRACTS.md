@@ -24,6 +24,11 @@ attribution service is a separate domain API defined by
 [`attribution-service-v1.openapi.json`](./attribution-service-v1.openapi.json);
 it is not added to the bridge route tree.
 
+The separately versioned private Finance insight domain contract is defined by
+[`finance-insights-service-v1.openapi.json`](./finance-insights-service-v1.openapi.json)
+and its strict runtime parsers in `finance-insights/`. It does not change Bridge v1,
+expose a browser route, or accept raw external URLs.
+
 ## Mission Control connector gateway
 
 Mission Control may consume a strict subset of this contract through:

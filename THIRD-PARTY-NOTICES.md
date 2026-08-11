@@ -15,6 +15,7 @@ files and notices.
 | `@img/sharp-libvips-*` platform packages | 1.3.2 | LGPL-3.0-or-later | [libvips source and license](https://github.com/libvips/libvips); package metadata is verified and the pinned Debian base image's canonical LGPL-3 text is copied into `/licenses/npm-runtime` when a platform package omits a license file |
 | PostCSS and nanoid | 8.5.25 and 3.3.16 | MIT | Package metadata and installed license files |
 | proper-lockfile and runtime dependencies | 4.1.2 | MIT | [package source and license](https://github.com/moxystudio/node-proper-lockfile/tree/v4.1.2) |
+| Zod | 4.1.12 | MIT | [package source and license](https://github.com/colinhacks/zod/tree/v4.1.12) |
 | monarchmoneycommunity | 1.5.2 | MIT | Copyright (c) 2026 bradleyseanf; [license](https://github.com/bradleyseanf/monarchmoneycommunity/blob/v1.5.2/LICENSE) |
 | monarchmoneycommunity upstream | hammem/monarchmoney | MIT | Copyright (c) 2023 hammem; [license](https://github.com/hammem/monarchmoney/blob/main/LICENSE) |
 | FastAPI 0.141.1, Pydantic 2.13.4 | 2026-08-09 resolution | MIT | Package license metadata and installed distributions |
