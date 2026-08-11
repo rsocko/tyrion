@@ -69,7 +69,10 @@ contract version. A failure never substitutes its observation time for
 
 - Degraded or stale state is informational.
 - Unavailable state or the configured repeated-failure threshold is actionable.
-- Both dispositions emit only notification deliveries; Finance never creates tasks.
+- Both dispositions emit only notification deliveries from this handler. After a
+  protected transport exists, Mission Control's normative routing layer may project
+  persistent actionable non-insight duplicate or health signals into tasks; #162
+  does not emit those task deliveries itself.
 - An older or conflicting equal-time observation is recorded as an ignored run and
   cannot change signal state.
 - A newer connected observation with fresh sync data settles prior attention.
