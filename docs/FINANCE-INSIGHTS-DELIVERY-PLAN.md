@@ -102,7 +102,7 @@ operation, or browser route.
 | `POST /source-generations` | Idempotently begin staging one completed normalized connector generation and its expected manifest. |
 | `PUT /source-generations/{generationId}/batches/{batchIndex}` | Idempotently upload one bounded, typed source-fact batch. |
 | `POST /source-generations/{generationId}/commit` | Validate the complete manifest, atomically promote the generation, and enqueue its initial evaluation. |
-| `POST /evaluations` | Explicitly reevaluate one promoted generation under named detector and policy versions. |
+| `POST /evaluations` | Idempotently retry an unavailable/failed evaluation under the source generation's originally assigned detector and policy versions. |
 | `GET /occurrences` | Read a bounded, snapshot-paginated summary list. |
 | `GET /occurrences/{occurrenceId}` | Read one bounded explanation and evidence view. |
 | `POST /occurrences/{occurrenceId}/actions` | Apply a confirmed, structured Tyrion action such as expected, not useful, suppress, or undo suppression. |
@@ -161,9 +161,11 @@ ingestion evidence but cannot become current, enqueue publishable evaluation, mu
 an occurrence, or create delivery. Reusing a sequence for different content is a
 conflict.
 
-`EvaluationRequestV1` is reserved for explicit reevaluation and contains the promoted
-`sourceGeneration`, exact `detectorSetVersion`, exact `expectedPolicyVersion`, and an
-`idempotencyKey` stable for that complete tuple. Tyrion creates one evaluation key:
+`EvaluationRequestV1` is reserved for retrying an unavailable/failed evaluation and
+contains the promoted `sourceGeneration`, its originally assigned
+`detectorSetVersion` and `expectedPolicyVersion`, and an `idempotencyKey` stable for
+that complete tuple. Tyrion rejects a later policy/detector version for an existing
+generation. It creates one evaluation key:
 
 ```text
 (household scope, connectorRef, sourceGeneration, detector set version, policy version)
@@ -173,8 +175,8 @@ Source upload and evaluation idempotency are separate namespaces. A retry return
 existing source generation or evaluation and cannot create another occurrence,
 notification candidate, or policy action. Reusing either idempotency key with
 different normalized input returns `409 idempotency_conflict`. A policy or detector
-change requires a new explicit evaluation tuple and key; it does not conflict with or
-overwrite the prior evaluation.
+change applies only to source generations accepted after that version becomes
+effective; it does not conflict with, overwrite, or relabel any prior evaluation.
 
 Tyrion assigns a monotonic connector-scoped `evaluationSequence` when it accepts an
 initial evaluation or explicit reevaluation of the current source generation. The
@@ -192,18 +194,27 @@ Identity has three levels:
    scope, detector kind, entity kind, and opaque source reference. It is not a raw
    Monarch identifier.
 2. `occurrenceId` is a stable episode identity within that series. Its discriminator
-   is detector-specific: recurring obligation plus billing period, transaction source
-   lineage, or category/merchant plus comparison period and direction.
+   is detector-specific: recurring obligation plus billing period and source-revision
+   lineage, transaction source reference plus source-revision lineage, or
+   category/merchant plus comparison period, direction, and relevant classification
+   lineage.
 3. `deliveryRevision` is a monotonically increasing integer. It changes only when an
-   allowlisted material field changes: trigger reason set, severity, direction,
-   observed value across a configured materiality boundary, source correction, or
-   lifecycle reopening. Ordinary reevaluation timestamps and contributor ordering do
-   not change it.
+   allowlisted source value crosses a configured materiality boundary or source
+   classification changes. Ordinary reevaluation timestamps, severity-only changes,
+   contributor ordering, and lifecycle display changes do not change it.
 
 The opaque IDs use a version prefix and a server-held key stored outside the
 repository. The versioned key is access-restricted, backed up with the Tyrion state
 store, and restored before evaluation; losing or silently rotating it is a blocking
 identity fault. Logs and metrics never contain the IDs or their source inputs.
+
+`sourceRevisionRef` is a versioned keyed digest of the canonical material source fact
+and its predecessor lineage. An unchanged replay derives the same value; a classified
+source correction derives one deterministic successor. The correction successor is
+part of `occurrenceId`, so it can supersede the old occurrence without collision.
+Ordinary non-correction evidence accumulation does not change `sourceRevisionRef` and
+may use `deliveryRevision` only when source value/classification crosses the approved
+materiality rule.
 
 Mission Control uses one stable notification row per occurrence:
 
@@ -225,10 +236,11 @@ The digest revision changes only when the bounded member occurrence/revision set
 changes materially. This eliminates random identity while allowing a corrected or
 materially changed occurrence to resurface predictably.
 
-A correction inside the same detector episode retains `occurrenceId` and increments
-`deliveryRevision` only when the material-change policy permits resurfacing. It
-creates and supersedes with a new occurrence only when the correction changes the
-episode discriminator, such as moving a bill to another obligation or billing period.
+A dismissed insight may resurface only for a new occurrence or a delivery revision
+caused by materially changed source value/classification. Source corrections never
+silently rewrite the old occurrence: they resolve it when corrected evidence no longer
+qualifies or supersede it with a deterministic correction-lineage occurrence when the
+corrected evidence still qualifies.
 
 ### 3.4 Summary and detail DTOs
 
@@ -314,7 +326,8 @@ Every occurrence includes:
 Freshness thresholds are versioned Tyrion policy. A stale, partial, or unavailable
 generation cannot open a new occurrence or increment a delivery revision. The last
 reliable result may remain visible with its original `sourceAsOf` and an explicit
-warning. Recovery reevaluates before clearing the warning.
+warning. V1 permits new alerts only when `sourceAsOf` is no more than 48 hours old.
+Recovery reevaluates before clearing the warning.
 
 ### 3.7 Typed external target descriptors
 
@@ -333,8 +346,11 @@ OwlDocumentTargetV1         = owl + document + opaque sourceRef
 No descriptor contains a scheme, host, port, path, URL, arbitrary query name/value,
 or display-provided navigation target. Mission Control maps each supported union
 through a connector-specific allowlist, encodes every component, and owns the trusted
-origin. An unknown connector, kind, report filter, or reference shape omits the action
-and emits a metadata-only diagnostic; it never falls back to a supplied string.
+origin. It uses verified entity-specific transaction, recurring, or report formats
+when available. A valid typed target whose entity-specific format is unsupported falls
+back to the corresponding allowlisted Transactions, Recurring, or Reports root. An
+unknown connector, invalid target kind, or malformed reference omits the action and
+emits a metadata-only diagnostic; it never falls back to a supplied string.
 
 ### 3.8 Pagination and filtering
 
@@ -369,16 +385,20 @@ Mission Control: unread -> read | snoozed | dismissed
 ```
 
 - A no-longer-qualifying open occurrence resolves with a structured reason.
-- A correction that changes the detector episode supersedes the old occurrence and
-  names the replacement.
+- A correction resolves the old occurrence or supersedes it with a deterministic
+  correction-lineage occurrence and names the replacement.
 - Dismiss and snooze never call a Tyrion lifecycle mutation.
 - `expected` is a confirmed Tyrion action that records a structured reason and may
   resolve the current occurrence.
 - `notUseful` records bounded feedback and does not mutate thresholds.
 - `suppress` requires `confirm: true`, an allowlisted occurrence/entity/category
-  scope, an expiry of no more than 180 days, expected policy version, and an
-  idempotency key. It records actor, reason, scope, creation, expiry, and undo state.
-- Permanent suppression is outside v1 unless separately authorized.
+  scope, a duration of exactly 30, 90, or 180 days, expected policy version, and an
+  idempotency key. It records the fixed single operator, reason, scope, creation,
+  expiry, and undo state.
+- The current product is single-user and has no account/permission model. The fixed
+  operator may use every structured feedback and timed suppression action; v1 must not
+  invent elevated permissions. Permanent suppression is prohibited, and every active
+  suppression has an undo action.
 
 The action endpoint rejects stale occurrence revisions and policy versions with `409`.
 It never accepts free-form financial notes.
@@ -530,12 +550,12 @@ adaptive alert; it is never silently treated as ordinary spend.
    minus the greater of the configured MAD multiple and minimum spread. Zero-MAD
    cohorts use the configured minimum spread and receive an explanation reason.
 6. Require both configured absolute and relative movement beyond the expected range.
-   Direction policy is explicit. V1 may enable increases while retaining decreases as
-   non-alert analysis until product policy enables them.
-7. Open one occurrence per recurring obligation and billing period. A correction
-   within that episode retains the occurrence and may increment its delivery revision;
-   a correction that changes obligation or period supersedes it with a deterministic
-   replacement. An unchanged rerun retains both ID and revision.
+   V1 analyzes both directions but only increases may open an alert; decreases remain
+   visible as non-alert analysis.
+7. Open one occurrence per recurring obligation and billing period. A source
+   correction resolves that occurrence or supersedes it with a deterministic
+   correction-lineage occurrence if corrected evidence still qualifies. An unchanged
+   rerun retains both ID and revision.
 
 ### 6.2 Deterministic test matrix
 
@@ -543,13 +563,15 @@ adaptive alert; it is never silently treated as ordinary spend.
 | --- | --- | --- |
 | Expected summer bill | Current 20500 minor units; seasonal range 17000-21500 | Qualified=false; sufficient baseline; no occurrence. |
 | Material seasonal spike | Current 28640; center 19530; both configured gates exceeded | Open high-severity occurrence with both reason codes. |
+| Material seasonal decrease | Current is below both configured lower gates | Analysis records the decrease; no v1 alert or notification. |
 | Rolling spike but no season | Two comparable periods and 12 rolling bills | `insufficientBaseline`; rolling context shown; no adaptive alert. |
 | Long billing period | 35-day current period normalizes inside expected range | No alert; period-normalization exclusion/explanation present. |
 | Usage explains increase | Amount and usage rise proportionally in normalized OWL facts | Policy-specific result with usage contributor; never raw document text. |
 | OWL absent | Same Monarch facts with no document evidence | Same core seasonal result, lower/equal confidence, no failure. |
 | Ambiguous obligation join | Two recurring identities match one transaction | Non-alert unavailable/ambiguous identity reason. |
-| Same-period correction | Open occurrence followed by a corrected amount in the same episode | Same occurrence ID; material policy decides one revision increment. |
+| Same-period correction | Open occurrence followed by a corrected amount in the same episode | Old occurrence resolves or is superseded by a deterministic correction-lineage occurrence. |
 | Reassigned correction | Corrected source moves to another obligation or billing period | Old occurrence superseded; replacement ID deterministic. |
+| Material non-correction change | New same-period evidence crosses the material-value boundary | Same occurrence receives one delivery revision and may resurface. |
 | Retry | Same generation, detector, and policy evaluated twice | Same evaluation, occurrence ID, and delivery revision. |
 | Stale generation | Qualifying amount in stale coverage | No new alert; last reliable result remains visibly stale. |
 
@@ -565,15 +587,16 @@ adaptive alert; it is never silently treated as ordinary spend.
    household spending. Each comparison reports sample count, median, scaled MAD,
    empirical percentile, ratio, and whether it triggered, reinforced, or was
    informational.
-4. Adaptive qualification requires the configured meaningful-dollar floor and the
-   configured agreement among eligible comparison dimensions. Account comparison
-   cannot trigger alone. Sparse dimensions report insufficient baseline rather than
-   silently disappearing.
+4. Below the explicit dollar rule, adaptive qualification requires the configured
+   meaningful-dollar floor and agreement from at least two eligible baselines among
+   merchant, category, account, and household. No single comparison can trigger.
+   Sparse dimensions report insufficient baseline rather than silently disappearing.
 5. Severity follows impact policy. Confidence follows source completeness, explicit
    rule status, eligible baseline sufficiency, and signal agreement.
-6. Open one occurrence for the stable transaction source lineage. Material source
-   correction increments or replaces the occurrence according to the identity rules;
-   reevaluation alone does not.
+6. Open one occurrence for the stable transaction source lineage. A source correction
+   resolves it or supersedes it with a deterministic correction-lineage occurrence;
+   it never increments the corrected occurrence in place. Reevaluation alone does not
+   alter identity or revision.
 7. Explanation copy always says household spending exception and never says fraud,
    suspicious, compromised, or card-security alert.
 
@@ -583,13 +606,14 @@ adaptive alert; it is never silently treated as ordinary spend.
 | --- | --- | --- |
 | Explicit and adaptive | Posted 184000; 100000 rule; merchant/category comparisons exceed policy | Open occurrence; explicit and adaptive reasons; high confidence. |
 | Explicit only | Posted 120000; sparse new merchant/category | Open rule-based occurrence; adaptive baseline insufficient and labeled. |
-| Adaptive only | Below explicit rule but merchant and category robust gates agree | Open only if adaptive policy enables it and dollar floor is met. |
+| Adaptive only | Below explicit rule; merchant and category robust gates agree | Open when the meaningful-dollar floor is met because two eligible baselines agree. |
+| One adaptive baseline | Below explicit rule; only merchant baseline triggers | No alert because fewer than two eligible baselines agree. |
 | Account only | Large relative to account but ordinary merchant/category value | No adaptive alert; account marked informational. |
 | Expected obligation | Invented mortgage-like recurring transaction | Excluded with known-recurring reason. |
 | Approved merchant | Otherwise qualifying merchant is policy-approved | No occurrence; suppression provenance retained. |
 | Pending then posted | Pending record later becomes posted | No pending alert; exactly one posted occurrence. |
 | Transfer/refund/income | Large non-spending records | Excluded deterministically. |
-| Corrected amount | Posted value changes materially in a later generation | Predictable revision/supersession and one resurface candidate. |
+| Corrected amount | Posted value changes materially in a later generation | Old occurrence resolves or is superseded; any replacement/resurface is deterministic. |
 | Retry and order | Same records arrive in different page order and are reevaluated | Identical IDs, reason ordering, confidence, and revision. |
 
 ## 8. Detector for issue #24: category and merchant variance
@@ -638,28 +662,33 @@ adaptive alert; it is never silently treated as ordinary spend.
 | Bounded ranking | More movers/contributors than limits | Deterministic top set and exact omitted count. |
 | Digest retry | Same monthly member/revision set is delivered twice | Same digest ID/revision; no duplicate notification. |
 
-## 9. Tunable product policy, separate from contract
+## 9. Approved v1 defaults and canary tuning
 
-The following are versioned policy decisions. Candidate values shown in the approved
-mockups are test inputs, not approved production defaults.
+The candidate values in the approved mockups are the versioned, feature-gated v1
+defaults. Canary tuning creates a new policy version and affects only source
+generations accepted after that version becomes effective. Prior occurrences are never
+retroactively relabeled.
+Robust-statistic implementation constants not listed as product thresholds must still
+be deterministic, versioned, and covered by detector tests.
 
-| Decision | Candidate for deterministic examples | Required owner review |
-| --- | --- | --- |
-| Recurring absolute/relative gates | 7000 minor units and 2500 basis points | Household default, per-obligation override, and lower-direction policy |
-| Seasonal cohort and coverage | Adjacent-month window, 37-month horizon, at least two prior seasonal years | Limited/sufficient sample thresholds |
-| Robust range | Median plus configured scaled-MAD multiple and minimum spread | MAD multiple and zero-MAD floor |
-| Large transaction explicit rule | 100000 minor units | Household default and account/category overrides |
-| Adaptive large-transaction agreement | Meaningful floor plus at least two eligible dimensions | Eligible dimensions, percentiles, ratios, and sparse handling |
-| Variance gates | 15000 minor units, 3000 basis points, robust deviation gate | Separate category/merchant and increase/decrease policy |
-| Persistent and digest bounds | Top 10 occurrences, top 10 contributors | Rank weights and digest crowding policy |
-| Freshness | No new alerts beyond a configured source age | SLA and recovery grace |
-| Delivery | Large transaction immediate; one monthly grouped digest | Digest day/time and medium-confidence inclusion |
-| Suppression | 30/90/180 days, no permanent v1 | Permissions, scopes, and undo retention |
+| Decision | Approved v1 default |
+| --- | --- |
+| Recurring absolute/relative gates | 7000 minor units and 2500 basis points; analyze both directions and alert only on increases |
+| Seasonal cohort and coverage | Adjacent-month window, 37-month horizon, and at least two prior seasonal years |
+| Robust range | Median plus the versioned scaled-MAD multiple and minimum-spread safeguard |
+| Large transaction explicit rule | 100000 minor units |
+| Adaptive large-transaction agreement | Meaningful-dollar floor plus agreement from at least two eligible merchant/category/account/household baselines |
+| Variance gates | 15000 minor units, 3000 basis points, and the versioned robust-deviation gate |
+| Persistent and digest bounds | Top 10 occurrences and top 10 contributors |
+| Freshness | `sourceAsOf` no more than 48 hours old for a new alert |
+| Delivery | Large transaction immediate; grouped monthly digest on day 2 at 9:00 AM household-local time |
+| Medium-confidence movers | Visible on `/finance`; excluded from notifications and the notifying digest |
+| Suppression | Fixed operator may use 30/90/180-day timed suppression with undo; permanent suppression prohibited |
 
 Policy snapshots are immutable, monotonically versioned, validated, and included in
-every evaluation. A threshold edit does not retroactively relabel history without an
-explicit reevaluation of a promoted source generation under the new named policy
-version and idempotency tuple.
+every evaluation. A threshold edit never retroactively relabels history. A retry of a
+promoted generation uses the detector and policy versions originally assigned to that
+generation.
 
 ## 10. Mission Control implementation and hazard retirement
 
@@ -736,6 +765,9 @@ The generic `/insights` route is task-productivity UI and is not a Finance surfa
 - Open detail in the approved Finance/notification context, not
   `/finance/review`. Reuse shared card, dialog, status, focus, and notification
   primitives instead of finance-only replacements.
+- Provide both the canonical notification detail route and a `/finance` drawer. They
+  render one shared Finance insight detail component and therefore cannot drift in
+  evidence, provenance, lifecycle, actions, or accessibility behavior.
 - Preserve the same category and merchant filter choices and active-filter count on
   desktop and mobile. Narrow layouts put the queue before detail, stack facts/actions,
   and allow evidence tables to scroll.
@@ -834,8 +866,9 @@ closed for writes and notification creation.
 4. Compare metadata-only totals, lifecycle transitions, freshness, and replay dedupe.
 5. Enable `/finance` persistent presentation.
 6. Enable immediate large-transaction notification for the single connector.
-7. Enable grouped monthly digest after a complete period/dry run.
-8. Enable confirmed expected/suppression actions after permission review.
+7. Enable the grouped monthly digest after a complete dry run, scheduled for day 2 at
+   9:00 AM household-local time; medium-confidence movers remain `/finance`-only.
+8. Enable confirmed expected/suppression actions for the fixed operator.
 9. Remove legacy Mission Control detector/provider paths and temporary gates.
 
 ### 11.3 Fallback behavior
@@ -955,7 +988,9 @@ R1 canary -> M6 Mission Control legacy cleanup
   metadata-only telemetry, operational health, and container state mount
 - **Tests:** auth/authority/error matrix; missing/duplicate/changed batch; manifest
   mismatch; detector integration; action confirmation/conflicts; bounded backfill
-  generation; response limits; no browser/public route; exact OpenAPI conformance
+  generation; exact 30/90/180-day suppression and undo; permanent-suppression
+  rejection; fixed-operator actions without invented permission branches; response
+  limits; no browser/public route; exact OpenAPI conformance
 - **Acceptance:** Tyrion does not contact Monarch directly or load a session; live
   tests remain opt-in; insight browser pages do not exist;
   `monarch-bridge/contract.py` public shapes remain intact
@@ -1001,10 +1036,11 @@ R1 canary -> M6 Mission Control legacy cleanup
 - **Repository/session:** Mission Control child stacked on M2
 - **Scope:** extend `FinanceOverview` with an independent insight request, Spending
   insights groups, compact/detail states, cached stale/unavailable fallback,
-  provenance, and existing component reuse
+  provenance, the `/finance` drawer, and one shared detail component also consumed by
+  the canonical notification detail route
 - **Tests:** loading/empty/unavailable/insufficient/open/resolved/stale/partial states;
   keyboard and semantics; 44px actions; narrow layout; `/finance/review` unchanged;
-  existing Finance overview survives insight failure
+  existing Finance overview survives insight failure; route/drawer detail parity
 - **Acceptance:** no tasks, no `/insights` reuse, and no production navigation to a
   Tyrion insight UI
 
@@ -1021,7 +1057,8 @@ R1 canary -> M6 Mission Control legacy cleanup
   resurface; no task creation; actual connector identity; safe notification actions;
   bounded/invalid rich content; provider registry resolution for `finance`,
   `finance-manager`, and `monarch-money`; both connector types absent from task
-  destinations
+  destinations; day-2 9:00 AM household-local scheduling; medium-confidence movers
+  omitted from notification delivery
 - **Acceptance:** notification-first large transaction, no fraud copy, and no reliance
   on `groupKey` for visual aggregation
 
@@ -1159,8 +1196,11 @@ The feature is releasable only when:
 - large transactions deliver notification-first and do not use fraud language
 - recurring and monthly mover groups persist on `/finance`
 - one deterministic monthly digest represents the bounded mover set
+- the digest runs on day 2 at 9:00 AM household-local time and excludes
+  medium-confidence movers, which remain visible on `/finance`
 - dismiss/snooze remains local; expected/suppress uses explicit confirmed Tyrion
-  actions; no task is created
+  actions; the fixed operator may select only 30/90/180 days with undo; no task or
+  permission model is created
 - all external actions pass through typed connector-owned builders
 - the actual configured connector is present end to end
 - desktop and mobile category/merchant filter behavior is identical
@@ -1168,18 +1208,26 @@ The feature is releasable only when:
   identifiers, private URLs, session material, or raw upstream text
 - the four Mission Control hazards are removed after canary
 
-## 16. Review decisions still required
+## 16. Approved v1 product decision record
 
-Before T1 is approved, product and Mission Control owners should confirm:
+All product decisions required to begin T1 are resolved:
 
-1. Whether insight detail is a `/finance` drawer, a notification detail route, or both.
-2. The detector thresholds, sufficiency cutoffs, material revision boundaries,
-   freshness SLA, digest schedule, and medium-confidence ranking policy.
-3. Whether recurring decreases are alerting in v1 or retained only as analysis.
-4. Which adaptive dimensions may independently qualify a large transaction.
-5. Which expected/suppression actions require elevated policy permission and whether
-   permanent suppression remains prohibited.
-6. The exact supported Monarch transaction, recurring, and report-filter deep-link
-   formats in the Mission Control target registry.
-7. The source-correction and material-change rules that permit a dismissed occurrence
-   to resurface.
+1. Insight detail is available from both the canonical notification detail route and a
+   `/finance` drawer using one shared component.
+2. The candidate detector thresholds are versioned, feature-gated defaults and may be
+   tuned through canary without retroactive relabeling.
+3. Recurring decreases are analyzed but only increases alert in v1.
+4. Adaptive large-transaction qualification below the explicit rule requires at least
+   two eligible merchant/category/account/household baselines to agree.
+5. The fixed single operator may use all feedback and 30/90/180-day suppression
+   actions with undo. V1 has no elevated permission concept and prohibits permanent
+   suppression.
+6. Mission Control uses verified entity-specific Monarch links when available and the
+   corresponding allowlisted Transactions, Recurring, or Reports root otherwise.
+7. A dismissed insight resurfaces only for a new occurrence or materially changed
+   source value/classification. Corrections resolve or supersede the old occurrence.
+8. New-alert source freshness is 48 hours; the monthly digest runs on day 2 at 9:00 AM
+   household-local time; medium-confidence movers remain visible on `/finance` without
+   notifying.
+
+There are no remaining execution-blocking product questions.
