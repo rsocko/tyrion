@@ -20,6 +20,10 @@
       "types": "./dist/core/index.d.ts",
       "import": "./dist/core/index.js"
     },
+    "./detectors": {
+      "types": "./dist/detectors/index.d.ts",
+      "import": "./dist/detectors/index.js"
+    },
     "./policy": {
       "types": "./dist/policy/v1.d.ts",
       "import": "./dist/policy/v1.js"
