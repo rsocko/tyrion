@@ -27,10 +27,16 @@ source lifecycle, and settlement evidence.
 6. Finance insight occurrences remain `notificationOnly`. Large transactions,
    recurring-amount changes, and monthly variance digests never create tasks or My Day
    candidates.
-7. No signal carries a raw URL. Internal navigation uses the fixed authorized route
+7. `FinanceManagerConnector.notificationOnly` remains unchanged, and every Finance
+   connector alias remains excluded from generic task destinations. Separately, the
+   Finance notification provider and template registry omit and reject `create_task`.
+   Durable non-insight tasks in this matrix are created only by the Mission Control
+   routing service's Finance policy path from an approved row and stable logical key;
+   they do not bypass or broaden connector capabilities.
+8. No signal carries a raw URL. Internal navigation uses the fixed authorized route
    registry; external navigation uses typed Monarch or document targets and an
    allowlisted server-side resolver.
-8. New attention requires complete, sufficiently fresh provenance. Stale or partial
+9. New attention requires complete, sufficiently fresh provenance. Stale or partial
    data can preserve an existing work item with an explicit warning, but cannot create
    or escalate one.
 
@@ -281,6 +287,8 @@ return raw upstream payloads.
 | Tyrion signal producers | Stable occurrence identity, source lifecycle, policy/matcher versions, complete provenance, freshness, typed capabilities/targets, and deterministic settlement reasons |
 | Mission Control routing service | Strict envelope parser, matrix selection, dedupe, notification/task mutual exclusion, escalation, settlement reconciliation, and transactional linkage |
 | Mission Control presentation | Notification, task, My Day, `/finance` status, accessible actions, and authorized target resolution |
+| Mission Control connector registry | Keep `FinanceManagerConnector.notificationOnly` and exclude every Finance connector alias from generic task destinations |
+| Mission Control notification provider and template registry | Omit and reject generic `create_task` actions for every Finance provider/template alias |
 | Monarch Bridge | Normalized source transport and verified connector health only; no routing, task, notification, or browser action contract |
 | Tyrion operations/configuration UI | Policy and connector configuration destinations only; no daily attention inbox |
 | Monarch and document systems | Authoritative finance and source-document workflows reached only through allowlisted typed links |

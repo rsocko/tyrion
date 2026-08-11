@@ -391,6 +391,13 @@ it never creates both a finance notification and a finance task for the same ope
 occurrence. Only durable follow-up becomes a task. Source settlement reconciles that
 task automatically when authoritative evidence permits it.
 
+This domain-owned routing does not change
+`FinanceManagerConnector.notificationOnly` or register any Finance connector alias as
+a generic task destination. Independently, every Finance notification provider and
+template alias omits and rejects `create_task`. The Mission Control routing service's
+Finance policy path creates the one domain task directly from an approved matrix row
+and stable logical key.
+
 An obligation that has entered the task route is represented in Mission Control as:
 
 ```typescript
