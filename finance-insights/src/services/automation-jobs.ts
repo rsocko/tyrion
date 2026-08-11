@@ -8,6 +8,7 @@ import {
   type FinanceAutomationJobRequestV1,
   type FinanceAutomationJobResultV1,
 } from '../automation/contracts-v1.js';
+import { normalizeFinanceAutomationJobRequestV1 } from '../automation/canonical-input-v1.js';
 import { evaluateFinanceAutomationJobV1 } from '../automation/evaluators-v1.js';
 import type { FinanceAutomationSqliteStoreV1 } from '../persistence/automation-store.js';
 
@@ -34,8 +35,9 @@ export class FinanceAutomationJobServiceV1 {
     input: FinanceAutomationJobRequestV1
   ): Promise<FinanceAutomationJobResultV1> {
     const request = parseFinanceAutomationJobRequestV1(input);
-    const { evaluatedAt: _evaluatedAt, ...durableInput } = request;
-    const requestDigest = canonicalDigestV1(durableInput as CanonicalJsonValue);
+    const requestDigest = durableRequestDigestV1(
+      normalizeFinanceAutomationJobRequestV1(request)
+    );
     const plan = evaluateFinanceAutomationJobV1(request, this.identityKey);
     return this.store.applyEvaluation(requestDigest, plan);
   }
@@ -47,4 +49,11 @@ export class FinanceAutomationJobServiceV1 {
       parseFinanceAutomationDeliveryAckRequestV1(input)
     );
   }
+}
+
+function durableRequestDigestV1(
+  request: FinanceAutomationJobRequestV1
+): string {
+  const { evaluatedAt: _evaluatedAt, ...durableInput } = request;
+  return canonicalDigestV1(durableInput as CanonicalJsonValue);
 }

@@ -11,8 +11,12 @@ export function deriveAutomationRunIdV1(
     namespace: 'finance-automation-run-v1',
     jobKind,
     connectorRef,
-    scheduledFor,
+    scheduledFor: canonicalAutomationTimestampV1(scheduledFor),
   });
+}
+
+export function canonicalAutomationTimestampV1(value: string): string {
+  return new Date(value).toISOString();
 }
 
 export function deriveDuplicateSignalIdV1(

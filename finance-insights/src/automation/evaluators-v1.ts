@@ -21,6 +21,10 @@ import {
   deriveConnectorHealthSignalIdV1,
   deriveDuplicateSignalIdV1,
 } from './identity-v1.js';
+import {
+  normalizeConnectorHealthJobRequestV1,
+  normalizeDuplicateAutomationJobRequestV1,
+} from './canonical-input-v1.js';
 
 export interface FinanceAutomationSignalDraftV1 {
   readonly signalId: string;
@@ -97,7 +101,9 @@ export function evaluateDuplicateTransactionsV1(
     healthStaleAfterHours: null,
     coverageStart: request.source.coverageStart,
     coverageEnd: request.source.coverageEnd,
-    inputFingerprint: duplicateInputFingerprint(request),
+    inputFingerprint: duplicateInputFingerprint(
+      normalizeDuplicateAutomationJobRequestV1(request)
+    ),
     completedAt: request.evaluatedAt,
   } as const;
   if (!request.automationPolicy.duplicateTransactions.enabled) {
@@ -287,7 +293,8 @@ export function evaluateConnectorHealthV1(
     coverageStart: null,
     coverageEnd: null,
     inputFingerprint: canonicalDigestV1(
-      request.observation as CanonicalJsonValue
+      normalizeConnectorHealthJobRequestV1(request)
+        .observation as CanonicalJsonValue
     ),
     completedAt: request.evaluatedAt,
   } as const;

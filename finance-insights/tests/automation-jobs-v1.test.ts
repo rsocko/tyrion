@@ -100,14 +100,19 @@ describe('durable finance automation jobs v1', () => {
     await acknowledge(harness.service, first, '2026-08-10T12:06:00Z');
     const next = await harness.service.run(
       duplicateRequest({
-        transactions,
+        transactions: [...transactions].reverse(),
         scheduledFor: '2026-08-10T13:05:00Z',
         evaluatedAt: '2026-08-10T13:05:00Z',
+        sourceAsOf: '2026-08-10T12:00:00.000Z',
       })
     );
 
     expect(next.signals[0]?.signalId).toBe(first.signals[0]?.signalId);
-    expect(next).toMatchObject({ replayed: false, deliveries: [] });
+    expect(next).toMatchObject({
+      status: 'completed',
+      replayed: false,
+      deliveries: [],
+    });
     closeStore(harness.store);
   });
 
@@ -643,6 +648,97 @@ describe('durable finance automation jobs v1', () => {
       replayed: true,
       deliveries: [{ version: 1, action: 'create' }],
     });
+    closeStore(harness.store);
+  });
+
+  it('replays equivalent durable input ordering and UTC timestamp forms', async () => {
+    const harness = createHarness();
+    const request = duplicateRequest({
+      transactions: [
+        transaction('ordered-a', '2026-08-10', {
+          tagRefs: ['invented-tag-b', 'invented-tag-a'],
+        }),
+        transaction('ordered-b', '2026-08-10'),
+        transaction('ordered-c', '2026-08-10', {
+          merchantName: 'Other Invented Merchant',
+        }),
+        transaction('ordered-d', '2026-08-10', {
+          merchantName: 'Other Invented Merchant',
+        }),
+      ],
+      suppressedPairs: [
+        {
+          sourceRefs: ['ordered-a', 'ordered-b'],
+          reason: 'expectedDuplicate',
+        },
+        {
+          sourceRefs: ['ordered-c', 'ordered-d'],
+          reason: 'connectorRetry',
+        },
+      ],
+    });
+    const first = await harness.service.run(request);
+    const replay = await harness.service.run({
+      ...request,
+      scheduledFor: '2026-08-10T12:05:00.000Z',
+      source: {
+        ...request.source,
+        sourceAsOf: '2026-08-10T12:00:00.000Z',
+        capturedConstituents: [...request.source.capturedConstituents]
+          .reverse()
+          .map((constituent) => ({
+            ...constituent,
+            sourceAsOf: '2026-08-10T12:00:00.000Z',
+          })),
+        manifest: [...request.source.manifest].reverse(),
+      },
+      transactions: [...request.transactions]
+        .reverse()
+        .map((item) => ({ ...item, tagRefs: [...item.tagRefs].reverse() })),
+      suppressedPairs: [...request.suppressedPairs].reverse(),
+      insightPolicy: {
+        ...request.insightPolicy,
+        effectiveAt: '2026-08-01T00:00:00.000Z',
+      },
+    });
+
+    expect(replay).toMatchObject({
+      runId: first.runId,
+      replayed: true,
+    });
+    closeStore(harness.store);
+  });
+
+  it('accepts equivalent health timestamp forms at the same source watermark', async () => {
+    const harness = createHarness();
+    const first = await harness.service.run(
+      healthRequest({
+        scheduledFor: '2026-08-10T13:00:00Z',
+        evaluatedAt: '2026-08-10T14:00:00Z',
+        observedAt: '2026-08-10T12:59:00Z',
+        state: 'degraded',
+        lastSuccessfulSyncAt: '2026-08-10T12:00:00Z',
+        consecutiveFailures: 1,
+      })
+    );
+    const equivalent = await harness.service.run(
+      healthRequest({
+        scheduledFor: '2026-08-10T13:30:00.000Z',
+        evaluatedAt: '2026-08-10T14:00:00.000Z',
+        observedAt: '2026-08-10T12:59:00.000Z',
+        state: 'degraded',
+        lastSuccessfulSyncAt: '2026-08-10T12:00:00.000Z',
+        consecutiveFailures: 1,
+      })
+    );
+
+    expect(equivalent).toMatchObject({
+      status: 'completed',
+      skipReason: null,
+      replayed: false,
+      deliveries: [{ version: 1, action: 'create' }],
+    });
+    expect(equivalent.signals[0]?.signalId).toBe(first.signals[0]?.signalId);
     closeStore(harness.store);
   });
 

@@ -29,6 +29,8 @@ lifecycle changes, and versioned delivery outbox in one immediate transaction.
   historical run's `signals` evaluation list.
 - Reusing a run identity with different input fails with
   `automation_idempotency_conflict`.
+- Equivalent UTC timestamp forms and ordering of set-like source, transaction,
+  suppression, and policy collections canonicalize to the same durable run input.
 - A later run reuses stable signal identities. Unchanged open conditions do not
   enqueue a new delivery version, while an unacknowledged version remains available
   for at-least-once delivery.
