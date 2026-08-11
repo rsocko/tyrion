@@ -3,6 +3,7 @@ export * from './contracts/v1.js';
 export * from './core/index.js';
 export * from './detectors/index.js';
 export * from './evidence/index.js';
+export * from './inquiry/index.js';
 export * from './openapi.js';
 export * from './persistence/index.js';
 export * from './policy/v1.js';

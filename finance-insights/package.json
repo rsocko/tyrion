@@ -44,6 +44,10 @@
       "types": "./dist/evidence/index.d.ts",
       "import": "./dist/evidence/index.js"
     },
+    "./inquiry": {
+      "types": "./dist/inquiry/index.d.ts",
+      "import": "./dist/inquiry/index.js"
+    },
     "./services": {
       "types": "./dist/services/index.d.ts",
       "import": "./dist/services/index.js"
