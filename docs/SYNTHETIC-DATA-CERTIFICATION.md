@@ -26,7 +26,7 @@ metadata class. Grouped paths include every file below the stated path.
 
 | Surface | Technical reviewer | Disposition |
 | --- | --- | --- |
-| `kid-engine/tests/**` and `kid-engine/config/demo-kids.json` | Issue #103 coding agent | Synthetic. People, relationships, rules, identifiers, amounts, limits, dates, histories, and entity associations are invented deterministic inputs. Public entity names may be intentional references. |
+| `kid-engine/tests/**`, `kid-engine/config/demo-kids.json`, and `finance-insights/fixtures/**` | Issue #103 coding agent and Finance insight T1 implementation review | Synthetic. People, relationships, rules, identifiers, amounts, limits, dates, histories, source generations, insight occurrences, and entity associations are invented deterministic inputs. Public entity names may be intentional references. |
 | `monarch-bridge/test_*.py` and `monarch-bridge/conftest.py` | Issue #103 coding agent | Synthetic. Test records, upstream shapes, sessions, tokens, identifiers, and timestamps are deterministic inventions using temporary external session paths. |
 | `triage-app/src/lib/mock-*.ts` and `triage-app/test/**` | Issue #103 coding agent | Synthetic. UI people, relationships, identifiers, amounts, balances, budgets, bills, dates, histories, and entity associations are invented mock data. Public entity names may be intentional references. |
 | `mockups/**` | Issue #103 coding agent | Synthetic visual references. Embedded people, relationships, financial values, dates, and activity histories are invented and do not define deployment architecture. |

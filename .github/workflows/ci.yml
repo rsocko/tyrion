@@ -61,6 +61,16 @@ jobs:
           npm test
           npm run build
 
+      - name: Install Finance insight contract dependencies
+        working-directory: finance-insights
+        run: npm ci --no-audit --no-fund
+
+      - name: Test and build Finance insight contracts
+        working-directory: finance-insights
+        run: |
+          npm test
+          npm run build
+
       - name: Validate public UI lock portability
         run: python .github/scripts/check_npm_lock_policy.py
 
