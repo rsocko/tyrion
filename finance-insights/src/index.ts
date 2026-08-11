@@ -1,3 +1,4 @@
+export * from './automation/index.js';
 export * from './contracts/v1.js';
 export * from './core/index.js';
 export * from './detectors/index.js';
