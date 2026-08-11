@@ -2068,7 +2068,10 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
   ): void {
     const row = this.findOccurrenceRow(transition.occurrenceId);
     if (!row) return storeError('occurrence_not_found');
-    if (assignment.evaluationSequence < row.evaluation_sequence) {
+    if (
+      row.connector_ref !== assignment.identity.connectorRef ||
+      assignment.evaluationSequence < row.evaluation_sequence
+    ) {
       return storeError('stale_evaluation');
     }
     if (

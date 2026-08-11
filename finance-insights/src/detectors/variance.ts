@@ -231,7 +231,12 @@ export function evaluateVarianceProjectionV1(
   const classificationLineages = classificationLineageMap(
     input.classificationLineages
   );
-  const previous = validatedPreviousOccurrences(input.previousOccurrences ?? []);
+  const previous = validatedPreviousOccurrences(
+    input.previousOccurrences ?? []
+  ).filter(
+    (item) =>
+      item.detail.provenance.connectorRef === input.source.connectorRef
+  );
   const candidates = [...buckets.values()]
     .map((bucket) =>
       buildCandidate(
