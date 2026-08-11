@@ -1,7 +1,8 @@
 # Finance Insights UX
 
-**Status:** Design proposal for issues #22, #23, and #24
+**Status:** Approved design for issues #22, #23, and #24
 **Artifacts:** [`finance-insights-overview.html`](../mockups/finance-insights-overview.html) and [`finance-insight-notification-detail.html`](../mockups/finance-insight-notification-detail.html)
+**Delivery plan:** [`FINANCE-INSIGHTS-DELIVERY-PLAN.md`](./FINANCE-INSIGHTS-DELIVERY-PLAN.md)
 
 This proposal follows [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md). The HTML files
 are static review artifacts with invented data, not routes or production UI.
