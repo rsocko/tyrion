@@ -54,6 +54,8 @@ let authState = "connected";
 let healthPayloadOverride;
 let authStatusPayloadOverride;
 let previews = new Map();
+let attributionActionRecords = new Map();
+let attributionActionReplays = new Map();
 let expireNextPreview = false;
 let reattributionResponseMode = "normal";
 let activePolicy;
@@ -271,6 +273,69 @@ before(async () => {
         payload = { preview: previews.get(body.previewId) ?? null };
       } else if (request.url === "/v1/reattribution/previews:apply") {
         payload = { counts: impactCounts(body.preview) };
+      } else if (
+        request.url === "/v1/attribution-actions/records:resolve"
+      ) {
+        let record = attributionActionRecords.get(body.sourceRef);
+        if (!record && body.sourceRef !== "consumer-action-missing") {
+          record = attributionActionRecord(body.householdId, body.sourceRef);
+          attributionActionRecords.set(body.sourceRef, record);
+        }
+        payload = { record: record ?? null };
+      } else if (
+        request.url === "/v1/attribution-actions/actions:apply"
+      ) {
+        const mutation = body.mutation;
+        const replay = attributionActionReplays.get(
+          mutation.request.idempotencyKey
+        );
+        if (replay) {
+          payload = { result: { ...replay, replayed: true } };
+        } else {
+          const current = attributionActionRecords.get(
+            mutation.request.sourceRef
+          );
+          if (
+            !current ||
+            current.stateVersion !== mutation.request.expectedStateVersion
+          ) {
+            payload = { result: null };
+          } else {
+            const stateVersion = current.stateVersion + 1;
+            const record = {
+              input: mutation.input,
+              attribution: mutation.attribution,
+              stateVersion,
+              exception: mutation.exception,
+              lastAction: {
+                ...mutation.audit,
+                outcome: "applied",
+                stateVersion,
+              },
+            };
+            attributionActionRecords.set(mutation.request.sourceRef, record);
+            const result = {
+              record,
+              replayed: false,
+              requestFingerprint: mutation.requestFingerprint,
+            };
+            attributionActionReplays.set(
+              mutation.request.idempotencyKey,
+              structuredClone(result)
+            );
+            payload = { result };
+          }
+        }
+      } else if (
+        request.url === "/v1/attribution-actions/actions:resolve"
+      ) {
+        const replay = attributionActionReplays.get(body.idempotencyKey);
+        payload = {
+          result:
+            replay && replay.record.attribution.sourceRef === body.sourceRef
+              ? { ...replay, replayed: true }
+              : null,
+        }
       } else {
         response.writeHead(404, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ error: "not_found" }));
@@ -331,6 +396,8 @@ beforeEach(() => {
   authStatusPayloadOverride = undefined;
   expireNextPreview = false;
   reattributionResponseMode = "normal";
+  attributionActionRecords = new Map();
+  attributionActionReplays = new Map();
 });
 
 test("policy exposes only the operational bridge contract", () => {
@@ -1419,6 +1486,168 @@ test("batch attribution rejects private fields and enforces size bounds", async 
   assert.equal((await oversized.json()).error.code, "payload_too_large");
 });
 
+test("attribution actions explain bounded corrections and Monarch provenance", async () => {
+  const response = await attributionActionFetch(
+    attributionActionRequest("consumer-action-explain", "explain")
+  );
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert.doesNotMatch(
+    text,
+    /merchantName|instrumentFingerprint|occurredOn|observedAt|householdId/
+  );
+  const payload = JSON.parse(text);
+  assert.deepEqual(payload.attribution, {
+    contractVersion: "1.0",
+    sourceRef: "consumer-action-explain",
+    status: "pending",
+    kidId: "kid-synthetic",
+    confidence: "likely",
+    method: "merchant-rule",
+    explanation: "A configured merchant rule matched.",
+    review: { status: "pending", reasons: ["low-confidence"] },
+    provenance: {
+      decisionSource: "automated",
+      policyVersion: activePolicy.policyVersion,
+      engineVersion: "1.0.0",
+      ruleIds: ["rule-merchant-synthetic"],
+      evaluatedAt: "2026-08-08T12:58:00.000Z",
+    },
+  });
+  assert.deepEqual(payload.authoritativeDeepLink, {
+    system: "monarch",
+    target: "transaction",
+    sourceRef: "consumer-action-explain",
+  });
+  assert.deepEqual(payload.assignableKidIds, ["kid-synthetic"]);
+  assert.deepEqual(payload.availableActions, [
+    "explain",
+    "assign-kid",
+    "mark-parent-expense",
+    "unassign",
+    "resolve-exception",
+    "defer-exception",
+    "open-in-monarch",
+  ]);
+});
+
+test("attribution actions apply confirmed corrections with replayable audit state", async () => {
+  const sourceRef = "consumer-action-assign";
+  const request = attributionActionRequest(sourceRef, "assign-kid", {
+    expectedStateVersion: 1,
+    idempotencyKey: "consumer-action-assign-v1",
+    confirm: true,
+    kidId: "kid-synthetic",
+  });
+  const applied = await attributionActionFetch(request);
+  assert.equal(applied.status, 200);
+  const payload = await applied.json();
+  assert.equal(payload.attribution.status, "attributed");
+  assert.equal(payload.attribution.method, "manual");
+  assert.equal(payload.exception.status, "resolved");
+  assert.deepEqual(payload.audit, {
+    actionRef: payload.audit.actionRef,
+    idempotencyKey: "consumer-action-assign-v1",
+    action: "assign-kid",
+    actorId: "mission-control-finance-manager",
+    outcome: "applied",
+    previousStateVersion: 1,
+    stateVersion: 2,
+    policyVersion: activePolicy.policyVersion,
+    appliedAt: payload.audit.appliedAt,
+  });
+  assert.match(payload.audit.actionRef, /^[A-Za-z0-9-]+$/);
+  assert.match(payload.audit.appliedAt, /^\d{4}-\d{2}-\d{2}T/);
+
+  const replay = await attributionActionFetch(request);
+  assert.equal(replay.status, 200);
+  assert.deepEqual((await replay.json()).audit, {
+    ...payload.audit,
+    outcome: "replayed",
+  });
+
+  const conflict = await attributionActionFetch({
+    ...request,
+    kidId: "kid-synthetic-other",
+  });
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).error.code, "idempotency_conflict");
+});
+
+test("attribution actions support parent, unassign, resolve, and defer outcomes", async () => {
+  for (const [action, extra, expectedStatus] of [
+    ["mark-parent-expense", {}, "resolved"],
+    ["unassign", {}, "resolved"],
+    ["resolve-exception", {}, "resolved"],
+    [
+      "defer-exception",
+      { deferUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString() },
+      "deferred",
+    ],
+  ]) {
+    const sourceRef = `consumer-action-${action}`;
+    const response = await attributionActionFetch(
+      attributionActionRequest(sourceRef, action, {
+        expectedStateVersion: 1,
+        idempotencyKey: `${sourceRef}-v1`,
+        confirm: true,
+        ...extra,
+      })
+    );
+    assert.equal(response.status, 200, action);
+    const payload = await response.json();
+    assert.equal(payload.exception.status, expectedStatus, action);
+    assert.equal(payload.audit.action, action);
+  }
+});
+
+test("attribution actions fail closed for confirmation, conflicts, and integration errors", async () => {
+  const unconfirmed = await attributionActionFetch(
+    attributionActionRequest("consumer-action-unconfirmed", "unassign", {
+      expectedStateVersion: 1,
+      idempotencyKey: "consumer-action-unconfirmed-v1",
+      confirm: false,
+    })
+  );
+  assert.equal(unconfirmed.status, 400);
+  assert.equal((await unconfirmed.json()).error.code, "invalid_request");
+
+  const policyConflict = await attributionActionFetch({
+    ...attributionActionRequest("consumer-action-policy-conflict", "explain"),
+    expectedPolicyVersion: activePolicy.policyVersion + 1,
+  });
+  assert.equal(policyConflict.status, 409);
+  assert.equal((await policyConflict.json()).error.code, "policy_conflict");
+
+  const stateConflict = await attributionActionFetch(
+    attributionActionRequest("consumer-action-state-conflict", "unassign", {
+      expectedStateVersion: 2,
+      idempotencyKey: "consumer-action-state-conflict-v1",
+      confirm: true,
+    })
+  );
+  assert.equal(stateConflict.status, 409);
+  assert.equal(
+    (await stateConflict.json()).error.code,
+    "attribution_state_conflict"
+  );
+
+  const missing = await attributionActionFetch(
+    attributionActionRequest("consumer-action-missing", "explain")
+  );
+  assert.equal(missing.status, 404);
+  assert.equal((await missing.json()).error.code, "attribution_not_found");
+
+  reattributionResponseMode = "unavailable";
+  const unavailable = await attributionActionFetch(
+    attributionActionRequest("consumer-action-unavailable", "explain")
+  );
+  assert.equal(unavailable.status, 503);
+  const unavailableText = await unavailable.text();
+  assert.match(unavailableText, /attribution_state_unavailable/);
+  assert.doesNotMatch(unavailableText, /synthetic private detail/);
+});
+
 test("policy mutations reject cross-site requests and ignore client identity headers", async () => {
   const crossSite = await policyFetch(
     "/api/policy",
@@ -1788,8 +2017,35 @@ function attributionFetch(body, options = {}) {
   });
 }
 
+function attributionActionFetch(body, options = {}) {
+  const serialized = JSON.stringify(body);
+  return rawInternalAttributionFetch(
+    uiUrl,
+    "/api/internal/v1/attribution/actions",
+    serialized,
+    {
+      Authorization: ["Bearer", options.token ?? serviceToken].join(" "),
+      ...options.requestHeaders,
+    }
+  );
+}
+
 function rawAttributionFetch(baseUrl, body, requestHeaders = {}) {
-  const target = new URL("/api/internal/v1/attribution/batch", baseUrl);
+  return rawInternalAttributionFetch(
+    baseUrl,
+    "/api/internal/v1/attribution/batch",
+    body,
+    requestHeaders
+  );
+}
+
+function rawInternalAttributionFetch(
+  baseUrl,
+  path,
+  body,
+  requestHeaders = {}
+) {
+  const target = new URL(path, baseUrl);
   return new Promise((resolvePromise, reject) => {
     const request = httpRequest(
       {
@@ -1870,6 +2126,17 @@ function attributionItem(sourceRef) {
   };
 }
 
+function attributionActionRequest(sourceRef, action, extra = {}) {
+  return {
+    contractVersion: "1.0",
+    provenance: "mission-control-normalized-v1",
+    sourceRef,
+    expectedPolicyVersion: activePolicy.policyVersion,
+    action,
+    ...extra,
+  };
+}
+
 function policyDraft(policy) {
   return {
     timezone: policy.timezone,
@@ -1932,6 +2199,53 @@ function reattributionRecord(householdId, sourceRef) {
         evaluatedAt,
       },
     },
+  };
+}
+
+function attributionActionRecord(householdId, sourceRef) {
+  const evaluatedAt = "2026-08-08T12:58:00.000Z";
+  return {
+    input: {
+      contractVersion: "1.0",
+      householdId,
+      source: {
+        system: "monarch-bridge",
+        recordRef: sourceRef,
+        observedAt: evaluatedAt,
+      },
+      transaction: {
+        merchantName: "Synthetic Store",
+        instrumentFingerprint: null,
+        occurredOn: "2026-08-08",
+      },
+      historicalAttributions: [],
+      existingManualDecision: null,
+    },
+    attribution: {
+      contractVersion: "1.0",
+      sourceRef,
+      status: "pending",
+      kidId: "kid-synthetic",
+      confidence: "likely",
+      method: "merchant-rule",
+      explanation: "A configured merchant rule matched.",
+      review: { status: "pending", reasons: ["low-confidence"] },
+      provenance: {
+        decisionSource: "automated",
+        policyVersion: activePolicy.policyVersion,
+        engineVersion: "1.0.0",
+        ruleIds: ["rule-merchant-synthetic"],
+        evaluatedAt,
+      },
+    },
+    stateVersion: 1,
+    exception: {
+      status: "open",
+      reasons: ["low-confidence"],
+      deferredUntil: null,
+      updatedAt: evaluatedAt,
+    },
+    lastAction: null,
   };
 }
 

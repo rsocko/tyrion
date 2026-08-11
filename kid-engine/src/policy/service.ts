@@ -143,6 +143,14 @@ export function authorizeAttributionBatch(
   authorize(parsedActor, householdId, 'attribution:batch');
 }
 
+export function authorizeAttributionActions(
+  actor: PolicyActorV1,
+  householdId: string
+): void {
+  const parsedActor = parsePolicyActorV1(actor);
+  authorize(parsedActor, householdId, 'attribution:actions');
+}
+
 export function authorizePolicy(
   actor: PolicyActorV1,
   householdId: string,

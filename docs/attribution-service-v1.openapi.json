@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Tyrion Internal Batch Attribution Service",
+    "title": "Tyrion Internal Attribution Service",
     "version": "1.0.0",
     "description": "Private trusted-homelab service contract. Mission Control sends only privacy-safe normalized attribution facts; Tyrion derives the fixed household and service actor from its server implementation."
   },
@@ -55,6 +55,42 @@
           "503": { "$ref": "#/$defs/UnavailableResponse" }
         }
       }
+    },
+    "/api/internal/v1/attribution/actions": {
+      "post": {
+        "operationId": "applyAttributionActionV1",
+        "summary": "Explain or mutate one versioned attribution exception",
+        "description": "Read-only explain requests do not require confirmation. Assign/correct, parent-expense, unassign, resolve, and defer mutations require confirm=true, an idempotency key, and the expected consumer-owned state version.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/$defs/AttributionActionRequestV1" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current explanation and bounded actions, or the applied/replayed mutation with audit state.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/$defs/AttributionActionResponseV1" }
+              }
+            }
+          },
+          "400": { "$ref": "#/$defs/InvalidRequestResponse" },
+          "401": { "$ref": "#/$defs/AuthResponse" },
+          "403": { "$ref": "#/$defs/ForbiddenResponse" },
+          "404": { "$ref": "#/$defs/RouteResponse" },
+          "409": { "$ref": "#/$defs/ConflictResponse" },
+          "413": { "$ref": "#/$defs/SizeResponse" },
+          "415": { "$ref": "#/$defs/MediaTypeResponse" },
+          "422": { "$ref": "#/$defs/ActionValidationResponse" },
+          "500": { "$ref": "#/$defs/OperationFailureResponse" },
+          "503": { "$ref": "#/$defs/UnavailableResponse" }
+        }
+      }
     }
   },
   "$defs": {
@@ -93,6 +129,16 @@
           "required": ["action", "kidId", "decidedAt"],
           "properties": {
             "action": { "const": "parent-expense" },
+            "kidId": { "type": "null" },
+            "decidedAt": { "$ref": "#/$defs/Timestamp" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "kidId", "decidedAt"],
+          "properties": {
+            "action": { "const": "unassign" },
             "kidId": { "type": "null" },
             "decidedAt": { "$ref": "#/$defs/Timestamp" }
           }
@@ -246,6 +292,224 @@
         }
       }
     },
+    "AttributionActionRequestV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action"],
+          "properties": {
+            "contractVersion": { "const": "1.0" },
+            "provenance": { "const": "mission-control-normalized-v1" },
+            "sourceRef": { "$ref": "#/$defs/Identifier" },
+            "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
+            "action": { "const": "explain" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm", "kidId"],
+          "properties": {
+            "contractVersion": { "const": "1.0" },
+            "provenance": { "const": "mission-control-normalized-v1" },
+            "sourceRef": { "$ref": "#/$defs/Identifier" },
+            "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
+            "action": { "const": "assign-kid" },
+            "expectedStateVersion": { "type": "integer", "minimum": 1 },
+            "idempotencyKey": { "$ref": "#/$defs/Identifier" },
+            "confirm": { "const": true },
+            "kidId": { "$ref": "#/$defs/Identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm"],
+          "properties": {
+            "contractVersion": { "const": "1.0" },
+            "provenance": { "const": "mission-control-normalized-v1" },
+            "sourceRef": { "$ref": "#/$defs/Identifier" },
+            "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
+            "action": { "enum": ["mark-parent-expense", "unassign", "resolve-exception"] },
+            "expectedStateVersion": { "type": "integer", "minimum": 1 },
+            "idempotencyKey": { "$ref": "#/$defs/Identifier" },
+            "confirm": { "const": true }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm", "deferUntil"],
+          "properties": {
+            "contractVersion": { "const": "1.0" },
+            "provenance": { "const": "mission-control-normalized-v1" },
+            "sourceRef": { "$ref": "#/$defs/Identifier" },
+            "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
+            "action": { "const": "defer-exception" },
+            "expectedStateVersion": { "type": "integer", "minimum": 1 },
+            "idempotencyKey": { "$ref": "#/$defs/Identifier" },
+            "confirm": { "const": true },
+            "deferUntil": { "$ref": "#/$defs/Timestamp" }
+          }
+        }
+      ]
+    },
+    "AttributionActionResultV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "sourceRef", "status", "kidId", "confidence", "method", "explanation", "review", "provenance"],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "sourceRef": { "$ref": "#/$defs/Identifier" },
+        "status": { "enum": ["attributed", "unassigned", "pending"] },
+        "kidId": {
+          "oneOf": [
+            { "$ref": "#/$defs/Identifier" },
+            { "type": "null" }
+          ]
+        },
+        "confidence": { "enum": ["definite", "likely", "none"] },
+        "method": { "enum": ["manual", "card-rule", "merchant-rule", "historical-pattern", "unassigned", "unavailable"] },
+        "explanation": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reasons"],
+          "properties": {
+            "status": { "enum": ["not-required", "pending", "resolved"] },
+            "reasons": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/AttributionReviewReasonV1" }
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decisionSource", "policyVersion", "engineVersion", "ruleIds", "evaluatedAt"],
+          "properties": {
+            "decisionSource": { "enum": ["manual", "automated", "fallback"] },
+            "policyVersion": {
+              "oneOf": [
+                { "type": "integer", "minimum": 1 },
+                { "type": "null" }
+              ]
+            },
+            "engineVersion": { "const": "1.0.0" },
+            "ruleIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/Identifier" }
+            },
+            "evaluatedAt": { "$ref": "#/$defs/Timestamp" }
+          }
+        }
+      }
+    },
+    "AttributionReviewReasonV1": {
+      "enum": [
+        "no-match",
+        "low-confidence",
+        "card-rule-conflict",
+        "merchant-rule-conflict",
+        "historical-attribution-tie",
+        "engine-unavailable",
+        "policy-unavailable",
+        "policy-version-mismatch"
+      ]
+    },
+    "AttributionExceptionStateV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reasons", "deferredUntil", "updatedAt"],
+      "properties": {
+        "status": { "enum": ["open", "resolved", "deferred"] },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/AttributionReviewReasonV1" }
+        },
+        "deferredUntil": {
+          "oneOf": [
+            { "$ref": "#/$defs/Timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "updatedAt": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "AttributionActionAuditV1": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["actionRef", "idempotencyKey", "action", "actorId", "outcome", "previousStateVersion", "stateVersion", "policyVersion", "appliedAt"],
+          "properties": {
+            "actionRef": { "$ref": "#/$defs/Identifier" },
+            "idempotencyKey": { "$ref": "#/$defs/Identifier" },
+            "action": { "enum": ["assign-kid", "mark-parent-expense", "unassign", "resolve-exception", "defer-exception"] },
+            "actorId": { "$ref": "#/$defs/Identifier" },
+            "outcome": { "enum": ["applied", "replayed"] },
+            "previousStateVersion": { "type": "integer", "minimum": 1 },
+            "stateVersion": { "type": "integer", "minimum": 2 },
+            "policyVersion": { "type": "integer", "minimum": 1 },
+            "appliedAt": { "$ref": "#/$defs/Timestamp" }
+          }
+        }
+      ]
+    },
+    "AttributionActionResponseV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "sourceRef", "policyVersion", "engineVersion", "stateVersion", "attribution", "exception", "availableActions", "assignableKidIds", "authoritativeDeepLink", "provenance", "audit"],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "sourceRef": { "$ref": "#/$defs/Identifier" },
+        "policyVersion": { "type": "integer", "minimum": 1 },
+        "engineVersion": { "const": "1.0.0" },
+        "stateVersion": { "type": "integer", "minimum": 1 },
+        "attribution": { "$ref": "#/$defs/AttributionActionResultV1" },
+        "exception": { "$ref": "#/$defs/AttributionExceptionStateV1" },
+        "availableActions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["explain", "assign-kid", "mark-parent-expense", "unassign", "resolve-exception", "defer-exception", "open-in-monarch"]
+          }
+        },
+        "assignableKidIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Identifier" }
+        },
+        "authoritativeDeepLink": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["system", "target", "sourceRef"],
+          "properties": {
+            "system": { "const": "monarch" },
+            "target": { "const": "transaction" },
+            "sourceRef": { "$ref": "#/$defs/Identifier" }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sourceSystem", "normalizedBy", "decidedBy", "decisionSource", "evaluatedAt"],
+          "properties": {
+            "sourceSystem": { "const": "monarch" },
+            "normalizedBy": { "const": "monarch-bridge" },
+            "decidedBy": { "const": "tyrion" },
+            "decisionSource": { "enum": ["manual", "automated", "fallback"] },
+            "evaluatedAt": { "$ref": "#/$defs/Timestamp" }
+          }
+        },
+        "audit": { "$ref": "#/$defs/AttributionActionAuditV1" }
+      }
+    },
     "ErrorBody": {
       "type": "object",
       "additionalProperties": false,
@@ -281,13 +545,13 @@
       }
     },
     "RouteResponse": {
-      "description": "attribution_route_not_available",
+      "description": "attribution_route_not_available or attribution_not_found",
       "content": {
         "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
       }
     },
     "ConflictResponse": {
-      "description": "policy_conflict",
+      "description": "policy_conflict, attribution_state_conflict, idempotency_conflict, or action_not_available",
       "content": {
         "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
       }
@@ -310,8 +574,14 @@
         "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
       }
     },
+    "ActionValidationResponse": {
+      "description": "kid_not_assignable or invalid_defer_window",
+      "content": {
+        "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
+      }
+    },
     "UnavailableResponse": {
-      "description": "attribution_auth_not_configured, policy_unavailable, or attribution_service_unavailable",
+      "description": "attribution_auth_not_configured, policy_unavailable, attribution_state_unavailable, attribution_state_invalid, or attribution_service_unavailable",
       "content": {
         "application/json": { "schema": { "$ref": "#/$defs/ErrorBody" } }
       }
