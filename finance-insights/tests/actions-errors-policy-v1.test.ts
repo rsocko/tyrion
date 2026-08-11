@@ -180,8 +180,21 @@ describe('immutable versioned candidate policy', () => {
     });
     expect(policy.largeTransaction).toMatchObject({
       explicitRuleMinor: 100_000,
+      adaptiveMeaningfulDollarFloorMinor: 15_000,
       adaptiveMinimumAgreement: 2,
       eligibleDimensions: ['merchant', 'category', 'account', 'household'],
+      historyWindowDays: 365,
+      minimumBaselineSampleCount: 5,
+      robustDeviationMultiplierMilli: 3_000,
+      minimumSpreadMinor: 1_000,
+      empiricalPercentileGateBasisPoints: 9_000,
+      ratioGateBasisPoints: 20_000,
+      highSeverityAmountMinor: 250_000,
+      publicationLimit: 50,
+      lifecycleTransitionLimit: 100,
+      approvedMerchantKeys: [],
+      expectedScopes: [],
+      suppressedScopes: [],
     });
     expect(policy.variance).toMatchObject({
       absoluteGateMinor: 15_000,
@@ -211,6 +224,7 @@ describe('immutable versioned candidate policy', () => {
     const policy = createCandidatePolicySnapshotV1(options);
     expect(Object.isFrozen(policy)).toBe(true);
     expect(Object.isFrozen(policy.recurringAmount)).toBe(true);
+    expect(Object.isFrozen(policy.largeTransaction.expectedScopes)).toBe(true);
     expect(() =>
       parseFinanceInsightPolicySnapshotV1({ ...policy, retroactive: true })
     ).toThrow('Unrecognized key');
