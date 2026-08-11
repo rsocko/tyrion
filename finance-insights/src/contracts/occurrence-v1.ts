@@ -94,6 +94,8 @@ export const reasonCodeSchema = z.enum([
   'suppressed_scope_excluded',
   'correction_resolved',
   'correction_superseded',
+  'variance_rank_omitted',
+  'variance_period_closed',
   'material_source_change',
   'medium_confidence_no_notify',
 ]);

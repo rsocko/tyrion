@@ -121,7 +121,10 @@ export interface OccurrenceTransitionV1 {
   state: 'resolved' | 'superseded';
   reasonCode: Extract<
     ReasonCodeV1,
-    'correction_resolved' | 'correction_superseded'
+    | 'correction_resolved'
+    | 'correction_superseded'
+    | 'variance_rank_omitted'
+    | 'variance_period_closed'
   >;
   replacementOccurrenceId: string | null;
   occurredAt: string;

@@ -631,12 +631,18 @@ adaptive alert; it is never silently treated as ordinary spend.
 3. For each entity, require configured active-month and transaction sample coverage.
    Compute the median equivalent-period total, scaled MAD, expected range, absolute
    delta, relative delta where meaningful, and robust deviation score.
+   V1 uses six prior months, requires activity in at least three months and at least
+   three baseline transactions for a limited baseline, and requires all six active
+   months plus at least six baseline transactions for a sufficient baseline. Six
+   completely covered zero-spend periods are representative for the separate
+   new-spend rule. A 5000-minor-unit minimum spread prevents zero-MAD histories from
+   producing unbounded significance.
 4. Qualification requires all configured gates: meaningful absolute impact, relative
    movement, and robust deviation. A zero baseline uses a separate new-spend rule and
    never reports an infinite percentage.
-5. Rank qualified movers deterministically by severity, absolute impact, entity kind,
-   and stable entity identity. Cap persistent results and digest members. Positive and
-   negative directions remain explicit.
+5. Rank qualified movers deterministically by severity, absolute impact, confidence,
+   entity kind, and stable entity identity. Cap persistent results and digest members.
+   Positive and negative directions remain explicit.
 6. Select at most 10 transaction contributors by estimated contribution to delta,
    then date and opaque identity. Contributors explain the result but do not alter the
    aggregate.
@@ -679,6 +685,8 @@ be deterministic, versioned, and covered by detector tests.
 | Large transaction explicit rule | 100000 minor units |
 | Adaptive large-transaction agreement | Meaningful-dollar floor plus agreement from at least two eligible merchant/category/account/household baselines |
 | Variance gates | 15000 minor units, 3000 basis points, and the versioned robust-deviation gate |
+| Variance comparison coverage | Six prior months; limited at three active months and three transactions; sufficient at six active months and six transactions |
+| Variance zero-MAD safeguard | 5000 minor units minimum spread |
 | Persistent and digest bounds | Top 10 occurrences and top 10 contributors |
 | Freshness | `sourceAsOf` no more than 48 hours old for a new alert |
 | Delivery | Large transaction immediate; grouped monthly digest on day 2 at 9:00 AM household-local time |
