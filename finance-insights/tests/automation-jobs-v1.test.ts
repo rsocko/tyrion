@@ -1,13 +1,16 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  FINANCE_INSIGHT_MIGRATIONS_V1,
   FinanceAutomationIdempotencyConflictError,
   FinanceAutomationJobServiceV1,
   FinanceAutomationSqliteStoreV1,
   createCandidateAutomationPolicyV1,
   createCandidatePolicySnapshotV1,
+  migrateFinanceInsightStoreV1,
   parseFinanceAutomationJobRequestV1,
   parseFinanceAutomationPolicyV1,
   type ConnectorHealthJobRequestV1,
@@ -32,6 +35,94 @@ afterEach(() => {
 });
 
 describe('durable finance automation jobs v1', () => {
+  it('backfills a v4 schedule watermark by chronological timestamp order', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tyrion-automation-v4-'));
+    directories.push(directory);
+    const database = new Database(join(directory, 'state.sqlite'));
+    try {
+      database.exec(`
+        CREATE TABLE finance_insight_schema_migrations (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          applied_at TEXT NOT NULL
+        ) STRICT
+      `);
+      const recordMigration = database.prepare(
+        `INSERT INTO finance_insight_schema_migrations(version, name, applied_at)
+         VALUES (?, ?, ?)`
+      );
+      for (const migration of FINANCE_INSIGHT_MIGRATIONS_V1) {
+        if (migration.version > 4) break;
+        database.exec(migration.sql);
+        recordMigration.run(
+          migration.version,
+          migration.name,
+          '2026-08-10T00:00:00Z'
+        );
+      }
+      database
+        .prepare(
+          `INSERT INTO finance_automation_job_watermarks(
+             connector_ref, job_kind, latest_observed_at, latest_source_as_of,
+             latest_source_sequence, latest_source_generation,
+             observation_digest, updated_at
+           ) VALUES (?, 'connectorHealth', ?, NULL, NULL, NULL, ?, ?)`
+        )
+        .run(
+          'invented-connector',
+          '2026-08-10T12:59:00Z',
+          'sha256:invented-observation',
+          '2026-08-12T14:00:01Z'
+        );
+      const insertRun = database.prepare(
+        `INSERT INTO finance_automation_job_runs(
+           run_id, job_kind, connector_ref, scheduled_for, request_digest,
+           source_as_of, completed_at, result_json
+         ) VALUES (?, 'connectorHealth', ?, ?, ?, NULL, ?, ?)`
+      );
+      insertRun.run(
+        'run-v1_invented-older',
+        'invented-connector',
+        '2026-08-12T14:00:00Z',
+        'sha256:invented-older',
+        '2026-08-12T14:00:01Z',
+        '{"status":"completed"}'
+      );
+      insertRun.run(
+        'run-v1_invented-later',
+        'invented-connector',
+        '2026-08-12T14:00:00.500Z',
+        'sha256:invented-later',
+        '2026-08-12T14:00:01Z',
+        '{"status":"completed"}'
+      );
+      insertRun.run(
+        'run-v1_invented-ignored',
+        'invented-connector',
+        '2026-08-13T14:00:00Z',
+        'sha256:invented-ignored',
+        '2026-08-13T14:00:01Z',
+        '{"status":"ignored"}'
+      );
+
+      migrateFinanceInsightStoreV1(
+        database,
+        '2026-08-12T14:00:02Z'
+      );
+
+      const row = database
+        .prepare(
+          `SELECT latest_scheduled_for
+           FROM finance_automation_job_watermarks
+           WHERE connector_ref = ? AND job_kind = 'connectorHealth'`
+        )
+        .get('invented-connector') as { latest_scheduled_for: string };
+      expect(row.latest_scheduled_for).toBe('2026-08-12T14:00:00.500Z');
+    } finally {
+      database.close();
+    }
+  });
+
   it('persists one stable duplicate signal and makes exact replay delivery-free', async () => {
     const harness = createHarness();
     const request = duplicateRequest({
@@ -533,6 +624,47 @@ describe('durable finance automation jobs v1', () => {
     );
 
     expect(conflicting).toMatchObject({
+      status: 'ignored',
+      skipReason: 'out_of_order_observation',
+      deliveries: [],
+    });
+    expect(harness.store.getSignal(signalId)?.state).toBe('open');
+    closeStore(harness.store);
+  });
+
+  it('does not let an older schedule clear a newer equal-observation alert', async () => {
+    const harness = createHarness();
+    const newer = await harness.service.run(
+      healthRequest({
+        scheduledFor: '2026-08-12T14:00:00Z',
+        evaluatedAt: '2026-08-12T14:00:00Z',
+        observedAt: '2026-08-10T12:59:00Z',
+        state: 'connected',
+        lastSuccessfulSyncAt: '2026-08-10T12:00:00Z',
+        consecutiveFailures: 0,
+      })
+    );
+    expect(newer.signals).toMatchObject([
+      {
+        state: 'open',
+        reasonCodes: ['connector_sync_stale'],
+      },
+    ]);
+    await acknowledge(harness.service, newer, '2026-08-12T14:01:00Z');
+    const signalId = newer.signals[0]!.signalId;
+
+    const delayed = await harness.service.run(
+      healthRequest({
+        scheduledFor: '2026-08-11T11:00:00Z',
+        evaluatedAt: '2026-08-11T11:00:00Z',
+        observedAt: '2026-08-10T12:59:00Z',
+        state: 'connected',
+        lastSuccessfulSyncAt: '2026-08-10T12:00:00Z',
+        consecutiveFailures: 0,
+      })
+    );
+
+    expect(delayed).toMatchObject({
       status: 'ignored',
       skipReason: 'out_of_order_observation',
       deliveries: [],

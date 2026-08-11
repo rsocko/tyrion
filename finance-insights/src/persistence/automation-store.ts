@@ -40,6 +40,7 @@ interface RunRowV1 {
 
 interface JobWatermarkRowV1 {
   latest_observed_at: string;
+  latest_scheduled_for: string | null;
   latest_source_as_of: string | null;
   latest_source_sequence: number | null;
   latest_source_generation: string | null;
@@ -243,7 +244,7 @@ export class FinanceAutomationSqliteStoreV1 {
     | null {
     const current = this.database
       .prepare(
-        `SELECT latest_observed_at, latest_source_as_of,
+        `SELECT latest_observed_at, latest_scheduled_for, latest_source_as_of,
                 latest_source_sequence, latest_source_generation,
                 observation_digest
          FROM finance_automation_job_watermarks
@@ -252,11 +253,17 @@ export class FinanceAutomationSqliteStoreV1 {
       .get(plan.connectorRef, plan.jobKind) as JobWatermarkRowV1 | undefined;
     if (!current) return null;
     if (plan.jobKind === 'connectorHealth') {
-      const ordering =
+      const observationOrdering =
         Date.parse(plan.observedAt) - Date.parse(current.latest_observed_at);
-      return ordering < 0 ||
-        (ordering === 0 &&
-          plan.inputFingerprint !== current.observation_digest)
+      const scheduleOrdering =
+        current.latest_scheduled_for === null
+          ? 0
+          : Date.parse(plan.scheduledFor) -
+            Date.parse(current.latest_scheduled_for);
+      return observationOrdering < 0 ||
+        (observationOrdering === 0 &&
+          (scheduleOrdering < 0 ||
+            plan.inputFingerprint !== current.observation_digest))
         ? 'out_of_order_observation'
         : null;
     }
@@ -279,7 +286,7 @@ export class FinanceAutomationSqliteStoreV1 {
     if (plan.jobKind !== 'connectorHealth') return plan;
     const current = this.database
       .prepare(
-        `SELECT latest_observed_at, latest_source_as_of,
+        `SELECT latest_observed_at, latest_scheduled_for, latest_source_as_of,
                 latest_source_sequence, latest_source_generation,
                 observation_digest
          FROM finance_automation_job_watermarks
@@ -295,7 +302,7 @@ export class FinanceAutomationSqliteStoreV1 {
   private recordWatermark(plan: FinanceAutomationEvaluationPlanV1): void {
     const current = this.database
       .prepare(
-        `SELECT latest_observed_at, latest_source_as_of,
+        `SELECT latest_observed_at, latest_scheduled_for, latest_source_as_of,
                 latest_source_sequence, latest_source_generation,
                 observation_digest
          FROM finance_automation_job_watermarks
@@ -306,15 +313,21 @@ export class FinanceAutomationSqliteStoreV1 {
       current?.latest_source_as_of ?? null,
       plan.sourceAsOf
     );
+    const latestScheduledFor = laterTimestamp(
+      current?.latest_scheduled_for ?? null,
+      plan.scheduledFor
+    );
     this.database
       .prepare(
         `INSERT INTO finance_automation_job_watermarks(
-           connector_ref, job_kind, latest_observed_at, latest_source_as_of,
+           connector_ref, job_kind, latest_observed_at, latest_scheduled_for,
+           latest_source_as_of,
            latest_source_sequence, latest_source_generation,
            observation_digest, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(connector_ref, job_kind) DO UPDATE SET
            latest_observed_at = excluded.latest_observed_at,
+           latest_scheduled_for = excluded.latest_scheduled_for,
            latest_source_as_of = excluded.latest_source_as_of,
            latest_source_sequence = excluded.latest_source_sequence,
            latest_source_generation = excluded.latest_source_generation,
@@ -325,6 +338,7 @@ export class FinanceAutomationSqliteStoreV1 {
         plan.connectorRef,
         plan.jobKind,
         plan.observedAt,
+        latestScheduledFor,
         latestSourceAsOf,
         plan.sourceSequence,
         plan.sourceGeneration,

@@ -80,6 +80,8 @@ contract version. A failure never substitutes its observation time for
   does not emit those task deliveries itself.
 - An older or conflicting equal-time observation is recorded as an ignored run and
   cannot change signal state.
+- For an equal connector observation, an older durable schedule is also ignored so
+  delayed work cannot clear attention produced by a newer freshness evaluation.
 - A newer connected observation with fresh sync data settles prior attention.
 
 The store keeps the greatest observed successful-sync timestamp for connector state,

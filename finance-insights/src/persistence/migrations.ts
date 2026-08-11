@@ -480,6 +480,25 @@ CREATE INDEX finance_automation_pending_deliveries
   ON finance_automation_delivery_outbox(connector_ref, acknowledged_at, delivery_key);
 `,
     },
+    {
+      version: 5,
+      name: 'automation-schedule-watermark',
+      sql: `
+ALTER TABLE finance_automation_job_watermarks
+  ADD COLUMN latest_scheduled_for TEXT;
+
+UPDATE finance_automation_job_watermarks
+SET latest_scheduled_for = (
+  SELECT run.scheduled_for
+  FROM finance_automation_job_runs AS run
+  WHERE run.connector_ref = finance_automation_job_watermarks.connector_ref
+    AND run.job_kind = finance_automation_job_watermarks.job_kind
+    AND json_extract(run.result_json, '$.status') = 'completed'
+  ORDER BY julianday(run.scheduled_for) DESC, run.scheduled_for DESC
+  LIMIT 1
+);
+`,
+    },
   ]);
 
 export function migrateFinanceInsightStoreV1(
