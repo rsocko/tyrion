@@ -441,6 +441,71 @@ describe('SQLite migrations and staged source publication', () => {
 });
 
 describe('evaluation fences and occurrence lifecycle', () => {
+  it('persists queued retry idempotency and recovers an expired claim with a new sequence', async () => {
+    const harness = await createHarness();
+    const publication = makePublication(1, '2026-08-10T15:00:00Z');
+    const committed = await publish(harness, publication);
+    const first = committed.evaluation!.assignment;
+    const retryRequest = {
+      contractVersion: '1.0' as const,
+      connectorRef: publication.request.connectorRef,
+      sourceGeneration: publication.request.sourceGeneration,
+      detectorSetVersion: FINANCE_INSIGHT_DETECTOR_SET_VERSION_V1,
+      expectedPolicyVersion: 1,
+      idempotencyKey: 'demo-queued-retry-idempotency',
+    };
+
+    const queuedReplay = await harness.service.retryEvaluation(retryRequest);
+    expect(queuedReplay.assignment.evaluationSequence).toBe(
+      first.evaluationSequence
+    );
+    expect(await harness.service.retryEvaluation(retryRequest)).toEqual(
+      queuedReplay
+    );
+    await harness.service.claimEvaluation(first);
+    harness.clock.value = '2026-08-10T15:11:00Z';
+    const recovered = await harness.service.retryEvaluation({
+      ...retryRequest,
+      idempotencyKey: 'demo-expired-claim-retry',
+    });
+    expect(recovered.assignment.evaluationSequence).toBe(
+      first.evaluationSequence + 1
+    );
+    expect(await harness.service.retryEvaluation(retryRequest)).toMatchObject({
+      assignment: { evaluationSequence: first.evaluationSequence },
+      state: 'failed',
+    });
+    await expectStoreError(
+      harness.service.completeEvaluation(first, {
+        state: 'failed',
+        completedAt: '2026-08-10T15:11:01Z',
+      }),
+      'stale_evaluation'
+    );
+    harness.store.close();
+  });
+
+  it('terminalizes a queued evaluation after its connector advances', async () => {
+    const harness = await createHarness();
+    const first = await publish(
+      harness,
+      makePublication(1, '2026-08-10T15:00:00Z')
+    );
+    const firstAssignment = first.evaluation!.assignment;
+    await publish(harness, makePublication(2, '2026-08-10T15:01:00Z'));
+
+    await expectStoreError(
+      harness.service.claimEvaluation(firstAssignment),
+      'stale_evaluation'
+    );
+    expect(
+      await harness.store.evaluations.find(firstAssignment.identity)
+    ).toMatchObject({
+      state: 'failed',
+    });
+    harness.store.close();
+  });
+
   it('assigns monotonic evaluation sequences and rejects delayed completion after retry', async () => {
     const harness = await createHarness();
     const publication = makePublication(1, '2026-08-10T15:00:00Z');
@@ -1189,6 +1254,31 @@ describe('actions, classification, optional evidence, and retention', () => {
       reason: 'comparisonNotRepresentative' as const,
     };
     const first = await harness.store.applyOccurrenceAction(request);
+    expect(await harness.store.applyOccurrenceAction(request)).toEqual(first);
+    const next = await publish(
+      harness,
+      makePublication(2, '2026-08-10T15:06:00Z')
+    );
+    await harness.service.completeEvaluation(
+      next.evaluation!.assignment,
+      {
+        state: 'completed',
+        summaries: [],
+        completedAt: '2026-08-10T15:06:01Z',
+      },
+      {
+        occurrences: [],
+        transitions: [
+          {
+            occurrenceId: harness.detail.occurrenceId,
+            state: 'resolved',
+            reasonCode: 'correction_resolved',
+            replacementOccurrenceId: null,
+            occurredAt: '2026-08-10T15:06:01Z',
+          },
+        ],
+      }
+    );
     expect(await harness.store.applyOccurrenceAction(request)).toEqual(first);
     expect(await harness.store.policies.current()).toEqual(before);
     harness.store.close();

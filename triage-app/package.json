@@ -13,6 +13,7 @@
     "test": "node --test test/operational-ui.test.mjs"
   },
   "dependencies": {
+    "@rsocko/tyrion-finance-insights": "file:../finance-insights",
     "@rsocko/tyrion-kid-engine": "file:../kid-engine",
     "next": "16.2.12",
     "react": "19.2.0",
