@@ -9,6 +9,7 @@ import {
   FinanceInsightStoreError,
   canonicalDigestV1,
   createCandidatePolicySnapshotV1,
+  evaluateRecurringAmountDetectorV1,
   parseFinanceInsightPolicySnapshotV1,
   parseInsightOccurrenceDetailV1,
   parseSourceFactBatchV1,
@@ -43,6 +44,65 @@ afterEach(() => {
 });
 
 describe('SQLite migrations and staged source publication', () => {
+  it('publishes recurring detector output from only the promoted projection', async () => {
+    const harness = await createHarness({
+      policy: { recurringAmountAnalysis: true },
+    });
+    const recurringRef = 'demo-recurring-sequence-1';
+    const recurringTransaction = (
+      suffix: string,
+      occurredOn: string,
+      amountMinor: number
+    ) => ({
+      ...transactionFact(suffix, amountMinor, { recurringRef }),
+      occurredOn,
+      merchantName: 'Demo Utility',
+    });
+    const source = makePublication(1, '2026-08-10T15:00:00Z', [
+      recurringTransaction('current', '2026-08-10', -28_640),
+      recurringTransaction('2025-07', '2025-07-10', -20_000),
+      recurringTransaction('2025-08', '2025-08-10', -20_000),
+      recurringTransaction('2025-09', '2025-09-10', -20_000),
+      recurringTransaction('2024-07', '2024-07-10', -20_000),
+      recurringTransaction('2024-08', '2024-08-10', -20_000),
+      recurringTransaction('2024-09', '2024-09-10', -20_000),
+    ]);
+    const committed = await publish(harness, source);
+    const policy = (await harness.store.policies.current())!;
+    const detector = await evaluateRecurringAmountDetectorV1({
+      projectionLoader: harness.store,
+      evidence: harness.store.documentEvidence,
+      source: {
+        connectorRef: source.request.connectorRef,
+        sourceGeneration: source.request.sourceGeneration,
+        sourceAsOf: source.request.sourceAsOf,
+        coverageStart: source.request.coverageStart,
+        coverageEnd: source.request.coverageEnd,
+        currency: source.request.currency,
+        bridgeContractVersion: source.request.bridgeContractVersion,
+        completeness: 'complete',
+      },
+      assignment: committed.evaluation!.assignment,
+      policy,
+      identityKey: Buffer.alloc(32, 19),
+      completedAt: harness.clock.value,
+    });
+
+    expect(detector.publication).not.toBeNull();
+    await harness.service.completeEvaluation(
+      committed.evaluation!.assignment,
+      detector.terminalResult,
+      detector.publication!
+    );
+    const occurrenceId = detector.analyses[0]!.occurrenceId!;
+    expect(await harness.store.getOccurrenceDetail(occurrenceId)).toMatchObject({
+      analysisState: 'qualified',
+      sourceLifecycle: 'open',
+      observedValue: { amountMinor: 28_640 },
+    });
+    harness.store.close();
+  });
+
   it('replays migrations and recovers a promoted projection after restart', async () => {
     const harness = await createHarness();
     const publication = makePublication(1, '2026-08-10T15:00:00Z');
@@ -1321,6 +1381,7 @@ async function createHarness(options?: {
   policy?: {
     transferCategoryRefs?: string[];
     refundTagRefs?: string[];
+    recurringAmountAnalysis?: boolean;
   };
 }): Promise<Harness> {
   const directory = mkdtempSync(join(tmpdir(), 'tyrion-finance-insights-'));
@@ -1341,6 +1402,12 @@ async function createHarness(options?: {
         ...base.sourceClassification,
         transferCategoryRefs: options?.policy?.transferCategoryRefs ?? [],
         refundTagRefs: options?.policy?.refundTagRefs ?? [],
+      },
+      featureGates: {
+        ...base.featureGates,
+        recurringAmountAnalysis:
+          options?.policy?.recurringAmountAnalysis ??
+          base.featureGates.recurringAmountAnalysis,
       },
     })
   );
