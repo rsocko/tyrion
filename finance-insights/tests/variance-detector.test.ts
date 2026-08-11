@@ -470,6 +470,31 @@ describe('category and merchant variance detector', () => {
     }
   });
 
+  it('ignores prior occurrences owned by another connector', () => {
+    const first = evaluateVarianceProjectionV1(
+      varianceInput(sixMonthSeries(Array(6).fill(50_000), 65_000))
+    );
+    const category = first.series.find(
+      (detail) => detail.kind === 'categoryVariance'
+    )!;
+    const foreign = parseInsightOccurrenceDetailV1({
+      ...category,
+      observationPeriod: { start: '2026-07-01', end: '2026-07-31' },
+      provenance: {
+        ...category.provenance,
+        connectorRef: 'demo-other-connector-v1',
+      },
+    });
+    const result = evaluateVarianceProjectionV1(
+      varianceInput(sixMonthSeries(Array(6).fill(50_000), 65_000), {
+        previousOccurrences: [
+          { detail: foreign, sourceRevisionRef: null },
+        ],
+      })
+    );
+    expect(result.publication.transitions).toEqual([]);
+  });
+
   it('increments delivery revision only at the exact material boundary', () => {
     const first = evaluateVarianceProjectionV1(
       varianceInput(sixMonthSeries(Array(6).fill(50_000), 65_000))
