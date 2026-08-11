@@ -248,7 +248,13 @@ normal authorization again when the action is invoked.
 | `suppressFinanceInsight180Days` | Suppress for 180 days | Confirmed protected Tyrion occurrence action with explicit scope/reason, expected delivery revision, expected policy version, and idempotency key; permanent suppression is unavailable |
 | `undoFinanceInsightSuppression` | Undo suppression | Confirmed protected Tyrion occurrence action with the authorized opaque suppression reference, expected delivery revision, expected policy version, and idempotency key |
 | `openFinanceReview` | Review finance exception | `/finance/review`, selecting an authorized opaque exception reference server-side |
-| `resolveFinanceException` | Resolve finance exception | Versioned, confirmed exception action; return to `/finance/review` with success or a sanitized actionable error |
+| `explainAttribution` | Explain attribution | Read-only protected Tyrion attribution action with fixed normalized provenance and expected policy version |
+| `assignAttributionKid` | Assign to kid | Confirmed protected Tyrion attribution action with an authorized assignable kid, expected policy/state versions, and idempotency key |
+| `markAttributionParentExpense` | Mark as parent expense | Confirmed protected Tyrion attribution action with expected policy/state versions and idempotency key |
+| `unassignAttribution` | Leave unassigned | Confirmed protected Tyrion attribution action with expected policy/state versions and idempotency key |
+| `resolveAttributionException` | Resolve attribution exception | Confirmed protected Tyrion attribution action with expected policy/state versions and idempotency key; available only when the current attributed kid and policy remain valid |
+| `deferAttributionException` | Defer attribution exception | Confirmed protected Tyrion attribution action with a future time no more than 30 days away, expected policy/state versions, and idempotency key |
+| `resolveNonAttributionFinanceException` | Resolve finance exception | Versioned, confirmed non-attribution exception action; return to `/finance/review` with success or a sanitized actionable error |
 | `openFinanceReconciliation` | Open reconciliation | `/finance/reconciliation`, selecting an authorized opaque match reference server-side |
 | `resolveFinanceReconciliation` | Resolve reconciliation item | Versioned, confirmed reconciliation action; return to `/finance/reconciliation` with success or a sanitized actionable error |
 | `openFinanceSettings` | Open Finance settings | `/finance/settings` |
@@ -270,6 +276,16 @@ return raw upstream payloads. Mission Control maps Tyrion's occurrence
 `suppress90Days`, `suppress180Days`, and `undoSuppression`) only to their corresponding
 registry capability above; unavailable actions are omitted. Insight feedback and
 suppression never create a task or imply notification/source settlement.
+
+Mission Control likewise maps the current attribution response's `availableActions`
+one-to-one: `explain`, `assign-kid`, `mark-parent-expense`, `unassign`,
+`resolve-exception`, `defer-exception`, and `open-in-monarch`. It never infers an
+attribution mutation from review status. Every mutation uses fixed
+`mission-control-normalized-v1` provenance, `confirm: true`, the response's expected
+policy and state versions, and an idempotency key. Assignment is limited to the
+response's `assignableKidIds`; defer is limited to the contract's 30-day window.
+`resolve-exception` is omitted for unassigned, already resolved, stale-policy, or
+otherwise ineligible state.
 
 ## Accessible action behavior
 
