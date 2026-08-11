@@ -73,17 +73,17 @@ export function classifyTransactionV1(
       classification.classifierVersion
     );
   }
-  if (fact.recurringRef !== null) {
-    return result(
-      'knownRecurring',
-      'known_recurring_excluded',
-      classification.classifierVersion
-    );
-  }
   if (fact.amountMinor >= 0) {
     return result(
       'unclassifiedCredit',
       'unclassified_credit_excluded',
+      classification.classifierVersion
+    );
+  }
+  if (fact.recurringRef !== null) {
+    return result(
+      'knownRecurring',
+      'known_recurring_excluded',
       classification.classifierVersion
     );
   }
