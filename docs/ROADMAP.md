@@ -95,7 +95,8 @@ awareness and action.
 [#24](https://github.com/rsocko/tyrion/issues/24).
 
 - [ ] Run threshold, anomaly, duplicate, sync-health, and summary jobs on durable
-  schedules.
+  schedules. Duplicate and sync-health job handlers now have durable run/signal
+  semantics; deployment cadence and the remaining job families are still pending.
 - [ ] Detect unusual recurring-bill amounts using rolling and seasonally comparable
   baselines, combined dollar/percentage thresholds, and available usage or
   billing-period evidence ([#22](https://github.com/rsocko/tyrion/issues/22)).

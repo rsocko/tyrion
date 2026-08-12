@@ -51,6 +51,10 @@
     "./services": {
       "types": "./dist/services/index.d.ts",
       "import": "./dist/services/index.js"
+    },
+    "./automation": {
+      "types": "./dist/automation/index.d.ts",
+      "import": "./dist/automation/index.js"
     }
   },
   "sideEffects": false,

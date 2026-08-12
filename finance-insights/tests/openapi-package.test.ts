@@ -144,6 +144,7 @@ describe('executable contract and internal package boundary', () => {
     expect(manifest.publishConfig).toBeUndefined();
     expect(Object.keys(manifest.exports).sort()).toEqual([
       '.',
+      './automation',
       './contracts/v1',
       './core',
       './detectors',

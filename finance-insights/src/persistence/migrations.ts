@@ -399,6 +399,106 @@ SET scope_ref = (
 WHERE scope = 'entity';
 `,
     },
+    {
+      version: 4,
+      name: 'durable-finance-automation',
+      sql: `
+CREATE TABLE finance_automation_job_watermarks (
+  connector_ref TEXT NOT NULL,
+  job_kind TEXT NOT NULL CHECK (job_kind IN ('duplicateTransactions', 'connectorHealth')),
+  latest_observed_at TEXT NOT NULL,
+  latest_source_as_of TEXT,
+  latest_source_sequence INTEGER,
+  latest_source_generation TEXT,
+  observation_digest TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (connector_ref, job_kind),
+  CHECK (
+    (job_kind = 'duplicateTransactions' AND
+     latest_source_sequence IS NOT NULL AND latest_source_generation IS NOT NULL) OR
+    (job_kind = 'connectorHealth' AND
+     latest_source_sequence IS NULL AND latest_source_generation IS NULL)
+  )
+) STRICT;
+
+CREATE TABLE finance_automation_signals (
+  signal_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('duplicateTransaction', 'connectorHealth')),
+  connector_ref TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('open', 'settled')),
+  attention TEXT NOT NULL CHECK (attention IN ('informational', 'actionable')),
+  fingerprint TEXT NOT NULL,
+  signal_json TEXT NOT NULL,
+  opened_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  settled_at TEXT
+) STRICT;
+
+CREATE INDEX finance_automation_open_signals
+  ON finance_automation_signals(connector_ref, kind, state, signal_id);
+
+CREATE TABLE finance_automation_signal_events (
+  signal_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL CHECK (sequence > 0),
+  action TEXT NOT NULL CHECK (action IN ('create', 'update', 'settle', 'reopen')),
+  run_id TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  PRIMARY KEY (signal_id, sequence),
+  FOREIGN KEY (signal_id)
+    REFERENCES finance_automation_signals(signal_id) ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE finance_automation_job_runs (
+  run_id TEXT PRIMARY KEY,
+  job_kind TEXT NOT NULL CHECK (job_kind IN ('duplicateTransactions', 'connectorHealth')),
+  connector_ref TEXT NOT NULL,
+  scheduled_for TEXT NOT NULL,
+  request_digest TEXT NOT NULL,
+  source_as_of TEXT,
+  completed_at TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  UNIQUE (job_kind, connector_ref, scheduled_for)
+) STRICT;
+
+CREATE TABLE finance_automation_delivery_outbox (
+  delivery_key TEXT PRIMARY KEY,
+  version INTEGER NOT NULL CHECK (version > 0),
+  signal_id TEXT NOT NULL UNIQUE,
+  connector_ref TEXT NOT NULL,
+  target TEXT NOT NULL CHECK (target = 'notification'),
+  action TEXT NOT NULL CHECK (action IN ('create', 'update', 'settle')),
+  delivery_json TEXT NOT NULL,
+  last_run_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  acknowledged_at TEXT,
+  FOREIGN KEY (signal_id)
+    REFERENCES finance_automation_signals(signal_id) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX finance_automation_pending_deliveries
+  ON finance_automation_delivery_outbox(connector_ref, acknowledged_at, delivery_key);
+`,
+    },
+    {
+      version: 5,
+      name: 'automation-schedule-watermark',
+      sql: `
+ALTER TABLE finance_automation_job_watermarks
+  ADD COLUMN latest_scheduled_for TEXT;
+
+UPDATE finance_automation_job_watermarks
+SET latest_scheduled_for = (
+  SELECT run.scheduled_for
+  FROM finance_automation_job_runs AS run
+  WHERE run.connector_ref = finance_automation_job_watermarks.connector_ref
+    AND run.job_kind = finance_automation_job_watermarks.job_kind
+    AND json_extract(run.result_json, '$.status') = 'completed'
+  ORDER BY julianday(run.scheduled_for) DESC, run.scheduled_for DESC
+  LIMIT 1
+);
+`,
+    },
   ]);
 
 export function migrateFinanceInsightStoreV1(
