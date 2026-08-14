@@ -11,7 +11,7 @@ describe('executable contract and internal package boundary', () => {
       )
     );
     expect(document).toEqual(createFinanceInsightsOpenApiV1());
-    expect(Object.keys(document.paths)).toHaveLength(7);
+    expect(Object.keys(document.paths)).toHaveLength(9);
     expect(JSON.stringify(document)).not.toContain('monarch-bridge/contract.py');
   });
 

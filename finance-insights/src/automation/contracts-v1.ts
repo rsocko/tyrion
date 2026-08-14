@@ -43,11 +43,7 @@ const suppressedPairSchema = z
       .tuple([sourceReferenceSchema, sourceReferenceSchema])
       .refine(([left, right]) => left !== right, 'must identify two transactions'),
     reason: z.enum(['expectedDuplicate', 'connectorRetry']),
-  })
-  .transform((value) => ({
-    ...value,
-    sourceRefs: [...value.sourceRefs].sort() as [string, string],
-  }));
+  });
 
 const duplicateTransactionJobRequestSchema = z
   .strictObject({
@@ -70,7 +66,9 @@ const duplicateTransactionJobRequestSchema = z
     if (Date.parse(value.scheduledFor) > Date.parse(value.evaluatedAt)) {
       addIssue(context, ['scheduledFor'], 'must not be after evaluatedAt');
     }
-    const pairKeys = value.suppressedPairs.map((pair) => pair.sourceRefs.join('\0'));
+    const pairKeys = value.suppressedPairs.map((pair) =>
+      [...pair.sourceRefs].sort().join('\0')
+    );
     if (new Set(pairKeys).size !== pairKeys.length) {
       addIssue(context, ['suppressedPairs'], 'must contain unique transaction pairs');
     }
@@ -208,6 +206,113 @@ export type FinanceAutomationReasonCodeV1 =
   | 'connector_repeated_failures'
   | 'condition_recovered';
 
+const financeAutomationReasonCodeSchema = z.enum([
+  'duplicate_exact_match',
+  'duplicate_adjacent_date_match',
+  'connector_reported_degraded',
+  'connector_reported_unavailable',
+  'connector_sync_stale',
+  'connector_repeated_failures',
+  'condition_recovered',
+]);
+
+const financeAutomationProvenanceSchema = z.strictObject({
+  connectorRef: sourceReferenceSchema,
+  providerClass: z.literal('monarchBridgeNormalized'),
+  bridgeContractVersion: versionIdentifierSchema,
+  sourceGeneration: sourceReferenceSchema.nullable(),
+  sourceAsOf: utcTimestampSchema.nullable(),
+  observedAt: utcTimestampSchema,
+  evaluatedAt: utcTimestampSchema,
+  detectorSetVersion: z.literal(FINANCE_AUTOMATION_DETECTOR_SET_VERSION_V1),
+  detectorVersion: z.enum([
+    DUPLICATE_TRANSACTION_DETECTOR_VERSION_V1,
+    CONNECTOR_HEALTH_DETECTOR_VERSION_V1,
+  ]),
+  policyVersion: positiveSequenceSchema,
+});
+
+const financeAutomationEvidenceSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('duplicateTransaction'),
+    sameAmount: z.literal(true),
+    sameMerchant: z.literal(true),
+    sameAccount: z.literal(true),
+    dateGapDays: z.number().int().min(0).max(7),
+    observedDates: z.tuple([
+      z.string().date(),
+      z.string().date(),
+    ]),
+  }),
+  z.strictObject({
+    kind: z.literal('connectorHealth'),
+    reportedState: z.enum(['connected', 'degraded', 'unavailable']),
+    consecutiveFailures: z.number().int().nonnegative().max(10_000),
+    sourceAgeHours: z.number().int().nonnegative().nullable(),
+  }),
+]);
+
+export const financeAutomationSignalSchema = z.strictObject({
+  contractVersion: contractVersionSchema,
+  signalId: z.string().regex(/^signal-v1_[A-Za-z0-9_-]{43}$/),
+  kind: z.enum(['duplicateTransaction', 'connectorHealth']),
+  connectorRef: sourceReferenceSchema,
+  state: z.enum(['open', 'settled']),
+  severity: z.enum(['medium', 'high']),
+  confidence: z.enum(['medium', 'high']),
+  attention: z.enum(['informational', 'actionable']),
+  reasonCodes: z.array(financeAutomationReasonCodeSchema).max(7),
+  relatedSourceRefs: z.array(sourceReferenceSchema).max(2),
+  evidence: financeAutomationEvidenceSchema,
+  freshness: z.enum(['fresh', 'stale', 'unavailable']),
+  provenance: financeAutomationProvenanceSchema,
+  openedAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema,
+  settledAt: utcTimestampSchema.nullable(),
+});
+
+const automationDeliveryKeySchema = z
+  .string()
+  .regex(/^finance-automation:signal-v1_[A-Za-z0-9_-]{43}$/);
+
+export const financeAutomationDeliverySchema = z.strictObject({
+  deliveryKey: automationDeliveryKeySchema,
+  version: positiveSequenceSchema,
+  signalId: z.string().regex(/^signal-v1_[A-Za-z0-9_-]{43}$/),
+  target: z.literal('notification'),
+  action: z.enum(['create', 'update', 'settle']),
+  signal: financeAutomationSignalSchema,
+});
+
+export const financeAutomationJobResultSchema = z.strictObject({
+  contractVersion: contractVersionSchema,
+  runId: z.string().regex(/^run-v1_[A-Za-z0-9_-]{43}$/),
+  jobKind: z.enum(['duplicateTransactions', 'connectorHealth']),
+  connectorRef: sourceReferenceSchema,
+  scheduledFor: utcTimestampSchema,
+  status: z.enum(['completed', 'skipped', 'ignored']),
+  skipReason: z
+    .enum([
+      'disabled',
+      'source_stale',
+      'source_partial',
+      'source_unavailable',
+      'out_of_order_observation',
+      'out_of_order_source_generation',
+    ])
+    .nullable(),
+  sourceAsOf: utcTimestampSchema.nullable(),
+  candidateCount: z.number().int().nonnegative().max(100),
+  exclusionSummary: z.record(
+    z.string().min(1).max(80),
+    z.number().int().nonnegative()
+  ),
+  signals: z.array(financeAutomationSignalSchema).max(200),
+  deliveries: z.array(financeAutomationDeliverySchema).max(100),
+  replayed: z.boolean(),
+  completedAt: utcTimestampSchema,
+});
+
 export interface FinanceAutomationProvenanceV1 {
   readonly connectorRef: string;
   readonly providerClass: 'monarchBridgeNormalized';
@@ -297,9 +402,7 @@ const financeAutomationDeliveryAckRequestSchema = z.strictObject({
   deliveries: z
     .array(
       z.strictObject({
-        deliveryKey: z
-          .string()
-          .regex(/^finance-automation:signal-v1_[A-Za-z0-9_-]{43}$/),
+        deliveryKey: automationDeliveryKeySchema,
         expectedVersion: positiveSequenceSchema,
       })
     )
@@ -315,6 +418,14 @@ const financeAutomationDeliveryAckRequestSchema = z.strictObject({
 export type FinanceAutomationDeliveryAckRequestV1 = Readonly<
   z.infer<typeof financeAutomationDeliveryAckRequestSchema>
 >;
+
+export { financeAutomationDeliveryAckRequestSchema };
+
+export const financeAutomationDeliveryAckResultSchema = z.strictObject({
+  contractVersion: contractVersionSchema,
+  acknowledged: z.array(automationDeliveryKeySchema).max(100),
+  conflicts: z.array(automationDeliveryKeySchema).max(100),
+});
 
 export interface FinanceAutomationDeliveryAckResultV1 {
   readonly contractVersion: '1.0';
@@ -373,6 +484,26 @@ export function parseFinanceAutomationDeliveryAckRequestV1(
     value,
     'finance automation delivery acknowledgement'
   );
+}
+
+export function parseFinanceAutomationJobResultV1(
+  value: unknown
+): FinanceAutomationJobResultV1 {
+  return parseContractV1(
+    financeAutomationJobResultSchema,
+    value,
+    'finance automation job result'
+  ) as FinanceAutomationJobResultV1;
+}
+
+export function parseFinanceAutomationDeliveryAckResultV1(
+  value: unknown
+): FinanceAutomationDeliveryAckResultV1 {
+  return parseContractV1(
+    financeAutomationDeliveryAckResultSchema,
+    value,
+    'finance automation delivery acknowledgement result'
+  ) as FinanceAutomationDeliveryAckResultV1;
 }
 
 function addIssue(

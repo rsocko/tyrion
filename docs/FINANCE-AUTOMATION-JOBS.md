@@ -8,18 +8,29 @@ Issue #162 adds two Tyrion-private scheduled evaluations to `finance-insights/`:
   attention, and settles that attention only after a newer healthy observation.
 
 These jobs do not create Monarch sessions, call Monarch, expose raw upstream
-responses, or add browser routes. They also add no HTTP or other cross-process
-transport route: the handler is currently an internal package contract and cannot be
-invoked by an external Mission Control scheduler until a separate protected transport
-is approved and implemented. A trusted in-process worker supplies normalized Bridge
-facts and observations, a stable 32-byte identity key, an absolute external SQLite
-path, and the durable schedule time.
+responses, or add browser routes. Mission Control invokes them through the existing
+private Finance Insights authority and bearer boundary:
+
+- `POST /api/internal/v1/finance/insights/automation/jobs`
+- `POST /api/internal/v1/finance/insights/automation/deliveries/ack`
+
+Both routes are fail-closed behind
+`TYRION_FINANCE_AUTOMATION_WRITE_ENABLED`. The private caller supplies only normalized
+Bridge facts or health observations, the durable schedule instant, and the matching
+versioned policy. The runtime holds the stable identity key and absolute external
+SQLite path; neither crosses the service boundary.
 
 ## Durable run and signal semantics
 
 `FinanceAutomationJobServiceV1` derives a keyed run identity from job kind,
 connector reference, and `scheduledFor`. The SQLite store commits the run, signal
 lifecycle changes, and versioned delivery outbox in one immediate transaction.
+
+The runtime also acquires a five-minute cross-process lease per connector and job kind
+before applying a run. A concurrent caller receives the sanitized
+`evaluation_in_progress` response with bounded `Retry-After`; an expired lease is
+recoverable after worker interruption. Health telemetry exposes only aggregate
+started, completed, rejected, and failed counts.
 
 - Replaying the same scheduled input returns the stored result with
   `replayed: true` and any unacknowledged outbox delivery. After the consumer
@@ -89,23 +100,32 @@ contract version. A failure never substitutes its observation time for
 The store keeps the greatest observed successful-sync timestamp for connector state,
 so later failures cannot advance or regress the internal freshness watermark.
 
-## Worker integration
+## Mission Control worker integration
 
-An eventual trusted in-process worker remains the owner of cadence, retries, and
-process supervision. #162 does not itself make these steps available across process
-boundaries. For each durable schedule:
+Mission Control remains the owner of cadence, incremental Bridge synchronization,
+household policy evaluation, provider persistence, task routing, weekly digest
+materialization, retries, and process supervision. Tyrion owns deterministic signal
+meaning, source lifecycle, and the durable delivery outbox. For each durable schedule:
 
 1. Load only normalized facts through the protected Bridge/source-generation
    contract.
 2. Set `scheduledFor` to the durable schedule instant, not the retry instant.
 3. Run the service with the stable external state path and stable identity key.
-4. Apply each delivery's embedded signal snapshot for `create`, `update`, and
-   `settle` idempotently by `deliveryKey` and `version`.
+4. Apply each delivery's embedded signal snapshot through Mission Control's Finance
+   notification provider for `create`, `update`, and `settle`, idempotently by
+   `deliveryKey` and `version`. Informational signals remain notifications/status;
+   only the normative Finance routing matrix may create tasks for clear user actions.
 5. Call `acknowledgeDeliveries` with the applied key and exact version. A stale
    acknowledgement conflicts rather than clearing a newer outbox action.
 6. Do not log requests, signals, source references, amounts, merchant names, state
    paths, upstream errors, or delivery payloads. Metadata-only counts and stable
    error codes are sufficient for operations.
+
+Weekly household summaries are decision-oriented Mission Control projections. They
+link to existing `/finance`, `/finance/review`, and `/finance/reconciliation` records,
+never duplicate member notifications or tasks, and expire when the next weekly period
+is published. Authoritative Monarch and document actions use typed targets resolved by
+Mission Control rather than producer-supplied URLs.
 
 Deterministic coverage is in
 `finance-insights/tests/automation-jobs-v1.test.ts`.

@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   FINANCE_INSIGHT_MIGRATIONS_V1,
   FinanceAutomationIdempotencyConflictError,
+  FinanceAutomationJobInProgressError,
   FinanceAutomationJobServiceV1,
   FinanceAutomationSqliteStoreV1,
   createCandidateAutomationPolicyV1,
@@ -61,6 +62,87 @@ describe('durable finance automation jobs v1', () => {
       }
     }
   );
+
+  it('prevents overlapping connector jobs across store connections and releases the lease', async () => {
+    const harness = createHarness();
+    const secondStore = new FinanceAutomationSqliteStoreV1({
+      path: harness.path,
+    });
+    openStores.add(secondStore);
+    const held = secondStore.acquireJobLease({
+      connectorRef: 'invented-connector',
+      jobKind: 'connectorHealth',
+      ownerToken: 'held-by-another-worker',
+      acquiredAt: '2026-08-10T13:00:00.000Z',
+      expiresAt: '2026-08-10T13:05:00.000Z',
+    });
+    expect(held).toBe(true);
+    const service = new FinanceAutomationJobServiceV1({
+      store: harness.store,
+      identityKey: IDENTITY_KEY,
+      clock: () => new Date('2026-08-10T13:01:00.000Z'),
+    });
+    const request = healthRequest({
+      scheduledFor: '2026-08-10T13:00:00Z',
+      evaluatedAt: '2026-08-10T13:00:00Z',
+      observedAt: '2026-08-10T12:59:00Z',
+      state: 'degraded',
+      lastSuccessfulSyncAt: '2026-08-10T12:00:00Z',
+      consecutiveFailures: 1,
+    });
+
+    await expect(service.run(request)).rejects.toBeInstanceOf(
+      FinanceAutomationJobInProgressError
+    );
+    secondStore.releaseJobLease({
+      connectorRef: 'invented-connector',
+      jobKind: 'connectorHealth',
+      ownerToken: 'held-by-another-worker',
+    });
+    await expect(service.run(request)).resolves.toMatchObject({
+      status: 'completed',
+      replayed: false,
+    });
+    closeStore(secondStore);
+    closeStore(harness.store);
+  });
+
+  it('recovers an expired automation lease after a worker interruption', async () => {
+    const harness = createHarness();
+    expect(
+      harness.store.acquireJobLease({
+        connectorRef: 'invented-connector',
+        jobKind: 'connectorHealth',
+        ownerToken: 'expired-worker',
+        acquiredAt: '2026-08-10T12:00:00.000Z',
+        expiresAt: '2026-08-10T12:05:00.000Z',
+      })
+    ).toBe(true);
+    expect(
+      harness.store.acquireJobLease({
+        connectorRef: 'invented-connector',
+        jobKind: 'connectorHealth',
+        ownerToken: 'replacement-worker',
+        acquiredAt: '2026-08-10T12:05:00.000Z',
+        expiresAt: '2026-08-10T12:10:00.000Z',
+      })
+    ).toBe(true);
+    harness.store.releaseJobLease({
+      connectorRef: 'invented-connector',
+      jobKind: 'connectorHealth',
+      ownerToken: 'expired-worker',
+    });
+    expect(
+      harness.store.acquireJobLease({
+        connectorRef: 'invented-connector',
+        jobKind: 'connectorHealth',
+        ownerToken: 'overlapping-worker',
+        acquiredAt: '2026-08-10T12:06:00.000Z',
+        expiresAt: '2026-08-10T12:11:00.000Z',
+      })
+    ).toBe(false);
+    closeStore(harness.store);
+  });
 
   it('backfills a v4 schedule watermark by chronological timestamp order', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tyrion-automation-v4-'));
@@ -205,6 +287,106 @@ describe('durable finance automation jobs v1', () => {
     });
     await acknowledge(harness.service, replay, '2026-08-10T12:06:00Z');
     expect((await harness.service.run(request)).deliveries).toEqual([]);
+    closeStore(harness.store);
+  });
+
+  it('batches a connector outbox at the acknowledgement contract limit', async () => {
+    const harness = createHarness();
+    const transactions = Array.from({ length: 100 }, (_, index) => {
+      const pair = String(index).padStart(3, '0');
+      return [
+        transaction(`invented-${pair}-a`, '2026-08-10', {
+          amountMinor: -(10_000 + index),
+          merchantName: `Invented Merchant ${pair}`,
+        }),
+        transaction(`invented-${pair}-b`, '2026-08-10', {
+          amountMinor: -(10_000 + index),
+          merchantName: `Invented Merchant ${pair}`,
+        }),
+      ];
+    }).flat();
+    const duplicates = await harness.service.run(
+      duplicateRequest({ transactions, maxCandidates: 100 })
+    );
+    expect(duplicates.deliveries).toHaveLength(100);
+
+    const health = await harness.service.run(
+      healthRequest({
+        scheduledFor: '2026-08-10T13:00:00Z',
+        evaluatedAt: '2026-08-10T13:00:00Z',
+        observedAt: '2026-08-10T12:59:00Z',
+        state: 'degraded',
+        lastSuccessfulSyncAt: '2026-08-10T12:00:00Z',
+        consecutiveFailures: 1,
+      })
+    );
+    expect(health.deliveries).toHaveLength(100);
+    await acknowledge(harness.service, health, '2026-08-10T13:01:00Z');
+
+    const remainder = await harness.service.run(
+      healthRequest({
+        scheduledFor: '2026-08-10T13:00:00Z',
+        evaluatedAt: '2026-08-10T13:00:00Z',
+        observedAt: '2026-08-10T12:59:00Z',
+        state: 'degraded',
+        lastSuccessfulSyncAt: '2026-08-10T12:00:00Z',
+        consecutiveFailures: 1,
+      })
+    );
+    expect(remainder.deliveries).toHaveLength(1);
+    expect(
+      health.deliveries.some(
+        (delivery) =>
+          delivery.deliveryKey === remainder.deliveries[0]?.deliveryKey
+      )
+    ).toBe(false);
+    closeStore(harness.store);
+  });
+
+  it('bounds the response while durably settling more than 200 signals', async () => {
+    const harness = createHarness();
+    for (let generation = 1; generation <= 5; generation += 1) {
+      const transactions = Array.from({ length: 51 }, (_, index) => {
+        const pair = `${generation}-${String(index).padStart(3, '0')}`;
+        return [
+          transaction(`invented-${pair}-a`, '2026-08-10', {
+            amountMinor: -(generation * 10_000 + index),
+            merchantName: `Invented Merchant ${pair}`,
+          }),
+          transaction(`invented-${pair}-b`, '2026-08-10', {
+            amountMinor: -(generation * 10_000 + index),
+            merchantName: `Invented Merchant ${pair}`,
+          }),
+        ];
+      }).flat();
+      const hour = String(10 + generation).padStart(2, '0');
+      const result = await harness.service.run(
+        duplicateRequest({
+          transactions,
+          generation,
+          sourceAsOf: `2026-08-10T${hour}:00:00Z`,
+          scheduledFor: `2026-08-10T${hour}:05:00Z`,
+          evaluatedAt: `2026-08-10T${hour}:05:00Z`,
+        })
+      );
+      expect(result.candidateCount).toBe(50);
+      expect(result.exclusionSummary.candidate_limit_reached).toBe(1);
+    }
+
+    const settled = await harness.service.run(
+      duplicateRequest({
+        transactions: [],
+        generation: 6,
+        sourceAsOf: '2026-08-10T16:00:00Z',
+        scheduledFor: '2026-08-10T16:05:00Z',
+        evaluatedAt: '2026-08-10T16:05:00Z',
+      })
+    );
+    expect(settled.signals).toHaveLength(200);
+    expect(settled.signals.every((signal) => signal.state === 'settled')).toBe(
+      true
+    );
+    expect(settled.deliveries).toHaveLength(100);
     closeStore(harness.store);
   });
 
@@ -975,6 +1157,7 @@ async function acknowledge(
 
 function duplicateRequest(options: {
   transactions: TransactionSourceFactV1[];
+  maxCandidates?: number;
   suppressedPairs?: {
     sourceRefs: [string, string];
     reason: 'expectedDuplicate' | 'connectorRetry';
@@ -988,6 +1171,7 @@ function duplicateRequest(options: {
 }): DuplicateTransactionJobRequestV1 {
   const sourceAsOf = options.sourceAsOf ?? '2026-08-10T12:00:00Z';
   const generation = options.generation ?? 1;
+  const policy = automationPolicy(generation);
   return parseFinanceAutomationJobRequestV1({
     contractVersion: '1.0',
     jobKind: 'duplicateTransactions',
@@ -1005,7 +1189,14 @@ function duplicateRequest(options: {
     transactions: options.transactions,
     suppressedPairs: options.suppressedPairs ?? [],
     insightPolicy: insightPolicy(generation),
-    automationPolicy: automationPolicy(generation),
+    automationPolicy: {
+      ...policy,
+      duplicateTransactions: {
+        ...policy.duplicateTransactions,
+        maxCandidates:
+          options.maxCandidates ?? policy.duplicateTransactions.maxCandidates,
+      },
+    },
   }) as DuplicateTransactionJobRequestV1;
 }
 

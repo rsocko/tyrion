@@ -446,6 +446,8 @@ before(async () => {
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "true",
+      TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "true",
+      TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
       TYRION_REATTRIBUTION_URL: fakeReattributionUrl,
       TYRION_REATTRIBUTION_TOKEN: reattributionToken,
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "true",
@@ -737,6 +739,76 @@ test("finance insight service promotes an exact empty generation idempotently", 
     assert.equal(fenced.status, 409);
     assert.equal((await fenced.json()).error.code, "stale_evaluation");
   }
+});
+
+test("finance automation jobs deliver and acknowledge exact versions idempotently", async () => {
+  const candidate = financeContract.createCandidateAutomationPolicyV1(1);
+  const automationPolicy = financeContract.parseFinanceAutomationPolicyV1({
+    ...candidate,
+    connectorHealth: {
+      ...candidate.connectorHealth,
+      enabled: true,
+    },
+  });
+  const request = {
+    contractVersion: "1.0",
+    jobKind: "connectorHealth",
+    connectorRef: "service-connector",
+    scheduledFor: "2026-08-10T13:00:00Z",
+    evaluatedAt: "2026-08-10T13:00:00Z",
+    observation: {
+      observedAt: "2026-08-10T12:59:00Z",
+      state: "unavailable",
+      lastSuccessfulSyncAt: "2026-08-10T12:00:00Z",
+      consecutiveFailures: 3,
+      bridgeContractVersion: "bridge-v1",
+    },
+    automationPolicy,
+  };
+  const firstResponse = await insightRequest("/automation/jobs", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+  assert.equal(firstResponse.status, 200);
+  const first = financeContract.parseFinanceAutomationJobResultV1(
+    await firstResponse.json()
+  );
+  assert.equal(first.replayed, false);
+  assert.equal(first.deliveries.length, 1);
+  assert.equal(first.deliveries[0].target, "notification");
+  assert.equal(first.deliveries[0].signal.attention, "actionable");
+
+  const acknowledgement = await insightRequest(
+    "/automation/deliveries/ack",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        contractVersion: "1.0",
+        acknowledgedAt: "2026-08-10T13:01:00Z",
+        deliveries: [{
+          deliveryKey: first.deliveries[0].deliveryKey,
+          expectedVersion: first.deliveries[0].version,
+        }],
+      }),
+    }
+  );
+  assert.equal(acknowledgement.status, 200);
+  assert.deepEqual(await acknowledgement.json(), {
+    contractVersion: "1.0",
+    acknowledged: [first.deliveries[0].deliveryKey],
+    conflicts: [],
+  });
+
+  const replayResponse = await insightRequest("/automation/jobs", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+  assert.equal(replayResponse.status, 200);
+  const replay = financeContract.parseFinanceAutomationJobResultV1(
+    await replayResponse.json()
+  );
+  assert.equal(replay.replayed, true);
+  assert.deepEqual(replay.deliveries, []);
 });
 
 test("finance insight service publishes detail and enforces action CAS and suppression", async () => {
@@ -1076,6 +1148,8 @@ test("finance insight rollout gates fail closed and health remains metadata-only
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "false",
+      TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
     },
@@ -1087,6 +1161,7 @@ test("finance insight rollout gates fail closed and health remains metadata-only
       ["/source-generations", { method: "POST", body: "{}" }],
       ["/occurrences", {}],
       ["/occurrences/disabled/actions", { method: "POST", body: "{}" }],
+      ["/automation/jobs", { method: "POST", body: "{}" }],
     ]) {
       const response = await insightRequest(path, options, disabledUrl);
       assert.equal(response.status, 503);
@@ -1102,6 +1177,10 @@ test("finance insight rollout gates fail closed and health remains metadata-only
         evaluationStartedCount: 0,
         evaluationCompletedCount: 0,
         evaluationFailedCount: 0,
+        automationStartedCount: 0,
+        automationCompletedCount: 0,
+        automationRejectedCount: 0,
+        automationFailedCount: 0,
       },
     });
     assert.doesNotMatch(

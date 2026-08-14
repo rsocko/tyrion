@@ -124,7 +124,7 @@ def check_policy(
     if len(matching_causes) != 1:
         failures.append("Nano ID audit entry does not match the approved advisory")
     elif (
-        matching_causes[0].get("range") != "<3.3.17"
+        matching_causes[0].get("range") != "<3.3.18"
         or matching_causes[0].get("severity") != "high"
     ):
         failures.append("Nano ID advisory metadata changed")

@@ -130,7 +130,7 @@ export function evaluateDuplicateTransactionsV1(
 
   const suppression = new Map(
     request.suppressedPairs.map((pair) => [
-      pair.sourceRefs.join('\0'),
+      [...pair.sourceRefs].sort().join('\0'),
       pair.reason,
     ])
   );
