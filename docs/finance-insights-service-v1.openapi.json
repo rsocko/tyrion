@@ -640,6 +640,304 @@
         }
       }
     },
+    "/api/internal/v1/finance/insights/automation/jobs": {
+      "post": {
+        "operationId": "runFinanceAutomationJobV1",
+        "summary": "Run one durable scheduled automation evaluation without overlapping the same connector job",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinanceAutomationJobRequestV1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceAutomationJobResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse400V1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse401V1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse403V1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Route or occurrence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse404V1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, sequence, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse409V1"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request or generation exceeds a safety bound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse413V1"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse415V1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Semantically invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse422V1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Evaluation is already in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse429V1"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "required": true,
+                "description": "Bounded retry delay in seconds.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 300
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized operation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse500V1"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service, source, or store unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse503V1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/v1/finance/insights/automation/deliveries/ack": {
+      "post": {
+        "operationId": "acknowledgeFinanceAutomationDeliveriesV1",
+        "summary": "Acknowledge exact delivery versions after Mission Control applies them",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinanceAutomationDeliveryAckRequestV1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceAutomationDeliveryAckResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse400V1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse401V1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse403V1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Route or occurrence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse404V1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, sequence, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse409V1"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request or generation exceeds a safety bound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse413V1"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse415V1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Semantically invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse422V1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Evaluation is already in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse429V1"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "required": true,
+                "description": "Bounded retry delay in seconds.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 300
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized operation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse500V1"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service, source, or store unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse503V1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/internal/v1/finance/insights/occurrences": {
       "get": {
         "operationId": "listFinanceInsightOccurrencesV1",
@@ -7737,6 +8035,2239 @@
             "additionalProperties": false
           }
         ]
+      },
+      "FinanceAutomationJobRequestV1": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "contractVersion": {
+                "type": "string",
+                "const": "1.0"
+              },
+              "jobKind": {
+                "type": "string",
+                "const": "duplicateTransactions"
+              },
+              "connectorRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              "scheduledFor": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 30,
+                "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                "format": "date-time"
+              },
+              "evaluatedAt": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 30,
+                "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                "format": "date-time"
+              },
+              "sourceCompleteness": {
+                "type": "string",
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unavailable"
+                ]
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "contractVersion": {
+                    "type": "string",
+                    "const": "1.0"
+                  },
+                  "connectorRef": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                  },
+                  "sourceGeneration": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                  },
+                  "sourceSequence": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "sourceAsOf": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 30,
+                    "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                    "format": "date-time"
+                  },
+                  "coverageStart": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 10,
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "coverageEnd": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 10,
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3,
+                    "pattern": "^[A-Z]{3}$"
+                  },
+                  "bridgeContractVersion": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                  },
+                  "capturedConstituents": {
+                    "minItems": 5,
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "transaction",
+                            "recurring",
+                            "category",
+                            "account",
+                            "tag"
+                          ]
+                        },
+                        "generationRef": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        },
+                        "sourceAsOf": {
+                          "type": "string",
+                          "minLength": 20,
+                          "maxLength": 30,
+                          "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                          "format": "date-time"
+                        },
+                        "itemCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "digest": {
+                          "type": "string",
+                          "pattern": "^sha256:[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "generationRef",
+                        "sourceAsOf",
+                        "itemCount",
+                        "digest"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "manifest": {
+                    "minItems": 5,
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "transaction",
+                            "recurring",
+                            "category",
+                            "account",
+                            "tag"
+                          ]
+                        },
+                        "batchCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "itemCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "digest": {
+                          "type": "string",
+                          "pattern": "^sha256:[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "batchCount",
+                        "itemCount",
+                        "digest"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 160,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                  }
+                },
+                "required": [
+                  "contractVersion",
+                  "connectorRef",
+                  "sourceGeneration",
+                  "sourceSequence",
+                  "sourceAsOf",
+                  "coverageStart",
+                  "coverageEnd",
+                  "currency",
+                  "bridgeContractVersion",
+                  "capturedConstituents",
+                  "manifest",
+                  "idempotencyKey"
+                ],
+                "additionalProperties": false
+              },
+              "transactions": {
+                "maxItems": 50000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceRef": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                    },
+                    "occurredOn": {
+                      "type": "string",
+                      "minLength": 10,
+                      "maxLength": 10,
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "amountMinor": {
+                      "type": "integer",
+                      "minimum": -9000000000000,
+                      "maximum": 9000000000000
+                    },
+                    "merchantName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "categoryRef": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "accountRef": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "isPending": {
+                      "type": "boolean"
+                    },
+                    "recurringRef": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tagRefs": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "sourceRef",
+                    "occurredOn",
+                    "amountMinor",
+                    "merchantName",
+                    "categoryRef",
+                    "accountRef",
+                    "isPending",
+                    "recurringRef",
+                    "tagRefs"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "suppressedPairs": {
+                "maxItems": 500,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceRefs": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "expectedDuplicate",
+                        "connectorRetry"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "sourceRefs",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "insightPolicy": {
+                "type": "object",
+                "properties": {
+                  "contractVersion": {
+                    "type": "string",
+                    "const": "1.0"
+                  },
+                  "policyModelVersion": {
+                    "type": "string",
+                    "const": "finance-policy-v1"
+                  },
+                  "detectorSetVersion": {
+                    "type": "string",
+                    "const": "detectors-v1"
+                  },
+                  "policyVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "effectiveAt": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 30,
+                    "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                    "format": "date-time"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 3,
+                    "pattern": "^[A-Z]{3}$"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "featureGates": {
+                    "type": "object",
+                    "properties": {
+                      "recurringAmountAnalysis": {
+                        "type": "boolean"
+                      },
+                      "recurringAmountNotifications": {
+                        "type": "boolean"
+                      },
+                      "largeTransactionAnalysis": {
+                        "type": "boolean"
+                      },
+                      "varianceAnalysis": {
+                        "type": "boolean"
+                      },
+                      "immediateLargeTransactionNotifications": {
+                        "type": "boolean"
+                      },
+                      "monthlyMoverDigestNotifications": {
+                        "type": "boolean"
+                      },
+                      "confirmedActions": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "recurringAmountAnalysis",
+                      "recurringAmountNotifications",
+                      "largeTransactionAnalysis",
+                      "varianceAnalysis",
+                      "immediateLargeTransactionNotifications",
+                      "monthlyMoverDigestNotifications",
+                      "confirmedActions"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "sourceClassification": {
+                    "type": "object",
+                    "properties": {
+                      "classifierVersion": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                      },
+                      "transferCategoryRefs": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      },
+                      "transferTagRefs": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      },
+                      "incomeCategoryRefs": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      },
+                      "incomeTagRefs": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      },
+                      "refundCategoryRefs": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      },
+                      "refundTagRefs": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      },
+                      "excludedCategoryRefs": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      },
+                      "excludedTagRefs": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "classifierVersion",
+                      "transferCategoryRefs",
+                      "transferTagRefs",
+                      "incomeCategoryRefs",
+                      "incomeTagRefs",
+                      "refundCategoryRefs",
+                      "refundTagRefs",
+                      "excludedCategoryRefs",
+                      "excludedTagRefs"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "recurringAmount": {
+                    "type": "object",
+                    "properties": {
+                      "absoluteGateMinor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9000000000000
+                      },
+                      "relativeGateBasisPoints": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000000
+                      },
+                      "alertDirection": {
+                        "type": "string",
+                        "const": "increaseOnly"
+                      },
+                      "adjacentMonthWindow": {
+                        "type": "number",
+                        "const": 1
+                      },
+                      "historyMonths": {
+                        "type": "number",
+                        "const": 37
+                      },
+                      "minimumSeasonalYears": {
+                        "type": "number",
+                        "const": 2
+                      },
+                      "scaledMadMultiplierMilli": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 20000
+                      },
+                      "minimumSpreadMinor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9000000000000
+                      }
+                    },
+                    "required": [
+                      "absoluteGateMinor",
+                      "relativeGateBasisPoints",
+                      "alertDirection",
+                      "adjacentMonthWindow",
+                      "historyMonths",
+                      "minimumSeasonalYears",
+                      "scaledMadMultiplierMilli",
+                      "minimumSpreadMinor"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "largeTransaction": {
+                    "type": "object",
+                    "properties": {
+                      "explicitRuleMinor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9000000000000
+                      },
+                      "adaptiveMeaningfulDollarFloorMinor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9000000000000
+                      },
+                      "adaptiveMinimumAgreement": {
+                        "type": "number",
+                        "const": 2
+                      },
+                      "eligibleDimensions": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "string",
+                            "const": "merchant"
+                          },
+                          {
+                            "type": "string",
+                            "const": "category"
+                          },
+                          {
+                            "type": "string",
+                            "const": "account"
+                          },
+                          {
+                            "type": "string",
+                            "const": "household"
+                          }
+                        ]
+                      },
+                      "historyWindowDays": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 3660
+                      },
+                      "minimumBaselineSampleCount": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000
+                      },
+                      "robustDeviationMultiplierMilli": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 20000
+                      },
+                      "minimumSpreadMinor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9000000000000
+                      },
+                      "empiricalPercentileGateBasisPoints": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10000
+                      },
+                      "ratioGateBasisPoints": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000000
+                      },
+                      "highSeverityAmountMinor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9000000000000
+                      },
+                      "publicationLimit": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
+                      },
+                      "lifecycleTransitionLimit": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000
+                      },
+                      "approvedMerchantKeys": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^merchant-v1_[A-Za-z0-9_-]{43}$"
+                        }
+                      },
+                      "expectedScopes": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "transaction"
+                                },
+                                "sourceRef": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceRef"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "merchant"
+                                },
+                                "sourceRef": {
+                                  "type": "string",
+                                  "pattern": "^merchant-v1_[A-Za-z0-9_-]{43}$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceRef"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "category"
+                                },
+                                "sourceRef": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceRef"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "account"
+                                },
+                                "sourceRef": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceRef"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "suppressedScopes": {
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "transaction"
+                                },
+                                "sourceRef": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceRef"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "merchant"
+                                },
+                                "sourceRef": {
+                                  "type": "string",
+                                  "pattern": "^merchant-v1_[A-Za-z0-9_-]{43}$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceRef"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "category"
+                                },
+                                "sourceRef": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceRef"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "account"
+                                },
+                                "sourceRef": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceRef"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "explicitRuleMinor",
+                      "adaptiveMeaningfulDollarFloorMinor",
+                      "adaptiveMinimumAgreement",
+                      "eligibleDimensions",
+                      "historyWindowDays",
+                      "minimumBaselineSampleCount",
+                      "robustDeviationMultiplierMilli",
+                      "minimumSpreadMinor",
+                      "empiricalPercentileGateBasisPoints",
+                      "ratioGateBasisPoints",
+                      "highSeverityAmountMinor",
+                      "publicationLimit",
+                      "lifecycleTransitionLimit",
+                      "approvedMerchantKeys",
+                      "expectedScopes",
+                      "suppressedScopes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "variance": {
+                    "type": "object",
+                    "properties": {
+                      "absoluteGateMinor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9000000000000
+                      },
+                      "relativeGateBasisPoints": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000000
+                      },
+                      "robustDeviationMilli": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 20000
+                      },
+                      "historyMonths": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 24
+                      },
+                      "minimumActiveMonths": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24
+                      },
+                      "sufficientActiveMonths": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24
+                      },
+                      "minimumBaselineTransactions": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                      },
+                      "minimumCurrentTransactions": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000
+                      },
+                      "minimumSpreadMinor": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9000000000000
+                      },
+                      "persistentOccurrenceLimit": {
+                        "type": "number",
+                        "const": 10
+                      },
+                      "digestMemberLimit": {
+                        "type": "number",
+                        "const": 10
+                      },
+                      "contributorLimit": {
+                        "type": "number",
+                        "const": 10
+                      },
+                      "notifyingMinimumConfidence": {
+                        "type": "string",
+                        "const": "high"
+                      }
+                    },
+                    "required": [
+                      "absoluteGateMinor",
+                      "relativeGateBasisPoints",
+                      "robustDeviationMilli",
+                      "historyMonths",
+                      "minimumActiveMonths",
+                      "sufficientActiveMonths",
+                      "minimumBaselineTransactions",
+                      "minimumCurrentTransactions",
+                      "minimumSpreadMinor",
+                      "persistentOccurrenceLimit",
+                      "digestMemberLimit",
+                      "contributorLimit",
+                      "notifyingMinimumConfidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "freshness": {
+                    "type": "object",
+                    "properties": {
+                      "newAlertMaxAgeHours": {
+                        "type": "number",
+                        "const": 48
+                      }
+                    },
+                    "required": [
+                      "newAlertMaxAgeHours"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "delivery": {
+                    "type": "object",
+                    "properties": {
+                      "largeTransaction": {
+                        "type": "string",
+                        "const": "immediate"
+                      },
+                      "monthlyDigestDay": {
+                        "type": "number",
+                        "const": 2
+                      },
+                      "monthlyDigestLocalHour": {
+                        "type": "number",
+                        "const": 9
+                      },
+                      "monthlyDigestLocalMinute": {
+                        "type": "number",
+                        "const": 0
+                      },
+                      "mediumConfidenceMoversNotify": {
+                        "type": "boolean",
+                        "const": false
+                      }
+                    },
+                    "required": [
+                      "largeTransaction",
+                      "monthlyDigestDay",
+                      "monthlyDigestLocalHour",
+                      "monthlyDigestLocalMinute",
+                      "mediumConfidenceMoversNotify"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "suppression": {
+                    "type": "object",
+                    "properties": {
+                      "operator": {
+                        "type": "string",
+                        "const": "fixedLocalOperator"
+                      },
+                      "allowedDurationsDays": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "number",
+                            "const": 30
+                          },
+                          {
+                            "type": "number",
+                            "const": 90
+                          },
+                          {
+                            "type": "number",
+                            "const": 180
+                          }
+                        ]
+                      },
+                      "permanentAllowed": {
+                        "type": "boolean",
+                        "const": false
+                      },
+                      "undoRequired": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "operator",
+                      "allowedDurationsDays",
+                      "permanentAllowed",
+                      "undoRequired"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "materialChange": {
+                    "type": "object",
+                    "properties": {
+                      "amountBoundaryMinor": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9000000000000
+                      },
+                      "classificationChangeIsMaterial": {
+                        "type": "boolean",
+                        "const": true
+                      },
+                      "correctionCreatesSuccessor": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "amountBoundaryMinor",
+                      "classificationChangeIsMaterial",
+                      "correctionCreatesSuccessor"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "contractVersion",
+                  "policyModelVersion",
+                  "detectorSetVersion",
+                  "policyVersion",
+                  "effectiveAt",
+                  "currency",
+                  "timezone",
+                  "featureGates",
+                  "sourceClassification",
+                  "recurringAmount",
+                  "largeTransaction",
+                  "variance",
+                  "freshness",
+                  "delivery",
+                  "suppression",
+                  "materialChange"
+                ],
+                "additionalProperties": false
+              },
+              "automationPolicy": {
+                "type": "object",
+                "properties": {
+                  "contractVersion": {
+                    "type": "string",
+                    "const": "1.0"
+                  },
+                  "policyVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "detectorSetVersion": {
+                    "type": "string",
+                    "const": "automation-detectors-v1"
+                  },
+                  "duplicateTransactions": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "matchWindowDays": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "maxCandidates": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
+                      },
+                      "freshnessMaxAgeHours": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 168
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "matchWindowDays",
+                      "maxCandidates",
+                      "freshnessMaxAgeHours"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "connectorHealth": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "staleAfterHours": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 168
+                      },
+                      "actionableAfterConsecutiveFailures": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "staleAfterHours",
+                      "actionableAfterConsecutiveFailures"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "contractVersion",
+                  "policyVersion",
+                  "detectorSetVersion",
+                  "duplicateTransactions",
+                  "connectorHealth"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "contractVersion",
+              "jobKind",
+              "connectorRef",
+              "scheduledFor",
+              "evaluatedAt",
+              "sourceCompleteness",
+              "source",
+              "transactions",
+              "suppressedPairs",
+              "insightPolicy",
+              "automationPolicy"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "contractVersion": {
+                "type": "string",
+                "const": "1.0"
+              },
+              "jobKind": {
+                "type": "string",
+                "const": "connectorHealth"
+              },
+              "connectorRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              "scheduledFor": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 30,
+                "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                "format": "date-time"
+              },
+              "evaluatedAt": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 30,
+                "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                "format": "date-time"
+              },
+              "observation": {
+                "type": "object",
+                "properties": {
+                  "observedAt": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 30,
+                    "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                    "format": "date-time"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "connected",
+                      "degraded",
+                      "unavailable"
+                    ]
+                  },
+                  "lastSuccessfulSyncAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 30,
+                        "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "consecutiveFailures": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10000
+                  },
+                  "bridgeContractVersion": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                  }
+                },
+                "required": [
+                  "observedAt",
+                  "state",
+                  "lastSuccessfulSyncAt",
+                  "consecutiveFailures",
+                  "bridgeContractVersion"
+                ],
+                "additionalProperties": false
+              },
+              "automationPolicy": {
+                "type": "object",
+                "properties": {
+                  "contractVersion": {
+                    "type": "string",
+                    "const": "1.0"
+                  },
+                  "policyVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "detectorSetVersion": {
+                    "type": "string",
+                    "const": "automation-detectors-v1"
+                  },
+                  "duplicateTransactions": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "matchWindowDays": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "maxCandidates": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
+                      },
+                      "freshnessMaxAgeHours": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 168
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "matchWindowDays",
+                      "maxCandidates",
+                      "freshnessMaxAgeHours"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "connectorHealth": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "staleAfterHours": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 168
+                      },
+                      "actionableAfterConsecutiveFailures": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "staleAfterHours",
+                      "actionableAfterConsecutiveFailures"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "contractVersion",
+                  "policyVersion",
+                  "detectorSetVersion",
+                  "duplicateTransactions",
+                  "connectorHealth"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "contractVersion",
+              "jobKind",
+              "connectorRef",
+              "scheduledFor",
+              "evaluatedAt",
+              "observation",
+              "automationPolicy"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "FinanceAutomationJobResultV1": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^run-v1_[A-Za-z0-9_-]{43}$"
+          },
+          "jobKind": {
+            "type": "string",
+            "enum": [
+              "duplicateTransactions",
+              "connectorHealth"
+            ]
+          },
+          "connectorRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "scheduledFor": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 30,
+            "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "skipped",
+              "ignored"
+            ]
+          },
+          "skipReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "disabled",
+                  "source_stale",
+                  "source_partial",
+                  "source_unavailable",
+                  "out_of_order_observation",
+                  "out_of_order_source_generation"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceAsOf": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 30,
+                "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidateCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "exclusionSummary": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "signals": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contractVersion": {
+                  "type": "string",
+                  "const": "1.0"
+                },
+                "signalId": {
+                  "type": "string",
+                  "pattern": "^signal-v1_[A-Za-z0-9_-]{43}$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "duplicateTransaction",
+                    "connectorHealth"
+                  ]
+                },
+                "connectorRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "settled"
+                  ]
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "medium",
+                    "high"
+                  ]
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "medium",
+                    "high"
+                  ]
+                },
+                "attention": {
+                  "type": "string",
+                  "enum": [
+                    "informational",
+                    "actionable"
+                  ]
+                },
+                "reasonCodes": {
+                  "maxItems": 7,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "duplicate_exact_match",
+                      "duplicate_adjacent_date_match",
+                      "connector_reported_degraded",
+                      "connector_reported_unavailable",
+                      "connector_sync_stale",
+                      "connector_repeated_failures",
+                      "condition_recovered"
+                    ]
+                  }
+                },
+                "relatedSourceRefs": {
+                  "maxItems": 2,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                  }
+                },
+                "evidence": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "duplicateTransaction"
+                        },
+                        "sameAmount": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "sameMerchant": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "sameAccount": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "dateGapDays": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 7
+                        },
+                        "observedDates": {
+                          "type": "array",
+                          "prefixItems": [
+                            {
+                              "type": "string",
+                              "format": "date",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                            },
+                            {
+                              "type": "string",
+                              "format": "date",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "sameAmount",
+                        "sameMerchant",
+                        "sameAccount",
+                        "dateGapDays",
+                        "observedDates"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "connectorHealth"
+                        },
+                        "reportedState": {
+                          "type": "string",
+                          "enum": [
+                            "connected",
+                            "degraded",
+                            "unavailable"
+                          ]
+                        },
+                        "consecutiveFailures": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 10000
+                        },
+                        "sourceAgeHours": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "reportedState",
+                        "consecutiveFailures",
+                        "sourceAgeHours"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "freshness": {
+                  "type": "string",
+                  "enum": [
+                    "fresh",
+                    "stale",
+                    "unavailable"
+                  ]
+                },
+                "provenance": {
+                  "type": "object",
+                  "properties": {
+                    "connectorRef": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                    },
+                    "providerClass": {
+                      "type": "string",
+                      "const": "monarchBridgeNormalized"
+                    },
+                    "bridgeContractVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                    },
+                    "sourceGeneration": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sourceAsOf": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 20,
+                          "maxLength": 30,
+                          "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 20,
+                      "maxLength": 30,
+                      "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                      "format": "date-time"
+                    },
+                    "evaluatedAt": {
+                      "type": "string",
+                      "minLength": 20,
+                      "maxLength": 30,
+                      "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                      "format": "date-time"
+                    },
+                    "detectorSetVersion": {
+                      "type": "string",
+                      "const": "automation-detectors-v1"
+                    },
+                    "detectorVersion": {
+                      "type": "string",
+                      "enum": [
+                        "duplicate-transaction-detector-v1",
+                        "connector-health-detector-v1"
+                      ]
+                    },
+                    "policyVersion": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "connectorRef",
+                    "providerClass",
+                    "bridgeContractVersion",
+                    "sourceGeneration",
+                    "sourceAsOf",
+                    "observedAt",
+                    "evaluatedAt",
+                    "detectorSetVersion",
+                    "detectorVersion",
+                    "policyVersion"
+                  ],
+                  "additionalProperties": false
+                },
+                "openedAt": {
+                  "type": "string",
+                  "minLength": 20,
+                  "maxLength": 30,
+                  "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                  "format": "date-time"
+                },
+                "updatedAt": {
+                  "type": "string",
+                  "minLength": 20,
+                  "maxLength": 30,
+                  "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                  "format": "date-time"
+                },
+                "settledAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 20,
+                      "maxLength": 30,
+                      "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "contractVersion",
+                "signalId",
+                "kind",
+                "connectorRef",
+                "state",
+                "severity",
+                "confidence",
+                "attention",
+                "reasonCodes",
+                "relatedSourceRefs",
+                "evidence",
+                "freshness",
+                "provenance",
+                "openedAt",
+                "updatedAt",
+                "settledAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "deliveries": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "deliveryKey": {
+                  "type": "string",
+                  "pattern": "^finance-automation:signal-v1_[A-Za-z0-9_-]{43}$"
+                },
+                "version": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "signalId": {
+                  "type": "string",
+                  "pattern": "^signal-v1_[A-Za-z0-9_-]{43}$"
+                },
+                "target": {
+                  "type": "string",
+                  "const": "notification"
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "create",
+                    "update",
+                    "settle"
+                  ]
+                },
+                "signal": {
+                  "type": "object",
+                  "properties": {
+                    "contractVersion": {
+                      "type": "string",
+                      "const": "1.0"
+                    },
+                    "signalId": {
+                      "type": "string",
+                      "pattern": "^signal-v1_[A-Za-z0-9_-]{43}$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "duplicateTransaction",
+                        "connectorHealth"
+                      ]
+                    },
+                    "connectorRef": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "settled"
+                      ]
+                    },
+                    "severity": {
+                      "type": "string",
+                      "enum": [
+                        "medium",
+                        "high"
+                      ]
+                    },
+                    "confidence": {
+                      "type": "string",
+                      "enum": [
+                        "medium",
+                        "high"
+                      ]
+                    },
+                    "attention": {
+                      "type": "string",
+                      "enum": [
+                        "informational",
+                        "actionable"
+                      ]
+                    },
+                    "reasonCodes": {
+                      "maxItems": 7,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "duplicate_exact_match",
+                          "duplicate_adjacent_date_match",
+                          "connector_reported_degraded",
+                          "connector_reported_unavailable",
+                          "connector_sync_stale",
+                          "connector_repeated_failures",
+                          "condition_recovered"
+                        ]
+                      }
+                    },
+                    "relatedSourceRefs": {
+                      "maxItems": 2,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      }
+                    },
+                    "evidence": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "duplicateTransaction"
+                            },
+                            "sameAmount": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "sameMerchant": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "sameAccount": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "dateGapDays": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 7
+                            },
+                            "observedDates": {
+                              "type": "array",
+                              "prefixItems": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "sameAmount",
+                            "sameMerchant",
+                            "sameAccount",
+                            "dateGapDays",
+                            "observedDates"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "connectorHealth"
+                            },
+                            "reportedState": {
+                              "type": "string",
+                              "enum": [
+                                "connected",
+                                "degraded",
+                                "unavailable"
+                              ]
+                            },
+                            "consecutiveFailures": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 10000
+                            },
+                            "sourceAgeHours": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "reportedState",
+                            "consecutiveFailures",
+                            "sourceAgeHours"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "freshness": {
+                      "type": "string",
+                      "enum": [
+                        "fresh",
+                        "stale",
+                        "unavailable"
+                      ]
+                    },
+                    "provenance": {
+                      "type": "object",
+                      "properties": {
+                        "connectorRef": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                        },
+                        "providerClass": {
+                          "type": "string",
+                          "const": "monarchBridgeNormalized"
+                        },
+                        "bridgeContractVersion": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                        },
+                        "sourceGeneration": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 160,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sourceAsOf": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 20,
+                              "maxLength": 30,
+                              "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "observedAt": {
+                          "type": "string",
+                          "minLength": 20,
+                          "maxLength": 30,
+                          "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                          "format": "date-time"
+                        },
+                        "evaluatedAt": {
+                          "type": "string",
+                          "minLength": 20,
+                          "maxLength": 30,
+                          "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                          "format": "date-time"
+                        },
+                        "detectorSetVersion": {
+                          "type": "string",
+                          "const": "automation-detectors-v1"
+                        },
+                        "detectorVersion": {
+                          "type": "string",
+                          "enum": [
+                            "duplicate-transaction-detector-v1",
+                            "connector-health-detector-v1"
+                          ]
+                        },
+                        "policyVersion": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "connectorRef",
+                        "providerClass",
+                        "bridgeContractVersion",
+                        "sourceGeneration",
+                        "sourceAsOf",
+                        "observedAt",
+                        "evaluatedAt",
+                        "detectorSetVersion",
+                        "detectorVersion",
+                        "policyVersion"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "openedAt": {
+                      "type": "string",
+                      "minLength": 20,
+                      "maxLength": 30,
+                      "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "minLength": 20,
+                      "maxLength": 30,
+                      "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                      "format": "date-time"
+                    },
+                    "settledAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 20,
+                          "maxLength": 30,
+                          "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "contractVersion",
+                    "signalId",
+                    "kind",
+                    "connectorRef",
+                    "state",
+                    "severity",
+                    "confidence",
+                    "attention",
+                    "reasonCodes",
+                    "relatedSourceRefs",
+                    "evidence",
+                    "freshness",
+                    "provenance",
+                    "openedAt",
+                    "updatedAt",
+                    "settledAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "deliveryKey",
+                "version",
+                "signalId",
+                "target",
+                "action",
+                "signal"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "completedAt": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 30,
+            "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contractVersion",
+          "runId",
+          "jobKind",
+          "connectorRef",
+          "scheduledFor",
+          "status",
+          "skipReason",
+          "sourceAsOf",
+          "candidateCount",
+          "exclusionSummary",
+          "signals",
+          "deliveries",
+          "replayed",
+          "completedAt"
+        ],
+        "additionalProperties": false
+      },
+      "FinanceAutomationDeliveryAckRequestV1": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "acknowledgedAt": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 30,
+            "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+            "format": "date-time"
+          },
+          "deliveries": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "deliveryKey": {
+                  "type": "string",
+                  "pattern": "^finance-automation:signal-v1_[A-Za-z0-9_-]{43}$"
+                },
+                "expectedVersion": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "deliveryKey",
+                "expectedVersion"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "contractVersion",
+          "acknowledgedAt",
+          "deliveries"
+        ],
+        "additionalProperties": false
+      },
+      "FinanceAutomationDeliveryAckResultV1": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "acknowledged": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^finance-automation:signal-v1_[A-Za-z0-9_-]{43}$"
+            }
+          },
+          "conflicts": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^finance-automation:signal-v1_[A-Za-z0-9_-]{43}$"
+            }
+          }
+        },
+        "required": [
+          "contractVersion",
+          "acknowledged",
+          "conflicts"
+        ],
+        "additionalProperties": false
       },
       "InsightErrorResponse400V1": {
         "allOf": [

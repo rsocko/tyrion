@@ -41,11 +41,16 @@ export function normalizeDuplicateAutomationJobRequestV1(
         tagRefs: [...transaction.tagRefs].sort(),
       }))
       .sort((left, right) => left.sourceRef.localeCompare(right.sourceRef)),
-    suppressedPairs: [...request.suppressedPairs].sort((left, right) =>
-      `${left.sourceRefs.join('\0')}\0${left.reason}`.localeCompare(
-        `${right.sourceRefs.join('\0')}\0${right.reason}`
-      )
-    ),
+    suppressedPairs: request.suppressedPairs
+      .map((pair) => ({
+        ...pair,
+        sourceRefs: [...pair.sourceRefs].sort() as [string, string],
+      }))
+      .sort((left, right) =>
+        `${left.sourceRefs.join('\0')}\0${left.reason}`.localeCompare(
+          `${right.sourceRefs.join('\0')}\0${right.reason}`
+        )
+      ),
     insightPolicy: {
       ...request.insightPolicy,
       effectiveAt: canonicalAutomationTimestampV1(

@@ -2,12 +2,19 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
   FINANCE_INSIGHT_DETECTOR_SET_VERSION_V1,
+  FinanceAutomationJobServiceV1,
+  FinanceAutomationSqliteStoreV1,
   FinanceInsightEvaluationOrchestratorV1,
   FinanceInsightLifecycleServiceV1,
   FinanceInsightSqliteStoreV1,
   parseFinanceInsightPolicySnapshotV1,
   type FinanceInsightPolicySnapshotV1,
   type FinanceInsightTelemetryEventV1,
+  type FinanceAutomationTelemetryEventV1,
+  type FinanceAutomationJobRequestV1,
+  type FinanceAutomationJobResultV1,
+  type FinanceAutomationDeliveryAckRequestV1,
+  type FinanceAutomationDeliveryAckResultV1,
 } from "@rsocko/tyrion-finance-insights";
 
 const HOUSEHOLD_SCOPE = "homelab-household";
@@ -17,12 +24,19 @@ export interface FinanceInsightRuntimeGates {
   evaluationWrite: boolean;
   read: boolean;
   actions: boolean;
+  automationWrite: boolean;
 }
 
 export interface FinanceInsightRuntime {
   store: FinanceInsightSqliteStoreV1;
   lifecycle: FinanceInsightLifecycleServiceV1;
   orchestrator: FinanceInsightEvaluationOrchestratorV1;
+  runAutomation(
+    request: FinanceAutomationJobRequestV1
+  ): Promise<FinanceAutomationJobResultV1>;
+  acknowledgeAutomationDeliveries(
+    request: FinanceAutomationDeliveryAckRequestV1
+  ): Promise<FinanceAutomationDeliveryAckResultV1>;
   gates: FinanceInsightRuntimeGates;
   telemetry: MetadataOnlyFinanceInsightTelemetry;
 }
@@ -38,22 +52,40 @@ export class MetadataOnlyFinanceInsightTelemetry {
   private started = 0;
   private completed = 0;
   private failed = 0;
+  private automationStarted = 0;
+  private automationCompleted = 0;
+  private automationRejected = 0;
+  private automationFailed = 0;
 
-  emit(event: FinanceInsightTelemetryEventV1): void {
+  emit(
+    event: FinanceInsightTelemetryEventV1 | FinanceAutomationTelemetryEventV1
+  ): void {
     if (event.name === "evaluation_started") this.started += 1;
     else if (event.name === "evaluation_completed") this.completed += 1;
-    else this.failed += 1;
+    else if (event.name === "evaluation_failed") this.failed += 1;
+    else if (event.name === "automation_job_started") this.automationStarted += 1;
+    else if (event.name === "automation_job_completed") this.automationCompleted += 1;
+    else if (event.name === "automation_job_rejected") this.automationRejected += 1;
+    else this.automationFailed += 1;
   }
 
   snapshot(): Readonly<{
     evaluationStartedCount: number;
     evaluationCompletedCount: number;
     evaluationFailedCount: number;
+    automationStartedCount: number;
+    automationCompletedCount: number;
+    automationRejectedCount: number;
+    automationFailedCount: number;
   }> {
     return {
       evaluationStartedCount: this.started,
       evaluationCompletedCount: this.completed,
       evaluationFailedCount: this.failed,
+      automationStartedCount: this.automationStarted,
+      automationCompletedCount: this.automationCompleted,
+      automationRejectedCount: this.automationRejected,
+      automationFailedCount: this.automationFailed,
     };
   }
 }
@@ -80,6 +112,7 @@ export async function createFinanceInsightRuntime(
   environment: NodeJS.ProcessEnv
 ): Promise<FinanceInsightRuntime> {
   try {
+    const testClock = financeInsightTestClock(environment);
     const storePath = requireExternalAbsolutePath(
       environment.TYRION_FINANCE_INSIGHT_STORE_PATH
     );
@@ -94,6 +127,7 @@ export async function createFinanceInsightRuntime(
     const store = new FinanceInsightSqliteStoreV1({
       path: storePath,
       cursorKey,
+      ...(testClock ? { clock: testClock } : {}),
     });
     const maintenance = new FinanceInsightRuntimeMaintenance(store);
     try {
@@ -109,6 +143,24 @@ export async function createFinanceInsightRuntime(
       detectorSetVersion: FINANCE_INSIGHT_DETECTOR_SET_VERSION_V1,
     });
     const telemetry = new MetadataOnlyFinanceInsightTelemetry();
+    const withAutomationStore = async <T>(
+      operation: (service: FinanceAutomationJobServiceV1) => Promise<T>
+    ): Promise<T> => {
+      const automationStore = new FinanceAutomationSqliteStoreV1({
+        path: storePath,
+      });
+      try {
+        return await operation(
+          new FinanceAutomationJobServiceV1({
+            store: automationStore,
+            identityKey,
+            telemetry,
+          })
+        );
+      } finally {
+        automationStore.close();
+      }
+    };
     const runtime = {
       store,
       lifecycle,
@@ -117,12 +169,23 @@ export async function createFinanceInsightRuntime(
         lifecycle,
         identityKey,
         telemetry,
+        ...(testClock ? { clock: testClock } : {}),
       }),
+      runAutomation: (request: FinanceAutomationJobRequestV1) =>
+        withAutomationStore((service) => service.run(request)),
+      acknowledgeAutomationDeliveries: (
+        request: FinanceAutomationDeliveryAckRequestV1
+      ) =>
+        withAutomationStore((service) =>
+          service.acknowledgeDeliveries(request)
+        ),
       gates: {
         evaluationWrite:
           environment.TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED === "true",
         read: environment.TYRION_FINANCE_INSIGHT_READ_ENABLED === "true",
         actions: environment.TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED === "true",
+        automationWrite:
+          environment.TYRION_FINANCE_AUTOMATION_WRITE_ENABLED === "true",
       },
       telemetry,
     };
@@ -131,6 +194,22 @@ export async function createFinanceInsightRuntime(
   } catch {
     throw new FinanceInsightRuntimeConfigurationError();
   }
+}
+
+function financeInsightTestClock(
+  environment: NodeJS.ProcessEnv
+): (() => string) | undefined {
+  const value = environment.TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW;
+  if (value === undefined) return undefined;
+  if (environment.NODE_TEST_CONTEXT === undefined) {
+    throw new FinanceInsightRuntimeConfigurationError();
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new FinanceInsightRuntimeConfigurationError();
+  }
+  const timestamp = new Date(parsed).toISOString();
+  return () => timestamp;
 }
 
 class FinanceInsightRuntimeMaintenance {
@@ -170,7 +249,10 @@ export async function financeInsightHealth(): Promise<{
   try {
     const runtime = await getFinanceInsightRuntime();
     const enabled =
-      runtime.gates.evaluationWrite || runtime.gates.read || runtime.gates.actions;
+      runtime.gates.evaluationWrite ||
+      runtime.gates.read ||
+      runtime.gates.actions ||
+      runtime.gates.automationWrite;
     return {
       status: enabled ? "ready" : "disabled",
       telemetry: runtime.telemetry.snapshot(),

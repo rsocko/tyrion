@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   FinanceInsightContractValidationError,
+  FinanceAutomationIdempotencyConflictError,
+  FinanceAutomationJobInProgressError,
   createInsightErrorV1,
   isFinanceInsightStoreError,
   MAX_REQUEST_BYTES_V1,
@@ -85,6 +87,12 @@ export function handleFinanceInsightError(error: unknown): NextResponse {
   }
   if (error instanceof FinanceInsightContractValidationError) {
     return financeInsightError("invalid_request");
+  }
+  if (error instanceof FinanceAutomationIdempotencyConflictError) {
+    return financeInsightError("idempotency_conflict");
+  }
+  if (error instanceof FinanceAutomationJobInProgressError) {
+    return financeInsightError("evaluation_in_progress");
   }
   if (error instanceof FinanceInsightRuntimeConfigurationError) {
     return financeInsightError("insight_service_not_configured");

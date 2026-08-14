@@ -63,6 +63,16 @@ export class FinanceAutomationIdempotencyConflictError extends Error {
   }
 }
 
+export class FinanceAutomationJobInProgressError extends Error {
+  readonly code = 'automation_job_in_progress';
+  readonly retryAfterSeconds = 30;
+
+  constructor() {
+    super('A finance automation job is already in progress');
+    this.name = 'FinanceAutomationJobInProgressError';
+  }
+}
+
 export class FinanceAutomationSqliteStoreV1 {
   private readonly database: Database.Database;
 
@@ -96,6 +106,51 @@ export class FinanceAutomationSqliteStoreV1 {
 
   close(): void {
     this.database.close();
+  }
+
+  acquireJobLease(input: {
+    connectorRef: string;
+    jobKind: FinanceAutomationJobResultV1['jobKind'];
+    ownerToken: string;
+    acquiredAt: string;
+    expiresAt: string;
+  }): boolean {
+    return this.database.transaction(() => {
+      this.database
+        .prepare(
+          `DELETE FROM finance_automation_job_leases
+           WHERE connector_ref = ? AND job_kind = ? AND expires_at <= ?`
+        )
+        .run(input.connectorRef, input.jobKind, input.acquiredAt);
+      const inserted = this.database
+        .prepare(
+          `INSERT INTO finance_automation_job_leases(
+             connector_ref, job_kind, owner_token, acquired_at, expires_at
+           ) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(connector_ref, job_kind) DO NOTHING`
+        )
+        .run(
+          input.connectorRef,
+          input.jobKind,
+          input.ownerToken,
+          input.acquiredAt,
+          input.expiresAt
+        );
+      return inserted.changes === 1;
+    }).immediate();
+  }
+
+  releaseJobLease(input: {
+    connectorRef: string;
+    jobKind: FinanceAutomationJobResultV1['jobKind'];
+    ownerToken: string;
+  }): void {
+    this.database
+      .prepare(
+        `DELETE FROM finance_automation_job_leases
+         WHERE connector_ref = ? AND job_kind = ? AND owner_token = ?`
+      )
+      .run(input.connectorRef, input.jobKind, input.ownerToken);
   }
 
   applyEvaluation(
@@ -161,7 +216,7 @@ export class FinanceAutomationSqliteStoreV1 {
         exclusionSummary: effectivePlan.exclusionSummary,
         signals: signals.sort((left, right) =>
           left.signalId.localeCompare(right.signalId)
-        ),
+        ).slice(0, 200),
         deliveries: this.pendingDeliveries(effectivePlan.connectorRef),
         replayed: false,
         completedAt: plan.completedAt,
@@ -595,7 +650,8 @@ export class FinanceAutomationSqliteStoreV1 {
         `SELECT delivery_json, version, action, acknowledged_at
          FROM finance_automation_delivery_outbox
          WHERE connector_ref = ? AND acknowledged_at IS NULL
-         ORDER BY delivery_key`
+         ORDER BY delivery_key
+         LIMIT 100`
       )
       .all(connectorRef) as DeliveryOutboxRowV1[];
     return rows.map(

@@ -25,6 +25,12 @@ import {
   sourceGenerationCreateRequestSchema,
   sourceGenerationResultSchema,
 } from './contracts/source-v1.js';
+import {
+  financeAutomationDeliveryAckRequestSchema,
+  financeAutomationDeliveryAckResultSchema,
+  financeAutomationJobRequestSchema,
+  financeAutomationJobResultSchema,
+} from './automation/contracts-v1.js';
 
 const schemas = {
   SourceGenerationCreateRequestV1: sourceGenerationCreateRequestSchema,
@@ -41,6 +47,12 @@ const schemas = {
   OccurrenceActionRequestV1: occurrenceActionRequestSchema,
   OccurrenceActionResultV1: occurrenceActionResultSchema,
   InsightErrorResponseV1: insightErrorResponseSchema,
+  FinanceAutomationJobRequestV1: financeAutomationJobRequestSchema,
+  FinanceAutomationJobResultV1: financeAutomationJobResultSchema,
+  FinanceAutomationDeliveryAckRequestV1:
+    financeAutomationDeliveryAckRequestSchema,
+  FinanceAutomationDeliveryAckResultV1:
+    financeAutomationDeliveryAckResultSchema,
 } as const;
 
 const errorResponses = {
@@ -127,6 +139,24 @@ export function createFinanceInsightsOpenApiV1(): Record<string, unknown> {
           'EvaluationRequestV1',
           'EvaluationResultV1',
           202
+        ),
+      },
+      '/api/internal/v1/finance/insights/automation/jobs': {
+        post: operation(
+          'runFinanceAutomationJobV1',
+          'Run one durable scheduled automation evaluation without overlapping the same connector job',
+          'FinanceAutomationJobRequestV1',
+          'FinanceAutomationJobResultV1',
+          200
+        ),
+      },
+      '/api/internal/v1/finance/insights/automation/deliveries/ack': {
+        post: operation(
+          'acknowledgeFinanceAutomationDeliveriesV1',
+          'Acknowledge exact delivery versions after Mission Control applies them',
+          'FinanceAutomationDeliveryAckRequestV1',
+          'FinanceAutomationDeliveryAckResultV1',
+          200
         ),
       },
       '/api/internal/v1/finance/insights/occurrences': {

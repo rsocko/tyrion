@@ -33,7 +33,10 @@ policy at `/var/lib/tyrion-finance-insights/policy.json`, and independent
 minimum-32-byte cursor and identity keys supplied as platform secrets.
 Back up the volume and keys together. Keep all three finance insight gates off
 until the state, policy, key restore, and metadata-only health checks pass;
-enable evaluation/write, read, and confirmed actions in that order.
+enable evaluation/write, read, confirmed actions, and the automation transport in
+that order. The automation gate exposes only the private scheduled-job and exact
+delivery-acknowledgement routes; it does not create a browser or public connector
+surface.
 For local/demo development, run the bridge with `python main.py --demo` and the UI with
 `npm run dev`; the homelab compose file is the production contract, not the local
 development launcher.

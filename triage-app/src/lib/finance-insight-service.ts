@@ -5,6 +5,10 @@ import {
   financeInsightEvaluationResultV1,
   occurrenceIdSchema,
   parseEvaluationRequestV1,
+  parseFinanceAutomationDeliveryAckRequestV1,
+  parseFinanceAutomationDeliveryAckResultV1,
+  parseFinanceAutomationJobRequestV1,
+  parseFinanceAutomationJobResultV1,
   parseOccurrenceActionRequestV1,
   parseOccurrenceActionResultV1,
   parseOccurrenceListQueryV1,
@@ -46,6 +50,41 @@ export async function handleFinanceInsightRequest(
   try {
     authenticateFinanceInsightRequest(request);
     const runtime = await getFinanceInsightRuntime();
+    if (
+      request.method === "POST" &&
+      segments.length === 2 &&
+      segments[0] === "automation" &&
+      segments[1] === "jobs"
+    ) {
+      requireGate(runtime.gates.automationWrite);
+      return financeInsightJson(
+        parseFinanceAutomationJobResultV1(
+          await runtime.runAutomation(
+            parseFinanceAutomationJobRequestV1(
+              await readFinanceInsightJson(request)
+            )
+          )
+        )
+      );
+    }
+    if (
+      request.method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "automation" &&
+      segments[1] === "deliveries" &&
+      segments[2] === "ack"
+    ) {
+      requireGate(runtime.gates.automationWrite);
+      return financeInsightJson(
+        parseFinanceAutomationDeliveryAckResultV1(
+          await runtime.acknowledgeAutomationDeliveries(
+            parseFinanceAutomationDeliveryAckRequestV1(
+              await readFinanceInsightJson(request)
+            )
+          )
+        )
+      );
+    }
     if (
       request.method === "POST" &&
       segments.length === 1 &&

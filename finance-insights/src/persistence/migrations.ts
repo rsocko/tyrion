@@ -499,6 +499,23 @@ SET latest_scheduled_for = (
 );
 `,
     },
+    {
+      version: 6,
+      name: 'automation-job-lease',
+      sql: `
+CREATE TABLE finance_automation_job_leases (
+  connector_ref TEXT NOT NULL,
+  job_kind TEXT NOT NULL CHECK (job_kind IN ('duplicateTransactions', 'connectorHealth')),
+  owner_token TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  PRIMARY KEY (connector_ref, job_kind)
+) STRICT;
+
+CREATE INDEX finance_automation_expiring_job_leases
+  ON finance_automation_job_leases(expires_at);
+`,
+    },
   ]);
 
 export function migrateFinanceInsightStoreV1(
