@@ -37,7 +37,7 @@ def reviewed_report() -> dict:
                     {
                         "url": policy.ALLOWED_ADVISORY,
                         "severity": "high",
-                        "range": "<3.3.17",
+                        "range": "<3.3.18",
                     }
                 ],
             },
