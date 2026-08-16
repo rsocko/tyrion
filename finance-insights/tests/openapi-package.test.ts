@@ -150,6 +150,7 @@ describe('executable contract and internal package boundary', () => {
       './detectors',
       './evidence',
       './inquiry',
+      './mutations',
       './persistence',
       './policy',
       './ports',

@@ -39,7 +39,7 @@ matching. Those workflows should deep-link to Monarch.
 | Path | Role |
 | --- | --- |
 | `monarch-bridge/` | Monarch authentication, normalized API access, synchronization, and write-back |
-| `finance-insights/` | Tyrion-private insight detection, lifecycle persistence, and permissioned Houston finance inquiry tools |
+| `finance-insights/` | Tyrion-private insight detection, lifecycle persistence, and permissioned Houston finance inquiry and confirmed-mutation tools |
 | `kid-engine/` | Private Tyrion-internal household policy, attribution, review, and re-attribution logic |
 | `docs/` | Active boundary, roadmap, contracts, and historical design references |
 | `triage-app/` | Bounded Tyrion domain configuration, Monarch connector operations, and contract-validation console |
