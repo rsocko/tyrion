@@ -85,6 +85,17 @@ freshness and provenance, and enforces authorization, cancellation, timeout, aud
 item, date, and byte limits. The Mission Control runtime supplies the projection and
 sanitized audit adapters; it does not receive or create Monarch session material.
 
+The sibling `finance-insights/mutations` entry point provides the reviewed Houston
+mutation definitions and a framework-neutral prepare/confirm/execute service. It
+permits only category changes and Tyrion kid assignments, requires
+`finance:mutate`, and binds every proposal to the fixed household, actor, operation,
+transaction, old value, new value, and expiry. Mission Control supplies an atomic
+durable proposal store, the narrow bridge and attribution-action adapters, local
+projection reconciliation, and a metadata-only audit adapter. Proposal stores retain
+only a SHA-256 digest of each random opaque token and atomically claim active tokens
+once; household or actor mismatches return no proposal, inactive proposals are never
+claimable, and the service independently rechecks the returned binding.
+
 ## Data placement and freshness
 
 The local projection exists for reliable inquiry, household-specific attribution,
@@ -234,18 +245,34 @@ must fail closed when current state cannot be verified.
 Mutations use a prepare/confirm/execute pattern:
 
 1. Houston reads the current normalized state.
-2. The tool prepares an immutable proposal containing the target, old value, new
-   value, expiry, and opaque confirmation token.
+2. `finance_prepare_category_change` or `finance_prepare_kid_assignment` prepares an
+   immutable proposal containing the target, old value, new value, expiry, and opaque
+   confirmation token. Preparing does not mutate finance state.
 3. Houston shows the proposed change and its Monarch provenance.
-4. A separate execute call requires explicit user confirmation and the unexpired
-   proposal token.
-5. Tyrion performs the narrow bridge mutation.
+4. A separate `finance_execute_mutation` call requires `confirm: true` and the
+   unexpired proposal token. The atomic proposal store rejects cancellation by
+   omission, expiry, replay, and tokens prepared for another household or actor.
+5. Tyrion performs the narrow category bridge mutation or kid-attribution action.
 6. Tyrion reads the affected record back, updates the local projection, and records
    a sanitized audit event.
 
 The audit record contains actor, household scope, tool and operation names, target
 reference hash, proposal/result timestamps, stable outcome code, and provenance. It
 must not contain authorization material, raw upstream responses, or private notes.
+
+Execution re-reads current state and compares the relevant category source version or
+Tyrion attribution state version before writing. Connector degradation,
+authentication expiry, concurrent changes, adapter rejection, and unverifiable
+read-back all fail closed. Projection reconciliation runs only after verified
+read-back; a reconciliation failure is reported as partial success rather than as a
+successful synchronized mutation. Category results retain `via Monarch` provenance,
+while kid assignments remain `derived by Tyrion`. Once a side-effect attempt begins,
+cancellation or timeout is reported as an unverifiable result rather than falsely
+claiming that no mutation occurred. The category adapter must condition its write on
+the proposal's old category and source version; an unconditional bridge write does
+not satisfy the port. Audit adapters atomically deduplicate a stable HMAC-derived
+audit ID and reject conflicting content so timeout retries cannot persist
+contradictory outcomes.
 
 ## Official Monarch MCP
 

@@ -48,6 +48,10 @@
       "types": "./dist/inquiry/index.d.ts",
       "import": "./dist/inquiry/index.js"
     },
+    "./mutations": {
+      "types": "./dist/mutations/index.d.ts",
+      "import": "./dist/mutations/index.js"
+    },
     "./services": {
       "types": "./dist/services/index.d.ts",
       "import": "./dist/services/index.js"
