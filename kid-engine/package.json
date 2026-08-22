@@ -35,7 +35,7 @@
     "audit": "python ../.github/scripts/check_npm_audit_policy.py kid-engine"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.2.0",
     "@types/proper-lockfile": "^4.1.4",
     "typescript": "^5.5.0",
     "vitest": "^4.1.10"
