@@ -2,7 +2,7 @@
 monarchmoneycommunity==1.5.2
 fastapi==0.141.1
 starlette==1.4.1
-uvicorn[standard]==0.52.1
+uvicorn[standard]==0.52.3
 python-dotenv==1.2.2
 pydantic==2.13.4
 httpx==0.28.1
