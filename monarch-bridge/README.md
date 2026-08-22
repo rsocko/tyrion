@@ -37,7 +37,10 @@ python ..\.github\scripts\check_python_dependency_policy.py
 
 Review every changed package and license, update `dependency-policy.json`, and confirm
 advisory floors before accepting regenerated output. Never resolve or retain a private
-package-index URL in repository files.
+package-index URL in repository files. Python version updates are intentionally excluded
+from weekly Dependabot version updates because Dependabot cannot update the reviewed
+policy metadata or reliably regenerate both universal locks; apply Python updates
+through this review process instead.
 
 ## Local setup
 
