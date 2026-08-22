@@ -45,6 +45,31 @@ npm run dev -- --hostname 127.0.0.1 --port 3098
 All other bridge paths, methods, and query expansion are rejected before an upstream
 call. Proxy failures use stable sanitized JSON and never return connection exceptions.
 
+## Mission Control reconnect handoff
+
+Mission Control links the operator to
+`https://[tyrion-host]/?source=mission-control` for connector recovery. It does not
+send cookie values, bearer credentials, session material, a return URL, or other
+state in that link. Tyrion treats only that exact single query parameter as a recovery
+entry and continues to own cookie-based authentication and external session storage.
+
+The recovery UI does not report completion after login alone. It clears cookie,
+password, and MFA fields as soon as the authentication request starts, verifies live
+`/auth/status`, requires one successful 30-day `/sync`, and rechecks authentication.
+Only the connected-plus-synced state exposes a return link.
+
+The optional return destination is fixed by server configuration:
+
+| Variable | Requirement |
+| --- | --- |
+| `MISSION_CONTROL_RETURN_URL` | Exact HTTPS Mission Control page; no credentials, query, or fragment |
+| `MISSION_CONTROL_RETURN_ALLOWED_ORIGINS` | Comma-separated exact HTTPS origins allowed for the configured return |
+
+Both values must validate, and the URL origin must be allowlisted. Otherwise Tyrion
+shows manual-return guidance and never uses a destination from the browser URL.
+Mission Control must verify its connector health and resume its projections after the
+operator returns; the browser handoff carries no recovery assertion or secret.
+
 ## Mission Control connector gateway
 
 Mission Control server and worker processes use
@@ -202,6 +227,8 @@ Runtime configuration:
 | --- | --- |
 | `BRIDGE_URL` | Private server-side bridge endpoint |
 | `BRIDGE_API_TOKEN` | Shared server-only bridge/finance-manager token (minimum 32 characters); authenticates the public connector gateway and private attribution, and domain-separates fingerprinting |
+| `MISSION_CONTROL_RETURN_URL` | Optional exact HTTPS return page shown only after verified authentication and bounded sync |
+| `MISSION_CONTROL_RETURN_ALLOWED_ORIGINS` | Optional exact HTTPS origin allowlist for the return page |
 | `TYRION_POLICY_STORE_PATH` | External absolute policy/audit store path |
 | `TYRION_REATTRIBUTION_URL` | Optional protected internal re-attribution and attribution-action state service |
 | `TYRION_REATTRIBUTION_TOKEN` | Optional server-only attribution-state integration token |

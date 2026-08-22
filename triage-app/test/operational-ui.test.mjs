@@ -25,6 +25,11 @@ import {
 } from "../src/lib/connector-health.mjs";
 import { connectionPresentation } from "../src/lib/operational-state.mjs";
 import { policyStatePresentation } from "../src/lib/policy-ui-state.mjs";
+import {
+  isMissionControlRecoveryEntry,
+  reconnectPhase,
+  resolveMissionControlHandoff,
+} from "../src/lib/reconnect-handoff.mjs";
 
 const appRoot = process.cwd();
 const serviceToken = "synthetic-test-service-token-value";
@@ -436,6 +441,10 @@ before(async () => {
       ...process.env,
       BRIDGE_URL: fakeBridgeUrl,
       BRIDGE_API_TOKEN: serviceToken,
+      MISSION_CONTROL_RETURN_URL:
+        "https://mission-control.example.invalid/finance/settings",
+      MISSION_CONTROL_RETURN_ALLOWED_ORIGINS:
+        "https://mission-control.example.invalid",
       TYRION_POLICY_STORE_PATH: policyStorePath,
       TYRION_FINANCE_INSIGHT_STORE_PATH: financeInsightStorePath,
       TYRION_FINANCE_INSIGHT_POLICY_PATH: financeInsightPolicyPath,
@@ -1488,6 +1497,51 @@ test("all required authentication states have operator guidance", () => {
   }
 });
 
+test("reconnect recovery requires connected auth and a successful bounded sync", () => {
+  assert.equal(reconnectPhase("checking", false), "checking");
+  assert.equal(reconnectPhase("unavailable", false), "unavailable");
+  for (const state of ["unauthenticated", "expired", "degraded"]) {
+    assert.equal(reconnectPhase(state, false), "authentication-required");
+  }
+  assert.equal(reconnectPhase("connected", false), "sync-required");
+  assert.equal(reconnectPhase("connected", true), "recovered");
+  assert.notEqual(reconnectPhase("expired", true), "recovered");
+});
+
+test("Mission Control recovery accepts only a fixed entry marker and server allowlist", () => {
+  assert.equal(isMissionControlRecoveryEntry("?source=mission-control"), true);
+  assert.equal(isMissionControlRecoveryEntry("?source=mission-control&source=other"), false);
+  assert.equal(
+    isMissionControlRecoveryEntry(
+      "?source=mission-control&returnUrl=https%3A%2F%2Fevil.example"
+    ),
+    false
+  );
+
+  assert.deepEqual(
+    resolveMissionControlHandoff(
+      "https://mission-control.example.invalid/finance/settings",
+      "https://mission-control.example.invalid"
+    ),
+    {
+      available: true,
+      returnUrl: "https://mission-control.example.invalid/finance/settings",
+    }
+  );
+  for (const [url, origins] of [
+    ["http://mission-control.example.invalid/finance/settings", "http://mission-control.example.invalid"],
+    ["https://evil.example/finance/settings", "https://mission-control.example.invalid"],
+    ["https://mission-control.example.invalid/finance/settings?token=value", "https://mission-control.example.invalid"],
+    ["https://mission-control.example.invalid/finance/settings#return", "https://mission-control.example.invalid"],
+    ["https://user:password@mission-control.example.invalid/finance/settings", "https://mission-control.example.invalid"],
+    ["https://mission-control.example.invalid/finance/settings", "https://mission-control.example.invalid/path"],
+  ]) {
+    assert.deepEqual(resolveMissionControlHandoff(url, origins), {
+      available: false,
+    });
+  }
+});
+
 test("all policy workflow states have actionable presentation", () => {
   const states = [
     "loading",
@@ -1529,6 +1583,18 @@ test("production route tree contains no broad finance pages", async () => {
     const response = await fetch(`${uiUrl}${path}`);
     assert.equal(response.status, 404);
   }
+});
+
+test("recovery handoff returns only the fixed server-allowlisted destination", async () => {
+  const response = await fetch(
+    `${uiUrl}/api/recovery-handoff?returnUrl=https%3A%2F%2Fevil.example`
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), {
+    available: true,
+    returnUrl: "https://mission-control.example.invalid/finance/settings",
+  });
 });
 
 test("proxy injects service auth only for protected allowed operations", async () => {

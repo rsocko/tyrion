@@ -1,6 +1,12 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import {
   AuthState,
@@ -12,9 +18,27 @@ import {
   syncAndRecheck,
 } from "@/lib/bridge-client";
 import { connectionPresentation } from "@/lib/operational-state.mjs";
+import {
+  isMissionControlRecoveryEntry,
+  reconnectPhase,
+  type MissionControlHandoff,
+} from "@/lib/reconnect-handoff.mjs";
 
 type ViewState = AuthState | "checking" | "unavailable";
 type LoginMethod = "cookies" | "password";
+
+function subscribeToLocationChange(onStoreChange: () => void) {
+  window.addEventListener("popstate", onStoreChange);
+  return () => window.removeEventListener("popstate", onStoreChange);
+}
+
+function getMissionControlRecoverySnapshot() {
+  return isMissionControlRecoveryEntry(window.location.search);
+}
+
+function getServerRecoverySnapshot() {
+  return false;
+}
 
 export default function OperationsPage() {
   const [viewState, setViewState] = useState<ViewState>("checking");
@@ -31,6 +55,14 @@ export default function OperationsPage() {
   const [busyAction, setBusyAction] = useState<"login" | "logout" | "sync" | null>(null);
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
+  const missionControlRecovery = useSyncExternalStore(
+    subscribeToLocationChange,
+    getMissionControlRecoverySnapshot,
+    getServerRecoverySnapshot
+  );
+  const [recoverySyncComplete, setRecoverySyncComplete] = useState(false);
+  const [missionControlHandoff, setMissionControlHandoff] =
+    useState<MissionControlHandoff>({ available: false });
 
   const refreshStatus = useCallback(async () => {
     await Promise.resolve();
@@ -42,7 +74,8 @@ export default function OperationsPage() {
       setMode(null);
       setViewState("unavailable");
       setStatusError(health.error || "The Monarch bridge is unavailable.");
-      return;
+      setRecoverySyncComplete(false);
+      return "unavailable" as const;
     }
 
     setBridgeReachable(true);
@@ -53,11 +86,16 @@ export default function OperationsPage() {
       setStatusError(
         auth.error || "The bridge is reachable, but protected status could not be checked."
       );
-      return;
+      setRecoverySyncComplete(false);
+      return "unavailable" as const;
     }
 
     setMode(auth.data.mode);
     setViewState(auth.data.authState);
+    if (auth.data.authState !== "connected") {
+      setRecoverySyncComplete(false);
+    }
+    return auth.data.authState;
   }, []);
 
   useEffect(() => {
@@ -65,26 +103,62 @@ export default function OperationsPage() {
     return () => window.clearTimeout(timeout);
   }, [refreshStatus]);
 
+  useEffect(() => {
+    if (!missionControlRecovery) return;
+
+    const controller = new AbortController();
+    void fetch("/api/recovery-handoff", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return { available: false } as const;
+        const value = (await response.json()) as unknown;
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          "available" in value &&
+          value.available === true &&
+          "returnUrl" in value &&
+          typeof value.returnUrl === "string"
+        ) {
+          return { available: true, returnUrl: value.returnUrl } as const;
+        }
+        return { available: false } as const;
+      })
+      .then(setMissionControlHandoff)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [missionControlRecovery]);
+
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
     setBusyAction("login");
     setActionError("");
     setNotice("");
 
-    const response =
+    const responsePromise =
       loginMethod === "cookies"
-        ? await loginWithCookies(sessionId, csrfToken)
-        : await login(email, password, mfaCode || undefined);
-
+        ? loginWithCookies(sessionId, csrfToken)
+        : login(email, password, mfaCode || undefined);
     setPassword("");
     setMfaCode("");
     setSessionId("");
     setCsrfToken("");
+    const response = await responsePromise;
 
     if (response.data) {
       setMfaRequested(false);
-      setNotice("Monarch authentication succeeded.");
-      await refreshStatus();
+      const state = await refreshStatus();
+      if (state === "connected") {
+        setNotice(
+          "Monarch authentication was verified. Run the bounded 30-day sync to refresh Finance data."
+        );
+      } else {
+        setActionError(
+          "Authentication returned successfully, but the live Monarch session was not verified."
+        );
+      }
     } else {
       if (response.code === "mfa_required") {
         setMfaRequested(true);
@@ -114,8 +188,20 @@ export default function OperationsPage() {
     setNotice("");
     const response = await syncAndRecheck();
     if (response.data) {
-      setNotice("The bounded 30-day sync completed and status was rechecked.");
-      await refreshStatus();
+      const state = await refreshStatus();
+      if (state === "connected") {
+        setRecoverySyncComplete(true);
+        setNotice(
+          missionControlRecovery
+            ? "Recovery complete: Monarch authentication is verified and the bounded sync succeeded."
+            : "The bounded 30-day sync completed and authentication was rechecked."
+        );
+      } else {
+        setRecoverySyncComplete(false);
+        setActionError(
+          "The bounded sync completed, but Monarch authentication could not be verified."
+        );
+      }
     } else {
       setActionError(response.error || "Sync failed.");
       if (response.status === 401) {
@@ -128,6 +214,7 @@ export default function OperationsPage() {
   const presentation = connectionPresentation(viewState);
   const canAuthenticate = ["unauthenticated", "expired", "degraded"].includes(viewState);
   const isConnected = viewState === "connected";
+  const currentRecoveryPhase = reconnectPhase(viewState, recoverySyncComplete);
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
@@ -150,6 +237,28 @@ export default function OperationsPage() {
           Monarch.
         </p>
       </header>
+
+      {missionControlRecovery && (
+        <section
+          aria-labelledby="reconnect-heading"
+          className="mb-6 rounded-xl border border-gold/60 bg-card p-5"
+        >
+          <p className="eyebrow mb-2">Mission Control handoff</p>
+          <h2 id="reconnect-heading" className="text-xl font-semibold">
+            Reconnect Monarch
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-muted">
+            {currentRecoveryPhase === "recovered"
+              ? "Finance recovery is ready to be verified by Mission Control."
+              : "Finance data is not refreshing. Tyrion keeps the reusable Monarch session private and requires live authentication plus one bounded sync before recovery."}
+          </p>
+          <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-muted">
+            <li>Verify or replace the bridge-managed Monarch session below.</li>
+            <li>Run the bounded 30-day sync after authentication is connected.</li>
+            <li>Return to Mission Control only after both checks succeed.</li>
+          </ol>
+        </section>
+      )}
 
       <section aria-labelledby="status-heading" className="mb-6 rounded-xl border border-border bg-card p-5">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
@@ -342,6 +451,35 @@ export default function OperationsPage() {
               {busyAction === "logout" ? "Disconnecting..." : "Disconnect Monarch"}
             </button>
           </div>
+        </section>
+      )}
+
+      {missionControlRecovery && currentRecoveryPhase === "recovered" && (
+        <section
+          aria-labelledby="recovery-complete-heading"
+          className="mt-6 rounded-xl border border-success/60 bg-card p-5"
+        >
+          <h2 id="recovery-complete-heading" className="text-lg font-semibold">
+            Recovery checks complete
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Monarch authentication is connected and the bounded sync succeeded. Mission
+            Control must still verify connector health and resume its own projections.
+          </p>
+          {missionControlHandoff.available ? (
+            <a
+              className="mt-4 inline-flex rounded-md bg-success px-4 py-2.5 text-sm font-semibold text-white"
+              href={missionControlHandoff.returnUrl}
+              rel="noreferrer"
+            >
+              Return to Mission Control
+            </a>
+          ) : (
+            <p className="mt-4 text-sm text-warning">
+              A server-allowlisted Mission Control return destination is not configured.
+              Return manually; no destination from this page&apos;s URL will be used.
+            </p>
+          )}
         </section>
       )}
 
