@@ -11,7 +11,8 @@ const presentations = Object.freeze({
   },
   unauthenticated: {
     label: "Not authenticated",
-    description: "No bridge-managed Monarch session exists.",
+    description:
+      "No bridge-managed Monarch session exists, so Finance data is not refreshing.",
     tone: "warning",
   },
   connected: {
@@ -21,12 +22,14 @@ const presentations = Object.freeze({
   },
   expired: {
     label: "Expired",
-    description: "Monarch rejected the prior session. Authenticate again.",
+    description:
+      "Monarch rejected the prior session. Finance data is not refreshing; authenticate again.",
     tone: "bad",
   },
   degraded: {
     label: "Degraded",
-    description: "A session exists, but Monarch verification is temporarily unavailable.",
+    description:
+      "A session exists, but Monarch verification is unavailable and Finance data is not refreshing.",
     tone: "warning",
   },
 });

@@ -37,6 +37,14 @@ Mission Control may consume a strict subset of this contract through:
 https://tyrion.socko.us/api/connector/v1
 ```
 
+The browser reconnect handoff is separate from this gateway. Mission Control opens
+`https://tyrion.socko.us/?source=mission-control` without credentials, session
+material, or a return URL. Tyrion owns reauthentication and requires live connected
+status plus one bounded 30-day sync before showing an optional return link. That link
+is the exact server-configured `MISSION_CONTROL_RETURN_URL`, is restricted by
+`MISSION_CONTROL_RETURN_ALLOWED_ORIGINS`, and cannot contain credentials, query, or a
+fragment. If either setting is absent or invalid, no return link is emitted.
+
 Every gateway request requires `Authorization: Bearer <BRIDGE_API_TOKEN>`, including
 health and contract. The configured token must be at least 32 characters. Validation
 uses a constant-time digest comparison. The credential is forwarded only after the

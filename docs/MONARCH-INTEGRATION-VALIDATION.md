@@ -37,6 +37,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Cookie login | Success shape, invalid input, sanitized upstream failure | Completed 2026-08-08 through the operational setup UI and server proxy |
 | Saved-session restart | Load, verification, and connected state | Completed 2026-08-08 |
 | Expiry and recovery | Expired cleanup and degraded retention | Revoke controlled session, verify `expired`, then set up again |
+| Mission Control reconnect handoff | Exact source marker; no caller-supplied return; server HTTPS origin allowlist; secret-field clearing; verified auth plus bounded sync completion gate; manual fallback when return is unavailable | Use the existing controlled expiry procedure, then verify Mission Control health and projection recovery without recording payloads |
 | Logout | In-memory and persisted state removal | Completed 2026-08-08; state and external session removal verified |
 | Health/auth state | All four auth states and public reachability | `test_live_auth_health` |
 | Transactions/filter/detail | Mission Control strict DTO parity; 366-day window; 1-500 page; 5,000-item normalized-filter scan; bounded opaque cursor; exact account, category, merchant, tag, amount, pending, and recurring filters; duplicate/unknown-query rejection; detail; empty/error shapes; malformed upstream rejection | Existing read contract completed 2026-08-08; issue #140 filter expansion requires controlled live validation |
@@ -77,6 +78,16 @@ evaluates the promoted local projection and never calls Monarch Bridge, imports
 Finance-insight service validation is therefore deterministic and uses invented
 facts plus temporary external state paths. It does not add a credentialed live
 test requirement.
+
+Mission Control reconnects by opening the Tyrion operations root with only
+`source=mission-control`. Tyrion never accepts a return URL, connector credential, or
+Monarch session value from that link. Cookie values remain in the bounded same-origin
+auth proxy and bridge process, are cleared from visible form state when submission
+starts, and are never returned. Recovery requires a live connected auth status and one
+successful bounded 30-day sync. The optional return link is an exact server-configured
+HTTPS URL whose origin is present in the server-configured allowlist; it carries no
+recovery assertion or secret. Mission Control independently verifies connector health
+and resumes its projections after return.
 
 ## Safe live procedure
 
