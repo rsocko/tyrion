@@ -525,33 +525,34 @@ function insightRequest(path, options = {}, baseUrl = uiUrl) {
   });
 }
 
-function financePublication(sequence, transactions = []) {
+function financePublication(sequence, transactions = [], additionalFacts = {}) {
   const sourceGeneration = `service-generation-${sequence}`;
   const facts = {
     transaction: transactions,
-    recurring: [],
+    recurring: additionalFacts.recurring ?? [],
     category: [],
-    account: [],
+    account: additionalFacts.account ?? [],
     tag: [],
   };
   const batches = [];
-  if (transactions.length > 0) {
+  for (const kind of ["transaction", "recurring", "category", "account", "tag"]) {
+    if (facts[kind].length === 0) continue;
     batches.push(
       financeContract.parseSourceFactBatchV1({
         contractVersion: "1.0",
         sourceGeneration,
-        kind: "transaction",
+        kind,
         batchIndex: 0,
-        facts: transactions,
-        digest: financeContract.canonicalDigestV1(transactions),
-        idempotencyKey: `service-transaction-batch-${sequence}`,
+        facts: facts[kind],
+        digest: financeContract.canonicalDigestV1(facts[kind]),
+        idempotencyKey: `service-${kind}-batch-${sequence}`,
       })
     );
   }
   const kinds = ["transaction", "recurring", "category", "account", "tag"];
   const manifest = kinds.map((kind) => ({
     kind,
-    batchCount: kind === "transaction" && transactions.length > 0 ? 1 : 0,
+    batchCount: facts[kind].length > 0 ? 1 : 0,
     itemCount: facts[kind].length,
     digest: financeContract.sourceManifestKindDigestV1(kind, batches),
   }));
@@ -1098,6 +1099,92 @@ test("finance insight analysis filters can return nonqualified occurrences", asy
         item.analysisState === "insufficientBaseline" &&
         item.sourceLifecycle === null
     )
+  );
+});
+
+test("finance insight service publishes a private generation-addressed OWL projection", async () => {
+  const publication = financePublication(6, [], {
+    account: [
+      { sourceRef: "card-a", accountType: "credit", active: true },
+      { sourceRef: "card-b", accountType: "credit", active: true },
+      { sourceRef: "cash-a", accountType: "cash", active: true },
+    ],
+    recurring: [
+      {
+        sourceRef: "utility-a",
+        displayName: "Invented Utility",
+        amountMinor: -12345,
+        cadence: "monthly",
+        nextDate: "2026-09-01",
+        categoryRef: null,
+        accountRef: "card-a",
+        active: true,
+      },
+      {
+        sourceRef: "income-a",
+        displayName: "Invented Payroll",
+        amountMinor: 500000,
+        cadence: "biweekly",
+        nextDate: "2026-09-04",
+        categoryRef: null,
+        accountRef: "card-a",
+        active: true,
+      },
+    ],
+  });
+  assert.equal((await publishFinanceGeneration(publication)).status, 200);
+
+  const response = await insightRequest(
+    `/document-expectation-signals/${publication.request.sourceGeneration}?connectorRef=${publication.request.connectorRef}`
+  );
+  assert.equal(response.status, 200);
+  const projection = financeContract.parseDocumentExpectationSignalsV1(
+    await response.json()
+  );
+  assert.equal(projection.contractVersion, "1");
+  assert.equal(projection.sourceGeneration, publication.request.sourceGeneration);
+  assert.equal(projection.completeness, "complete");
+  assert.equal(projection.signals.length, 3);
+  assert.equal(
+    projection.signals.filter(
+      (signal) => signal.kind === "accountStatementCandidate"
+    ).length,
+    2
+  );
+  assert.equal(
+    projection.signals.filter(
+      (signal) => signal.kind === "recurringDocumentCandidate"
+    ).length,
+    1
+  );
+  assert.ok(
+    projection.signals.every(
+      (signal) =>
+        signal.cadence === null &&
+        signal.nextExpectedDate === null &&
+        !JSON.stringify(signal).includes("card-")
+    )
+  );
+
+  const replay = await insightRequest(
+    `/document-expectation-signals/${publication.request.sourceGeneration}?connectorRef=${publication.request.connectorRef}`
+  );
+  assert.deepEqual(await replay.json(), projection);
+  assert.equal(
+    (
+      await insightRequest(
+        `/document-expectation-signals/${publication.request.sourceGeneration}`
+      )
+    ).status,
+    400
+  );
+  const missing = await insightRequest(
+    `/document-expectation-signals/missing-generation?connectorRef=${publication.request.connectorRef}`
+  );
+  assert.equal(missing.status, 404);
+  assert.equal(
+    (await missing.json()).error.code,
+    "source_generation_not_found"
   );
 });
 

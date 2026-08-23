@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   FINANCE_INSIGHT_DETECTOR_SET_VERSION_V1,
@@ -347,6 +348,14 @@ describe('SQLite migrations and staged source publication', () => {
       (await harness.store.loadCurrentProjection('demo-connector-v1'))
         ?.transactions[0]?.sourceRef
     ).toBe('demo-transaction-sequence-2');
+    expect(
+      (
+        await harness.store.loadProjection(
+          'demo-connector-v1',
+          older.request.sourceGeneration
+        )
+      )?.transactions[0]?.sourceRef
+    ).toBe('demo-transaction-sequence-1');
     await expectStoreError(
       harness.service.beginSourceGeneration({
         ...older.request,
@@ -356,6 +365,114 @@ describe('SQLite migrations and staged source publication', () => {
       'source_generation_conflict'
     );
     harness.store.close();
+  });
+
+  it('freezes recurring obligation classification per committed generation', async () => {
+    const harness = await createHarness();
+    const recurring = (amountMinor: number | null, active: boolean) => [
+      {
+        sourceRef: 'stable-recurring-obligation',
+        displayName: 'Demo Utility',
+        amountMinor,
+        cadence: 'unknown' as const,
+        nextDate: null,
+        categoryRef: null,
+        accountRef: null,
+        active,
+      },
+    ];
+    const outgoing = makePublication(
+      1,
+      '2026-08-10T15:00:00Z',
+      undefined,
+      recurring(-28_640, true)
+    );
+    const unavailable = makePublication(
+      2,
+      '2026-08-10T15:10:00Z',
+      undefined,
+      recurring(null, false)
+    );
+    const income = makePublication(
+      3,
+      '2026-08-10T15:20:00Z',
+      undefined,
+      recurring(28_640, true)
+    );
+
+    await publish(harness, outgoing);
+    await publish(harness, unavailable);
+    await publish(harness, income);
+
+    expect(
+      await harness.store.loadRecurringObligationRefs(
+        'demo-connector-v1',
+        outgoing.request.sourceGeneration
+      )
+    ).toEqual(['stable-recurring-obligation']);
+    expect(
+      await harness.store.loadRecurringObligationRefs(
+        'demo-connector-v1',
+        unavailable.request.sourceGeneration
+      )
+    ).toEqual(['stable-recurring-obligation']);
+    expect(
+      await harness.store.loadRecurringObligationRefs(
+        'demo-connector-v1',
+        income.request.sourceGeneration
+      )
+    ).toEqual([]);
+    harness.store.close();
+  });
+
+  it('reconstructs retained generation projections and obligation state on upgrade', async () => {
+    const harness = await createHarness();
+    const source = makePublication(
+      1,
+      '2026-08-10T15:00:00Z',
+      undefined,
+      [
+        {
+          sourceRef: 'legacy-recurring-obligation',
+          displayName: 'Demo Utility',
+          amountMinor: -28_640,
+          cadence: 'monthly',
+          nextDate: null,
+          categoryRef: null,
+          accountRef: null,
+          active: true,
+        },
+      ]
+    );
+    await publish(harness, source);
+    harness.store.close();
+
+    const legacy = new Database(harness.path);
+    legacy.exec(`
+      DELETE FROM finance_insight_recurring_facts;
+      DELETE FROM finance_insight_account_facts;
+      DROP INDEX finance_insight_recurring_obligations_by_connector_source;
+      DROP TABLE finance_insight_recurring_obligation_facts;
+      DELETE FROM finance_insight_schema_migrations WHERE version = 7;
+    `);
+    legacy.close();
+
+    const upgraded = openStore(harness.path, harness.clock);
+    expect(
+      (
+        await upgraded.loadProjection(
+          source.request.connectorRef,
+          source.request.sourceGeneration
+        )
+      )?.recurring.map((fact) => fact.sourceRef)
+    ).toEqual(['legacy-recurring-obligation']);
+    expect(
+      await upgraded.loadRecurringObligationRefs(
+        source.request.connectorRef,
+        source.request.sourceGeneration
+      )
+    ).toEqual(['legacy-recurring-obligation']);
+    upgraded.close();
   });
 
   it('serializes concurrent source-sequence compare-and-swap conflicts', async () => {
@@ -1533,23 +1650,24 @@ function openStore(
 function makePublication(
   sequence: number,
   sourceAsOf: string,
-  transactions = [transactionFact(`sequence-${sequence}`, -120_000)]
+  transactions = [transactionFact(`sequence-${sequence}`, -120_000)],
+  recurring = [
+    {
+      sourceRef: `demo-recurring-sequence-${sequence}`,
+      displayName: 'Demo Utility',
+      amountMinor: 28_640,
+      cadence: 'monthly' as const,
+      nextDate: '2026-09-08',
+      categoryRef: 'demo-category-utility',
+      accountRef: 'demo-account-household',
+      active: true,
+    },
+  ]
 ): Publication {
   const sourceGeneration = `demo-generation-sequence-${sequence}`;
   const facts = {
     transaction: transactions,
-    recurring: [
-      {
-        sourceRef: `demo-recurring-sequence-${sequence}`,
-        displayName: 'Demo Utility',
-        amountMinor: 28_640,
-        cadence: 'monthly' as const,
-        nextDate: '2026-09-08',
-        categoryRef: 'demo-category-utility',
-        accountRef: 'demo-account-household',
-        active: true,
-      },
-    ],
+    recurring,
     category: [
       {
         sourceRef: 'demo-category-utility',

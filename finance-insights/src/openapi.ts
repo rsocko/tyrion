@@ -16,6 +16,9 @@ import {
   occurrenceListResponseSchema,
 } from './contracts/list-v1.js';
 import {
+  documentExpectationSignalsSchema,
+} from './contracts/document-expectations-v1.js';
+import {
   evaluationRequestSchema,
   evaluationResultSchema,
   SOURCE_GENERATION_ITEM_LIMITS_V1,
@@ -53,6 +56,7 @@ const schemas = {
     financeAutomationDeliveryAckRequestSchema,
   FinanceAutomationDeliveryAckResultV1:
     financeAutomationDeliveryAckResultSchema,
+  DocumentExpectationSignalsV1: documentExpectationSignalsSchema,
 } as const;
 
 const errorResponses = {
@@ -89,6 +93,35 @@ export function createFinanceInsightsOpenApiV1(): Record<string, unknown> {
     },
     security: [{ bearerAuth: [] }],
     paths: {
+      '/api/internal/v1/finance/insights/document-expectation-signals/{generationId}':
+        {
+          get: {
+            operationId: 'getDocumentExpectationSignalsV1',
+            summary:
+              'Pull one bounded OWL document-expectation projection for an immutable source generation',
+            parameters: [
+              pathParameter('generationId', 160),
+              {
+                name: 'connectorRef',
+                in: 'query',
+                required: true,
+                schema: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 160,
+                  pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$',
+                },
+              },
+            ],
+            responses: {
+              '200': jsonResponse(
+                'Bounded generation-addressed expectation signals',
+                'DocumentExpectationSignalsV1'
+              ),
+              ...errorResponses,
+            },
+          },
+        },
       '/api/internal/v1/finance/insights/source-generations': {
         post: operation(
           'createSourceGenerationV1',

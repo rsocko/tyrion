@@ -231,6 +231,18 @@ least 32 bytes. Evaluation/write, read, and confirmed-action gates are
 server-only and fail closed. Evaluation reads only the current promoted
 projection and never contacts Monarch or loads reusable session material.
 
+The same private read boundary publishes the generation-addressed, pull-only
+`DocumentExpectationSignalsV1` projection for OWL:
+
+```text
+GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
+```
+
+Its independently versioned response, opaque series identity, complete-snapshot
+deactivation semantics, deterministic ordering, confidence and basis rules, and
+strict data exclusions are defined in
+[`DOCUMENT-EXPECTATION-SIGNALS-V1.md`](./DOCUMENT-EXPECTATION-SIGNALS-V1.md).
+
 ### Errors
 
 All bridge-generated errors have one shape:

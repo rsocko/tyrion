@@ -655,6 +655,8 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         current_evaluation_sequence: number;
       };
       if (generation.source_sequence < connector.current_source_sequence) {
+        this.insertProjection(generation, batches);
+        this.testHook?.('afterProjection');
         this.database
           .prepare(
             `UPDATE finance_insight_source_generations
@@ -1203,37 +1205,118 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     ) {
       return storeError('stale_evaluation');
     }
+    return this.loadProjectionFacts(generation);
+  }
+
+  async loadProjection(
+    connectorRef: string,
+    sourceGeneration: string
+  ): Promise<SourceProjectionV1 | null> {
+    if (!this.connectionContext.getStore()) {
+      return this.withConnection(() =>
+        this.loadProjection(connectorRef, sourceGeneration)
+      );
+    }
+    const generation = this.findSourceGeneration(connectorRef, sourceGeneration);
+    if (
+      generation?.state !== 'promoted' &&
+      generation?.state !== 'historical'
+    ) {
+      return null;
+    }
+    return this.projectionFromBatches(this.loadBatches(sourceGeneration));
+  }
+
+  async loadRecurringObligationRefs(
+    connectorRef: string,
+    sourceGeneration: string
+  ): Promise<readonly string[]> {
+    if (!this.connectionContext.getStore()) {
+      return this.withConnection(() =>
+        this.loadRecurringObligationRefs(connectorRef, sourceGeneration)
+      );
+    }
+    return (
+      this.database
+        .prepare(
+          `SELECT source_ref
+           FROM finance_insight_recurring_obligation_facts
+           WHERE connector_ref = ? AND source_generation = ? AND is_obligation = 1
+           ORDER BY source_ref`
+        )
+        .all(connectorRef, sourceGeneration) as { source_ref: string }[]
+    ).map((row) => row.source_ref);
+  }
+
+  private loadProjectionFacts(sourceGeneration: string): SourceProjectionV1 {
     return {
       transactions: this.readProjectionFacts(
         'finance_insight_transaction_facts',
-        generation,
+        sourceGeneration,
         (value) =>
           parseContractV1(transactionSourceFactSchema, value, 'transaction source fact')
       ),
       recurring: this.readProjectionFacts(
         'finance_insight_recurring_facts',
-        generation,
+        sourceGeneration,
         (value) =>
           parseContractV1(recurringSourceFactSchema, value, 'recurring source fact')
       ),
       categories: this.readProjectionFacts(
         'finance_insight_category_facts',
-        generation,
+        sourceGeneration,
         (value) =>
           parseContractV1(categorySourceFactSchema, value, 'category source fact')
       ),
       accounts: this.readProjectionFacts(
         'finance_insight_account_facts',
-        generation,
+        sourceGeneration,
         (value) =>
           parseContractV1(accountSourceFactSchema, value, 'account source fact')
       ),
       tags: this.readProjectionFacts(
         'finance_insight_tag_facts',
-        generation,
+        sourceGeneration,
         (value) => parseContractV1(tagSourceFactSchema, value, 'tag source fact')
       ),
     };
+  }
+
+  private projectionFromBatches(
+    batches: readonly SourceFactBatchV1[]
+  ): SourceProjectionV1 {
+    const projection: {
+      -readonly [K in keyof SourceProjectionV1]: SourceProjectionV1[K][number][];
+    } = {
+      transactions: [],
+      recurring: [],
+      categories: [],
+      accounts: [],
+      tags: [],
+    };
+    for (const batch of batches) {
+      if (batch.kind === 'transaction') {
+        projection.transactions.push(...batch.facts);
+      } else if (batch.kind === 'recurring') {
+        projection.recurring.push(...batch.facts);
+      } else if (batch.kind === 'category') {
+        projection.categories.push(...batch.facts);
+      } else if (batch.kind === 'account') {
+        projection.accounts.push(...batch.facts);
+      } else {
+        projection.tags.push(...batch.facts);
+      }
+    }
+    for (const facts of Object.values(projection)) {
+      facts.sort((left, right) =>
+        left.sourceRef < right.sourceRef
+          ? -1
+          : left.sourceRef > right.sourceRef
+            ? 1
+            : 0
+      );
+    }
+    return projection;
   }
 
   async associateRecurring(
@@ -2598,6 +2681,39 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
               value.accountRef,
               value.active ? 1 : 0,
               json
+            );
+          const prior = this.database
+            .prepare(
+              `SELECT is_obligation
+               FROM finance_insight_recurring_obligation_facts
+               WHERE connector_ref = ? AND source_ref = ? AND source_sequence < ?
+               ORDER BY source_sequence DESC
+               LIMIT 1`
+            )
+            .get(
+              generation.connector_ref,
+              value.sourceRef,
+              generation.source_sequence
+            ) as { is_obligation: number } | undefined;
+          const isObligation =
+            value.amountMinor === null
+              ? prior?.is_obligation ?? 0
+              : value.amountMinor < 0
+                ? 1
+                : 0;
+          this.database
+            .prepare(
+              `INSERT INTO finance_insight_recurring_obligation_facts(
+                connector_ref, source_generation, source_sequence, source_ref,
+                is_obligation
+              ) VALUES (?, ?, ?, ?, ?)`
+            )
+            .run(
+              generation.connector_ref,
+              generation.source_generation,
+              generation.source_sequence,
+              value.sourceRef,
+              isObligation
             );
         } else if (batch.kind === 'category') {
           const value = fact as Extract<SourceFactBatchV1, { kind: 'category' }>['facts'][number];

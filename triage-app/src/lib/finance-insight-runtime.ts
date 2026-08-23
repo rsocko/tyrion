@@ -29,6 +29,7 @@ export interface FinanceInsightRuntimeGates {
 
 export interface FinanceInsightRuntime {
   store: FinanceInsightSqliteStoreV1;
+  identityKey: Uint8Array;
   lifecycle: FinanceInsightLifecycleServiceV1;
   orchestrator: FinanceInsightEvaluationOrchestratorV1;
   runAutomation(
@@ -163,6 +164,7 @@ export async function createFinanceInsightRuntime(
     };
     const runtime = {
       store,
+      identityKey: Uint8Array.from(identityKey),
       lifecycle,
       orchestrator: new FinanceInsightEvaluationOrchestratorV1({
         store,

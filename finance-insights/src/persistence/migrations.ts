@@ -516,6 +516,66 @@ CREATE INDEX finance_automation_expiring_job_leases
   ON finance_automation_job_leases(expires_at);
 `,
     },
+    {
+      version: 7,
+      name: 'document-expectation-recurring-obligations',
+      sql: `
+CREATE TABLE finance_insight_recurring_obligation_facts (
+  connector_ref TEXT NOT NULL,
+  source_generation TEXT NOT NULL,
+  source_sequence INTEGER NOT NULL,
+  source_ref TEXT NOT NULL,
+  is_obligation INTEGER NOT NULL CHECK (is_obligation IN (0, 1)),
+  PRIMARY KEY (source_generation, source_ref),
+  FOREIGN KEY (connector_ref, source_generation)
+    REFERENCES finance_insight_source_generations(connector_ref, source_generation)
+    ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX finance_insight_recurring_obligations_by_connector_source
+  ON finance_insight_recurring_obligation_facts(
+    connector_ref, source_ref, source_sequence
+  );
+
+WITH recurring_facts AS (
+  SELECT
+    generation.connector_ref,
+    generation.source_generation,
+    generation.source_sequence,
+    json_extract(fact.value, '$.sourceRef') AS source_ref,
+    json_extract(fact.value, '$.amountMinor') AS amount_minor
+  FROM finance_insight_source_batches AS batch
+  JOIN finance_insight_source_generations AS generation
+    ON generation.source_generation = batch.source_generation
+  JOIN json_each(batch.batch_json, '$.facts') AS fact
+  WHERE batch.kind = 'recurring'
+    AND generation.state IN ('promoted', 'historical')
+)
+INSERT INTO finance_insight_recurring_obligation_facts(
+  connector_ref, source_generation, source_sequence, source_ref, is_obligation
+)
+SELECT
+  fact.connector_ref,
+  fact.source_generation,
+  fact.source_sequence,
+  fact.source_ref,
+  CASE
+    WHEN fact.amount_minor < 0 THEN 1
+    WHEN fact.amount_minor >= 0 THEN 0
+    ELSE COALESCE((
+      SELECT CASE WHEN prior.amount_minor < 0 THEN 1 ELSE 0 END
+      FROM recurring_facts AS prior
+      WHERE prior.connector_ref = fact.connector_ref
+        AND prior.source_ref = fact.source_ref
+        AND prior.source_sequence < fact.source_sequence
+        AND prior.amount_minor IS NOT NULL
+      ORDER BY prior.source_sequence DESC
+      LIMIT 1
+    ), 0)
+  END
+FROM recurring_facts AS fact;
+`,
+    },
   ]);
 
 export function migrateFinanceInsightStoreV1(

@@ -11,7 +11,7 @@ describe('executable contract and internal package boundary', () => {
       )
     );
     expect(document).toEqual(createFinanceInsightsOpenApiV1());
-    expect(Object.keys(document.paths)).toHaveLength(9);
+    expect(Object.keys(document.paths)).toHaveLength(10);
     expect(JSON.stringify(document)).not.toContain('monarch-bridge/contract.py');
   });
 
@@ -25,6 +25,7 @@ describe('executable contract and internal package boundary', () => {
           {
             parameters?: Array<{
               name?: string;
+              required?: boolean;
               schema?: {
                 pattern?: string;
                 items?: { enum?: string[] };
@@ -45,6 +46,10 @@ describe('executable contract and internal package boundary', () => {
     ).toBe(false);
     expect(
       document.components.schemas.InsightOccurrenceDetailV1?.additionalProperties
+    ).toBe(false);
+    expect(
+      document.components.schemas.DocumentExpectationSignalsV1
+        ?.additionalProperties
     ).toBe(false);
     expect(JSON.stringify(document)).not.toContain(
       '"minimum":-9007199254740991'
@@ -102,6 +107,18 @@ describe('executable contract and internal package boundary', () => {
         (parameter) => parameter.name === 'connectorRef'
       )?.schema?.pattern
     ).toBe('^[A-Za-z0-9][A-Za-z0-9._:-]*$');
+    const expectationOperation =
+      document.paths[
+        '/api/internal/v1/finance/insights/document-expectation-signals/{generationId}'
+      ]!.get!;
+    expect(
+      expectationOperation.parameters?.find(
+        (parameter) => parameter.name === 'connectorRef'
+      )
+    ).toMatchObject({
+      required: true,
+      schema: { pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' },
+    });
     const timestampSchemas = collectTimestampSchemas(
       document.components.schemas
     );
