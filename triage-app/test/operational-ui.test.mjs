@@ -525,33 +525,37 @@ function insightRequest(path, options = {}, baseUrl = uiUrl) {
   });
 }
 
-function financePublication(sequence, transactions = []) {
+function financePublication(sequence, transactions = [], additionalFacts = {}) {
   const sourceGeneration = `service-generation-${sequence}`;
   const facts = {
     transaction: transactions,
-    recurring: [],
+    recurring: additionalFacts.recurring ?? [],
     category: [],
-    account: [],
+    account: additionalFacts.account ?? [],
     tag: [],
   };
   const batches = [];
-  if (transactions.length > 0) {
-    batches.push(
-      financeContract.parseSourceFactBatchV1({
-        contractVersion: "1.0",
-        sourceGeneration,
-        kind: "transaction",
-        batchIndex: 0,
-        facts: transactions,
-        digest: financeContract.canonicalDigestV1(transactions),
-        idempotencyKey: `service-transaction-batch-${sequence}`,
-      })
-    );
+  for (const kind of ["transaction", "recurring", "category", "account", "tag"]) {
+    if (facts[kind].length === 0) continue;
+    for (let batchIndex = 0; batchIndex * 250 < facts[kind].length; batchIndex += 1) {
+      const batchFacts = facts[kind].slice(batchIndex * 250, (batchIndex + 1) * 250);
+      batches.push(
+        financeContract.parseSourceFactBatchV1({
+          contractVersion: "1.0",
+          sourceGeneration,
+          kind,
+          batchIndex,
+          facts: batchFacts,
+          digest: financeContract.canonicalDigestV1(batchFacts),
+          idempotencyKey: `service-${kind}-batch-${sequence}-${batchIndex}`,
+        })
+      );
+    }
   }
   const kinds = ["transaction", "recurring", "category", "account", "tag"];
   const manifest = kinds.map((kind) => ({
     kind,
-    batchCount: kind === "transaction" && transactions.length > 0 ? 1 : 0,
+    batchCount: Math.ceil(facts[kind].length / 250),
     itemCount: facts[kind].length,
     digest: financeContract.sourceManifestKindDigestV1(kind, batches),
   }));
@@ -1097,6 +1101,130 @@ test("finance insight analysis filters can return nonqualified occurrences", asy
       (item) =>
         item.analysisState === "insufficientBaseline" &&
         item.sourceLifecycle === null
+    )
+  );
+});
+
+test("finance insight service publishes a private generation-addressed OWL projection", async () => {
+  const publication = financePublication(6, [], {
+    account: [
+      { sourceRef: "card-a", accountType: "credit", active: true },
+      { sourceRef: "card-b", accountType: "credit", active: true },
+      { sourceRef: "cash-a", accountType: "cash", active: true },
+    ],
+    recurring: [
+      {
+        sourceRef: "utility-a",
+        displayName: "Invented Utility",
+        amountMinor: -12345,
+        cadence: "monthly",
+        nextDate: "2026-09-01",
+        categoryRef: null,
+        accountRef: "card-a",
+        active: true,
+      },
+      {
+        sourceRef: "income-a",
+        displayName: "Invented Payroll",
+        amountMinor: 500000,
+        cadence: "biweekly",
+        nextDate: "2026-09-04",
+        categoryRef: null,
+        accountRef: "card-a",
+        active: true,
+      },
+    ],
+  });
+  assert.equal((await publishFinanceGeneration(publication)).status, 200);
+
+  const response = await insightRequest(
+    `/document-expectation-signals/${publication.request.sourceGeneration}?connectorRef=${publication.request.connectorRef}`
+  );
+  assert.equal(response.status, 200);
+  const projection = financeContract.parseDocumentExpectationSignalsV1(
+    await response.json()
+  );
+  assert.equal(projection.contractVersion, "1");
+  assert.equal(projection.sourceGeneration, publication.request.sourceGeneration);
+  assert.equal(projection.completeness, "complete");
+  assert.equal(projection.signals.length, 3);
+  assert.equal(
+    projection.signals.filter(
+      (signal) => signal.kind === "accountStatementCandidate"
+    ).length,
+    2
+  );
+  assert.equal(
+    projection.signals.filter(
+      (signal) => signal.kind === "recurringDocumentCandidate"
+    ).length,
+    1
+  );
+  assert.ok(
+    projection.signals.every(
+      (signal) =>
+        signal.cadence === null &&
+        signal.nextExpectedDate === null &&
+        !JSON.stringify(signal).includes("card-") &&
+        !JSON.stringify(signal).includes("Invented Utility")
+    )
+  );
+  assert.equal(
+    projection.signals.find(
+      (signal) => signal.kind === "recurringDocumentCandidate"
+    )?.displayHint,
+    "Recurring expense"
+  );
+
+  const replay = await insightRequest(
+    `/document-expectation-signals/${publication.request.sourceGeneration}?connectorRef=${publication.request.connectorRef}`
+  );
+  assert.deepEqual(await replay.json(), projection);
+  assert.equal(
+    (
+      await insightRequest(
+        `/document-expectation-signals/${publication.request.sourceGeneration}`
+      )
+    ).status,
+    400
+  );
+  const missing = await insightRequest(
+    `/document-expectation-signals/missing-generation?connectorRef=${publication.request.connectorRef}`
+  );
+  assert.equal(missing.status, 404);
+  assert.equal(
+    (await missing.json()).error.code,
+    "source_generation_not_found"
+  );
+
+  const maximumPublication = financePublication(7, [], {
+    account: Array.from({ length: 1000 }, (_, index) => ({
+      sourceRef: `bounded-account-${index}`,
+      accountType: "credit",
+      active: true,
+    })),
+    recurring: Array.from({ length: 5000 }, (_, index) => ({
+      sourceRef: `bounded-recurring-${index}`,
+      displayName: `Private recurring name ${index}`,
+      amountMinor: -100,
+      cadence: "monthly",
+      nextDate: null,
+      categoryRef: null,
+      accountRef: null,
+      active: true,
+    })),
+  });
+  assert.equal((await publishFinanceGeneration(maximumPublication)).status, 200);
+  const maximumResponse = await insightRequest(
+    `/document-expectation-signals/${maximumPublication.request.sourceGeneration}?connectorRef=${maximumPublication.request.connectorRef}`
+  );
+  assert.equal(maximumResponse.status, 200);
+  const maximumProjection = await maximumResponse.json();
+  assert.equal(maximumProjection.signals.length, 6000);
+  assert.ok(Buffer.byteLength(JSON.stringify(maximumProjection), "utf8") > 512 * 1024);
+  assert.ok(
+    maximumProjection.signals.every(
+      (signal) => !signal.displayHint.startsWith("Private recurring name")
     )
   );
 });

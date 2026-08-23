@@ -9,6 +9,7 @@ import {
   parseFinanceAutomationDeliveryAckResultV1,
   parseFinanceAutomationJobRequestV1,
   parseFinanceAutomationJobResultV1,
+  parseDocumentExpectationSignalsV1,
   parseOccurrenceActionRequestV1,
   parseOccurrenceActionResultV1,
   parseOccurrenceListQueryV1,
@@ -18,6 +19,7 @@ import {
   parseSourceGenerationCommitRequestV1,
   parseSourceGenerationCreateRequestV1,
   parseSourceGenerationResultV1,
+  projectDocumentExpectationSignalsV1,
   sourceReferenceSchema,
   type SourceGenerationRecordV1,
 } from "@rsocko/tyrion-finance-insights";
@@ -25,6 +27,7 @@ import { authenticateFinanceInsightRequest, FinanceInsightHttpError } from "@/li
 import {
   financeInsightJson,
   handleFinanceInsightError,
+  MAX_DOCUMENT_EXPECTATION_RESPONSE_BYTES,
   readFinanceInsightJson,
 } from "@/lib/finance-insight-http";
 import { getFinanceInsightRuntime } from "@/lib/finance-insight-runtime";
@@ -50,6 +53,54 @@ export async function handleFinanceInsightRequest(
   try {
     authenticateFinanceInsightRequest(request);
     const runtime = await getFinanceInsightRuntime();
+    if (
+      request.method === "GET" &&
+      segments.length === 2 &&
+      segments[0] === "document-expectation-signals"
+    ) {
+      requireGate(runtime.gates.read);
+      const sourceGeneration = parsePathValue(
+        sourceReferenceSchema,
+        segments[1]
+      );
+      const connectorRef = parseSingleRequiredQuery(
+        request.nextUrl.searchParams,
+        "connectorRef"
+      );
+      const source = await runtime.store.sourceGenerations.find(
+        connectorRef,
+        sourceGeneration
+      );
+      const projection = await runtime.store.loadProjection(
+        connectorRef,
+        sourceGeneration
+      );
+      if (!source || !projection) {
+        throw new FinanceInsightHttpError("source_generation_not_found");
+      }
+      return financeInsightJson(
+        parseDocumentExpectationSignalsV1(
+          projectDocumentExpectationSignalsV1(
+            {
+              connectorRef,
+              sourceGeneration,
+              sourceAsOf: source.request.sourceAsOf,
+              completeness: "complete",
+              accounts: projection.accounts,
+              recurring: projection.recurring,
+              knownOutgoingRecurringRefs:
+                await runtime.store.loadRecurringObligationRefs(
+                  connectorRef,
+                  sourceGeneration
+                ),
+            },
+            runtime.identityKey
+          )
+        ),
+        200,
+        MAX_DOCUMENT_EXPECTATION_RESPONSE_BYTES
+      );
+    }
     if (
       request.method === "POST" &&
       segments.length === 2 &&
@@ -273,6 +324,19 @@ function parseBatchIndex(value: string | undefined): number {
     throw new FinanceInsightHttpError("invalid_request");
   }
   return parsed;
+}
+
+function parseSingleRequiredQuery(
+  search: URLSearchParams,
+  key: string
+): string {
+  if (
+    [...search.keys()].some((candidate) => candidate !== key) ||
+    search.getAll(key).length !== 1
+  ) {
+    throw new FinanceInsightHttpError("invalid_filter");
+  }
+  return parsePathValue(sourceReferenceSchema, search.get(key) ?? undefined);
 }
 
 function parseListQuery(search: URLSearchParams) {

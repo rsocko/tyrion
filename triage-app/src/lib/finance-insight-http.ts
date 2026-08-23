@@ -14,6 +14,7 @@ import {
 import { FinanceInsightRuntimeConfigurationError } from "@/lib/finance-insight-runtime";
 
 const MAX_RESPONSE_BYTES = 512 * 1024;
+export const MAX_DOCUMENT_EXPECTATION_RESPONSE_BYTES = 12 * 1024 * 1024;
 
 export async function readFinanceInsightJson(
   request: NextRequest
@@ -64,9 +65,13 @@ export async function readFinanceInsightJson(
   }
 }
 
-export function financeInsightJson(value: unknown, status = 200): NextResponse {
+export function financeInsightJson(
+  value: unknown,
+  status = 200,
+  maxResponseBytes = MAX_RESPONSE_BYTES
+): NextResponse {
   const serialized = JSON.stringify(value);
-  if (Buffer.byteLength(serialized, "utf8") > MAX_RESPONSE_BYTES) {
+  if (Buffer.byteLength(serialized, "utf8") > maxResponseBytes) {
     return financeInsightError("page_too_large");
   }
   return new NextResponse(serialized, {

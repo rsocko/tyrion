@@ -1,4 +1,5 @@
 export * from './actions-v1.js';
+export * from './document-expectations-v1.js';
 export * from './errors-v1.js';
 export * from './list-v1.js';
 export * from './occurrence-v1.js';
