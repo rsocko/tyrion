@@ -1,14 +1,12 @@
-import { readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
+  createCandidatePolicySnapshotV1,
   FINANCE_INSIGHT_DETECTOR_SET_VERSION_V1,
   FinanceAutomationJobServiceV1,
   FinanceAutomationSqliteStoreV1,
   FinanceInsightEvaluationOrchestratorV1,
   FinanceInsightLifecycleServiceV1,
   FinanceInsightSqliteStoreV1,
-  parseFinanceInsightPolicySnapshotV1,
-  type FinanceInsightPolicySnapshotV1,
   type FinanceInsightTelemetryEventV1,
   type FinanceAutomationTelemetryEventV1,
   type FinanceAutomationJobRequestV1,
@@ -18,6 +16,12 @@ import {
 } from "@rsocko/tyrion-finance-insights";
 
 const HOUSEHOLD_SCOPE = "homelab-household";
+const DEFAULT_POLICY_CURRENCY = "USD";
+const DEFAULT_POLICY_TIMEZONE = "America/New_York";
+const DEFAULT_POLICY_EFFECTIVE_AT = [
+  "1970-01-01T00:00:00.000Z",
+  "1970-01-02T00:00:00.000Z",
+] as const;
 const RETENTION_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 const FINANCE_INSIGHT_IDENTITY_NAMESPACE = new TextEncoder().encode(
   "tyrion/finance-insight/identity/v1"
@@ -123,11 +127,7 @@ export async function createFinanceInsightRuntime(
     const storePath = requireExternalAbsolutePath(
       environment.TYRION_FINANCE_INSIGHT_STORE_PATH
     );
-    const policyPath = requireExternalAbsolutePath(
-      environment.TYRION_FINANCE_INSIGHT_POLICY_PATH
-    );
     const identityNamespace = FINANCE_INSIGHT_IDENTITY_NAMESPACE;
-    const policy = loadPolicy(policyPath);
     const store = new FinanceInsightSqliteStoreV1({
       path: storePath,
       cursorChecksumNamespace: FINANCE_INSIGHT_CURSOR_CHECKSUM_NAMESPACE,
@@ -135,7 +135,7 @@ export async function createFinanceInsightRuntime(
     });
     const maintenance = new FinanceInsightRuntimeMaintenance(store);
     try {
-      await installPolicy(store, policy);
+      await initializeDefaultPolicies(store);
       await maintenance.runIfDue();
     } catch (error) {
       store.close();
@@ -283,22 +283,23 @@ function requireExternalAbsolutePath(value: string | undefined): string {
   return path;
 }
 
-function loadPolicy(path: string): FinanceInsightPolicySnapshotV1 {
-  try {
-    return parseFinanceInsightPolicySnapshotV1(
-      JSON.parse(readFileSync(path, "utf8"))
-    );
-  } catch {
-    throw new FinanceInsightRuntimeConfigurationError();
-  }
-}
-
-async function installPolicy(
-  store: FinanceInsightSqliteStoreV1,
-  policy: FinanceInsightPolicySnapshotV1
+async function initializeDefaultPolicies(
+  store: FinanceInsightSqliteStoreV1
 ): Promise<void> {
   try {
-    await store.policies.append(policy);
+    await store.transaction(async () => {
+      if (await store.policies.latest()) return;
+      for (const [index, effectiveAt] of DEFAULT_POLICY_EFFECTIVE_AT.entries()) {
+        await store.policies.append(
+          createCandidatePolicySnapshotV1({
+            policyVersion: index + 1,
+            effectiveAt,
+            currency: DEFAULT_POLICY_CURRENCY,
+            timezone: DEFAULT_POLICY_TIMEZONE,
+          })
+        );
+      }
+    });
   } catch {
     throw new FinanceInsightRuntimeConfigurationError();
   }

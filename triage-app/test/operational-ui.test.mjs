@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer, request as httpRequest } from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { after, before, beforeEach, test } from "node:test";
 import {
@@ -32,6 +33,10 @@ import {
 } from "../src/lib/reconnect-handoff.mjs";
 
 const appRoot = process.cwd();
+const financeRequire = createRequire(
+  resolve(appRoot, "..", "finance-insights", "package.json")
+);
+const Database = financeRequire("better-sqlite3");
 const serviceToken = "synthetic-test-service-token-value";
 const internalAttributionHost = "tyrion-operations-ui:3000";
 const policyActor = {
@@ -55,7 +60,6 @@ let standaloneServer;
 let temporaryStateDirectory;
 let policyStorePath;
 let financeInsightStorePath;
-let financeInsightPolicyPath;
 let staleFinanceInsightGeneration;
 let financeContract;
 let receivedRequests = [];
@@ -359,10 +363,6 @@ before(async () => {
     temporaryStateDirectory,
     "finance-insights.sqlite"
   );
-  financeInsightPolicyPath = resolve(
-    temporaryStateDirectory,
-    "finance-insights-policy.json"
-  );
   financeContract = await import(
     pathToFileURL(
       resolve(appRoot, "..", "finance-insights", "dist", "index.js")
@@ -374,25 +374,6 @@ before(async () => {
     currency: "USD",
     timezone: "America/New_York",
   });
-  await writeFile(
-    financeInsightPolicyPath,
-    JSON.stringify(
-      financeContract.parseFinanceInsightPolicySnapshotV1({
-        ...baseFinancePolicy,
-        featureGates: {
-          ...baseFinancePolicy.featureGates,
-          recurringAmountAnalysis: true,
-          recurringAmountNotifications: false,
-          largeTransactionAnalysis: true,
-          varianceAnalysis: true,
-          immediateLargeTransactionNotifications: false,
-          monthlyMoverDigestNotifications: false,
-          confirmedActions: true,
-        },
-      })
-    ),
-    { encoding: "utf8", mode: 0o600 }
-  );
   const staleStore = new financeContract.FinanceInsightSqliteStoreV1({
     path: financeInsightStorePath,
     cursorChecksumNamespace: Buffer.from(
@@ -446,7 +427,6 @@ before(async () => {
         "https://mission-control.example.invalid",
       TYRION_POLICY_STORE_PATH: policyStorePath,
       TYRION_FINANCE_INSIGHT_STORE_PATH: financeInsightStorePath,
-      TYRION_FINANCE_INSIGHT_POLICY_PATH: financeInsightPolicyPath,
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "true",
@@ -1326,7 +1306,6 @@ test("finance insight rollout gates fail closed and health remains metadata-only
         temporaryStateDirectory,
         "finance-insights-disabled.sqlite"
       ),
-      TYRION_FINANCE_INSIGHT_POLICY_PATH: financeInsightPolicyPath,
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "false",
@@ -1339,6 +1318,30 @@ test("finance insight rollout gates fail closed and health remains metadata-only
   });
   try {
     await waitForServer(disabledUrl, disabledProcess);
+    const initializedStore = new financeContract.FinanceInsightSqliteStoreV1({
+      path: resolve(
+        temporaryStateDirectory,
+        "finance-insights-disabled.sqlite"
+      ),
+      cursorChecksumNamespace: Buffer.from(
+        "tyrion/finance-insight/cursor-checksum/v1",
+        "utf8"
+      ),
+    });
+    try {
+      assert.deepEqual(
+        (await initializedStore.policies.current()),
+        financeContract.createCandidatePolicySnapshotV1({
+          policyVersion: 2,
+          effectiveAt: "1970-01-02T00:00:00.000Z",
+          currency: "USD",
+          timezone: "America/New_York",
+        })
+      );
+      assert.equal((await initializedStore.policies.find(1))?.policyVersion, 1);
+    } finally {
+      initializedStore.close();
+    }
     for (const [path, options] of [
       ["/source-generations", { method: "POST", body: "{}" }],
       ["/occurrences", {}],
@@ -1371,6 +1374,108 @@ test("finance insight rollout gates fail closed and health remains metadata-only
     );
   } finally {
     await stopProcess(disabledProcess);
+  }
+});
+
+test("finance insight startup preserves an existing policy history", async () => {
+  const store = new financeContract.FinanceInsightSqliteStoreV1({
+    path: financeInsightStorePath,
+    cursorChecksumNamespace: Buffer.from(
+      "tyrion/finance-insight/cursor-checksum/v1",
+      "utf8"
+    ),
+    clock: () => "2026-08-11T14:00:00.000Z",
+  });
+  try {
+    assert.equal((await store.policies.current())?.policyVersion, 1);
+    assert.equal(
+      (await store.policies.current())?.featureGates.confirmedActions,
+      true
+    );
+    assert.equal(await store.policies.find(2), null);
+  } finally {
+    store.close();
+  }
+});
+
+test("finance insight startup preserves a future-effective v2-only history", async () => {
+  const storePath = resolve(
+    temporaryStateDirectory,
+    "finance-insights-v2-only.sqlite"
+  );
+  const store = new financeContract.FinanceInsightSqliteStoreV1({
+    path: storePath,
+    cursorChecksumNamespace: Buffer.from(
+      "tyrion/finance-insight/cursor-checksum/v1",
+      "utf8"
+    ),
+    clock: () => "2026-08-11T14:00:00.000Z",
+  });
+  const first = financeContract.createCandidatePolicySnapshotV1({
+    policyVersion: 1,
+    effectiveAt: "2030-01-01T00:00:00.000Z",
+    currency: "USD",
+    timezone: "America/New_York",
+  });
+  const second = financeContract.createCandidatePolicySnapshotV1({
+    policyVersion: 2,
+    effectiveAt: "2030-01-02T00:00:00.000Z",
+    currency: "USD",
+    timezone: "America/New_York",
+  });
+  await store.policies.append(first);
+  await store.policies.append(second);
+  store.close();
+
+  const database = new Database(storePath);
+  database
+    .prepare(
+      "DELETE FROM finance_insight_policy_snapshots WHERE policy_version = 1"
+    )
+    .run();
+  database.close();
+
+  const port = await freePort();
+  const serverUrl = `http://127.0.0.1:${port}`;
+  const server = spawn(process.execPath, [standaloneServer], {
+    cwd: standaloneRoot,
+    env: {
+      ...process.env,
+      BRIDGE_URL: fakeBridgeUrl,
+      BRIDGE_API_TOKEN: serviceToken,
+      TYRION_POLICY_STORE_PATH: policyStorePath,
+      TYRION_FINANCE_INSIGHT_STORE_PATH: storePath,
+      TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_READ_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "false",
+      TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
+      HOSTNAME: "127.0.0.1",
+      PORT: String(port),
+    },
+    stdio: "ignore",
+  });
+  try {
+    await waitForServer(serverUrl, server);
+    const health = await (await fetch(`${serverUrl}/api/health`)).json();
+    assert.equal(health.financeInsights.status, "disabled");
+    const preserved = new financeContract.FinanceInsightSqliteStoreV1({
+      path: storePath,
+      cursorChecksumNamespace: Buffer.from(
+        "tyrion/finance-insight/cursor-checksum/v1",
+        "utf8"
+      ),
+      clock: () => "2026-08-11T14:00:00.000Z",
+    });
+    try {
+      assert.equal(await preserved.policies.current(), null);
+      assert.deepEqual(await preserved.policies.latest(), second);
+      assert.equal(await preserved.policies.find(1), null);
+    } finally {
+      preserved.close();
+    }
+  } finally {
+    await stopProcess(server);
   }
 });
 

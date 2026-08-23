@@ -175,18 +175,20 @@ included in either public route tree. Its document-expectation projection is als
 available through the exact bearer-protected
 `/api/connector/v1/document-expectation-signals/{sourceGeneration}` route for OWL,
 without exposing the internal route tree. The UI container mounts a separate
-access-restricted `/var/lib/tyrion-finance-insights` volume for its SQLite store
-and operator-supplied policy snapshot. Versioned deterministic non-secret
+access-restricted `/var/lib/tyrion-finance-insights` volume for `state.sqlite`,
+which stores service state and immutable policy snapshots together. A new database
+self-initializes deterministic fail-closed household defaults through policy version
+2; startup preserves any existing policy history. Versioned deterministic non-secret
 namespaces provide stable finding identities and cursor corruption checks, so no
-separate identity or cursor secret is provisioned. The store and policy paths must
-be absolute and outside the application image.
+separate identity or cursor secret is provisioned. The store path is internal to the
+container and backed by the persistent volume.
 
 `TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED`,
 `TYRION_FINANCE_INSIGHT_READ_ENABLED`, and
-`TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED` default to `false`. Deployment enables them in rollout order only after mounting state, restoring
-policy, and validating
-the metadata-only health state. No gate, private authority, or state path is
-exposed to browser code.
+`TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED` default to `false`. Deployment enables them
+in rollout order only after mounting or restoring the database and validating the
+metadata-only health state. No gate, private authority, or state path is exposed to
+browser code.
 
 Connector `GET /health` is composed inside the server-only gateway: it makes exactly
 one protected Bridge `/auth/status` verification with `BRIDGE_API_TOKEN`, validates
