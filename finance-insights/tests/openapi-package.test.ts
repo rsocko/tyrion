@@ -51,6 +51,23 @@ describe('executable contract and internal package boundary', () => {
       document.components.schemas.DocumentExpectationSignalsV1
         ?.additionalProperties
     ).toBe(false);
+    const expectationSignal = (
+      document.components.schemas.DocumentExpectationSignalsV1 as {
+        properties?: {
+          signals?: {
+            items?: {
+              properties?: {
+                basis?: { minItems?: number; maxItems?: number };
+              };
+            };
+          };
+        };
+      }
+    ).properties?.signals?.items;
+    expect(expectationSignal?.properties?.basis).toMatchObject({
+      minItems: 1,
+      maxItems: 20,
+    });
     expect(JSON.stringify(document)).not.toContain(
       '"minimum":-9007199254740991'
     );

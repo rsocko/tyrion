@@ -13,12 +13,11 @@ export const documentExpectationSeriesRefSchema = z
   .string()
   .regex(/^expectation-v1_[A-Za-z0-9_-]{43}$/);
 
-export const documentExpectationBasisSchema = z.enum([
-  'active_non_cash_account',
-  'inactive_non_cash_account',
-  'active_recurring_obligation',
-  'inactive_recurring_obligation',
-]);
+export const documentExpectationBasisSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9_]+$/);
 
 export const documentExpectationSignalSchema = z
   .strictObject({
@@ -32,7 +31,7 @@ export const documentExpectationSignalSchema = z
     cadence: z.null(),
     nextExpectedDate: z.null(),
     confidence: z.number().finite().min(0).max(1),
-    basis: z.array(documentExpectationBasisSchema).length(1),
+    basis: z.array(documentExpectationBasisSchema).min(1).max(20),
   })
   .superRefine((value, context) => {
     const expectedBasis =
@@ -43,11 +42,18 @@ export const documentExpectationSignalSchema = z
         : value.active
           ? 'active_recurring_obligation'
           : 'inactive_recurring_obligation';
-    if (value.basis[0] !== expectedBasis) {
+    if (!value.basis.includes(expectedBasis)) {
       context.addIssue({
         code: 'custom',
         path: ['basis'],
-        message: `must contain ${expectedBasis}`,
+        message: `must include ${expectedBasis}`,
+      });
+    }
+    if (new Set(value.basis).size !== value.basis.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['basis'],
+        message: 'must contain unique reason codes',
       });
     }
   });

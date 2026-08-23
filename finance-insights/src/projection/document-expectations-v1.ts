@@ -9,6 +9,8 @@ import {
 } from '../contracts/v1.js';
 import { canonicalizeV1 } from '../core/canonical.js';
 
+const ADVISORY_SOURCE_CONFIDENCE_V1 = 0.6;
+
 export interface DocumentExpectationProjectionInputV1 {
   connectorRef: string;
   sourceGeneration: string;
@@ -37,7 +39,7 @@ export function projectDocumentExpectationSignalsV1(
         account.active,
         `${capitalize(account.accountType)} account`,
         'accountStatementCandidate',
-        0.85,
+        ADVISORY_SOURCE_CONFIDENCE_V1,
         identityKey
       )
     );
@@ -55,9 +57,9 @@ export function projectDocumentExpectationSignalsV1(
         'recurring',
         recurring.sourceRef,
         recurring.active,
-        recurring.displayName,
+        'Recurring expense',
         'recurringDocumentCandidate',
-        0.9,
+        ADVISORY_SOURCE_CONFIDENCE_V1,
         identityKey
       )
     );

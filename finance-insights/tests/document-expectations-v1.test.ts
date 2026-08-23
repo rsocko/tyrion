@@ -102,9 +102,11 @@ describe('DocumentExpectationSignalsV1', () => {
     expect(JSON.stringify(result)).not.toContain('wallet-cash');
     expect(JSON.stringify(result)).not.toContain('payroll-income');
     expect(JSON.stringify(result)).not.toContain('Invented Payroll');
+    expect(JSON.stringify(result)).not.toContain('Invented Utility');
+    expect(JSON.stringify(result)).not.toContain('Invented Membership');
   });
 
-  it('keeps same-institution accounts distinct and treats account existence as high signal', () => {
+  it('keeps same-institution accounts distinct without treating them as document evidence', () => {
     const accounts = projection('generation-1').signals.filter(
       (signal) => signal.kind === 'accountStatementCandidate'
     );
@@ -116,7 +118,7 @@ describe('DocumentExpectationSignalsV1', () => {
         .filter((signal) => signal.active)
         .every(
           (signal) =>
-            signal.confidence === 0.85 &&
+            signal.confidence === 0.6 &&
             signal.basis[0] === 'active_non_cash_account' &&
             signal.displayHint === 'Credit account'
         )
@@ -133,24 +135,20 @@ describe('DocumentExpectationSignalsV1', () => {
 
     expect(recurring).toHaveLength(3);
     expect(recurring.find((signal) => signal.active)).toMatchObject({
-      displayHint: 'Invented Utility',
-      confidence: 0.9,
+      displayHint: 'Recurring expense',
+      confidence: 0.6,
       basis: ['active_recurring_obligation'],
     });
-    expect(
-      recurring.find((signal) => signal.displayHint === 'Invented Membership')
-    ).toMatchObject({
-      displayHint: 'Invented Membership',
-      confidence: 0.9,
+    expect(recurring.filter((signal) => !signal.active)).toHaveLength(2);
+    expect(recurring.find((signal) => !signal.active)).toMatchObject({
+      displayHint: 'Recurring expense',
+      confidence: 0.6,
       basis: ['inactive_recurring_obligation'],
     });
     expect(
-      recurring.find(
-        (signal) => signal.displayHint === 'Invented Archived Utility'
-      )
+      recurring.filter((signal) => !signal.active)
     ).toMatchObject({
-      active: false,
-      basis: ['inactive_recurring_obligation'],
+      length: 2,
     });
   });
 
@@ -171,10 +169,35 @@ describe('DocumentExpectationSignalsV1', () => {
     expect(first.signals.map((signal) => signal.seriesRef)).not.toEqual(
       otherConnector.signals.map((signal) => signal.seriesRef)
     );
+
+    const renamed = projectDocumentExpectationSignalsV1(
+      {
+        ...projectionInput('generation-2'),
+        recurring: RECURRING.map((recurring) => ({
+          ...recurring,
+          displayName: `Renamed ${recurring.displayName}`,
+        })),
+      },
+      IDENTITY_KEY
+    );
+    expect(renamed.signals).toEqual(second.signals);
   });
 
-  it('rejects duplicate, unordered, oversized, and extra-field responses', () => {
+  it('accepts additive evidence reasons and rejects invalid response structure', () => {
     const response = projection('generation-1');
+    expect(
+      parseDocumentExpectationSignalsV1({
+        ...response,
+        signals: response.signals.map((signal, index) =>
+          index === 0
+            ? { ...signal, basis: [...signal.basis, 'future_advisory_reason'] }
+            : signal
+        ),
+      }).signals[0]?.basis
+    ).toEqual([
+      response.signals[0]?.basis[0],
+      'future_advisory_reason',
+    ]);
     expect(() =>
       parseDocumentExpectationSignalsV1({
         ...response,
@@ -196,6 +219,16 @@ describe('DocumentExpectationSignalsV1', () => {
         ),
       })
     ).toThrow('Too big');
+    expect(() =>
+      parseDocumentExpectationSignalsV1({
+        ...response,
+        signals: response.signals.map((signal, index) =>
+          index === 0
+            ? { ...signal, basis: [...signal.basis, signal.basis[0]] }
+            : signal
+        ),
+      })
+    ).toThrow('must contain unique reason codes');
   });
 });
 

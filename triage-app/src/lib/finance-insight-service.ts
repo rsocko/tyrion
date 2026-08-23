@@ -27,6 +27,7 @@ import { authenticateFinanceInsightRequest, FinanceInsightHttpError } from "@/li
 import {
   financeInsightJson,
   handleFinanceInsightError,
+  MAX_DOCUMENT_EXPECTATION_RESPONSE_BYTES,
   readFinanceInsightJson,
 } from "@/lib/finance-insight-http";
 import { getFinanceInsightRuntime } from "@/lib/finance-insight-runtime";
@@ -95,7 +96,9 @@ export async function handleFinanceInsightRequest(
             },
             runtime.identityKey
           )
-        )
+        ),
+        200,
+        MAX_DOCUMENT_EXPECTATION_RESPONSE_BYTES
       );
     }
     if (

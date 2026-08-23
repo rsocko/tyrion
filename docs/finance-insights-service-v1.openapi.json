@@ -10536,16 +10536,13 @@
                 },
                 "basis": {
                   "minItems": 1,
-                  "maxItems": 1,
+                  "maxItems": 20,
                   "type": "array",
                   "items": {
                     "type": "string",
-                    "enum": [
-                      "active_non_cash_account",
-                      "inactive_non_cash_account",
-                      "active_recurring_obligation",
-                      "inactive_recurring_obligation"
-                    ]
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-z0-9_]+$"
                   }
                 }
               },

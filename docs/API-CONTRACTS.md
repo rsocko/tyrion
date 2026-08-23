@@ -238,9 +238,9 @@ The same private read boundary publishes the generation-addressed, pull-only
 GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 ```
 
-Its independently versioned response, opaque series identity, complete-snapshot
-deactivation semantics, deterministic ordering, confidence and basis rules, and
-strict data exclusions are defined in
+Its independently versioned response, opaque series identity, advisory-only evidence,
+OWL-owned durable negative decisions, complete-snapshot deactivation semantics,
+deterministic ordering, and strict data exclusions are defined in
 [`DOCUMENT-EXPECTATION-SIGNALS-V1.md`](./DOCUMENT-EXPECTATION-SIGNALS-V1.md).
 
 ### Errors

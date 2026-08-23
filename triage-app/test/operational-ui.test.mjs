@@ -537,22 +537,25 @@ function financePublication(sequence, transactions = [], additionalFacts = {}) {
   const batches = [];
   for (const kind of ["transaction", "recurring", "category", "account", "tag"]) {
     if (facts[kind].length === 0) continue;
-    batches.push(
-      financeContract.parseSourceFactBatchV1({
-        contractVersion: "1.0",
-        sourceGeneration,
-        kind,
-        batchIndex: 0,
-        facts: facts[kind],
-        digest: financeContract.canonicalDigestV1(facts[kind]),
-        idempotencyKey: `service-${kind}-batch-${sequence}`,
-      })
-    );
+    for (let batchIndex = 0; batchIndex * 250 < facts[kind].length; batchIndex += 1) {
+      const batchFacts = facts[kind].slice(batchIndex * 250, (batchIndex + 1) * 250);
+      batches.push(
+        financeContract.parseSourceFactBatchV1({
+          contractVersion: "1.0",
+          sourceGeneration,
+          kind,
+          batchIndex,
+          facts: batchFacts,
+          digest: financeContract.canonicalDigestV1(batchFacts),
+          idempotencyKey: `service-${kind}-batch-${sequence}-${batchIndex}`,
+        })
+      );
+    }
   }
   const kinds = ["transaction", "recurring", "category", "account", "tag"];
   const manifest = kinds.map((kind) => ({
     kind,
-    batchCount: facts[kind].length > 0 ? 1 : 0,
+    batchCount: Math.ceil(facts[kind].length / 250),
     itemCount: facts[kind].length,
     digest: financeContract.sourceManifestKindDigestV1(kind, batches),
   }));
@@ -1162,8 +1165,15 @@ test("finance insight service publishes a private generation-addressed OWL proje
       (signal) =>
         signal.cadence === null &&
         signal.nextExpectedDate === null &&
-        !JSON.stringify(signal).includes("card-")
+        !JSON.stringify(signal).includes("card-") &&
+        !JSON.stringify(signal).includes("Invented Utility")
     )
+  );
+  assert.equal(
+    projection.signals.find(
+      (signal) => signal.kind === "recurringDocumentCandidate"
+    )?.displayHint,
+    "Recurring expense"
   );
 
   const replay = await insightRequest(
@@ -1185,6 +1195,37 @@ test("finance insight service publishes a private generation-addressed OWL proje
   assert.equal(
     (await missing.json()).error.code,
     "source_generation_not_found"
+  );
+
+  const maximumPublication = financePublication(7, [], {
+    account: Array.from({ length: 1000 }, (_, index) => ({
+      sourceRef: `bounded-account-${index}`,
+      accountType: "credit",
+      active: true,
+    })),
+    recurring: Array.from({ length: 5000 }, (_, index) => ({
+      sourceRef: `bounded-recurring-${index}`,
+      displayName: `Private recurring name ${index}`,
+      amountMinor: -100,
+      cadence: "monthly",
+      nextDate: null,
+      categoryRef: null,
+      accountRef: null,
+      active: true,
+    })),
+  });
+  assert.equal((await publishFinanceGeneration(maximumPublication)).status, 200);
+  const maximumResponse = await insightRequest(
+    `/document-expectation-signals/${maximumPublication.request.sourceGeneration}?connectorRef=${maximumPublication.request.connectorRef}`
+  );
+  assert.equal(maximumResponse.status, 200);
+  const maximumProjection = await maximumResponse.json();
+  assert.equal(maximumProjection.signals.length, 6000);
+  assert.ok(Buffer.byteLength(JSON.stringify(maximumProjection), "utf8") > 512 * 1024);
+  assert.ok(
+    maximumProjection.signals.every(
+      (signal) => !signal.displayHint.startsWith("Private recurring name")
+    )
   );
 });
 
