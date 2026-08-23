@@ -59,9 +59,10 @@ finance-manager bearer credential. This is an accepted backend transport excepti
 the otherwise private bridge boundary, not a browser or product surface. The gateway
 exposes only bounded Bridge v1 health, contract, transaction read/detail/split/category
 mutation, account, category-group, category, tag, recurring, budget, and sync
-operations. It authenticates every request, rejects browser-originated requests, and
-does not expose auth setup, logout, session state, raw upstream routes, arbitrary
-passthrough, cash flow, OpenAPI/docs, policy, or attribution operations. The raw
+operations, plus the read-only Finance Insights document-expectation projection for
+OWL. It authenticates every request, rejects browser-originated requests, and does not
+expose auth setup, logout, session state, raw upstream routes, arbitrary passthrough,
+cash flow, OpenAPI/docs, policy, or attribution operations. The raw
 Monarch Bridge, its reusable session material, and its auth/session setup remain
 private.
 

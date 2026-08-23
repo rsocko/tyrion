@@ -1176,6 +1176,61 @@ test("finance insight service publishes a private generation-addressed OWL proje
     "Recurring expense"
   );
 
+  const connectorPath =
+    `/api/connector/v1/document-expectation-signals/${publication.request.sourceGeneration}` +
+    `?connectorRef=${publication.request.connectorRef}`;
+  const beforeConnectorRead = receivedRequests.length;
+  const publicResponse = await fetch(`${uiUrl}${connectorPath}`, {
+    headers: insightHeaders({ Host: undefined }),
+  });
+  assert.equal(publicResponse.status, 200);
+  assert.equal(publicResponse.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await publicResponse.json(), projection);
+  assert.equal(receivedRequests.length, beforeConnectorRead);
+
+  for (const [options, status, code] of [
+    [{}, 401, "connector_auth_required"],
+    [
+      {
+        headers: insightHeaders({
+          Host: undefined,
+          Origin: "https://owl.example.invalid",
+        }),
+      },
+      403,
+      "browser_request_rejected",
+    ],
+    [
+      {
+        method: "POST",
+        headers: insightHeaders({ Host: undefined }),
+      },
+      405,
+      "method_not_allowed",
+    ],
+  ]) {
+    const rejected = await fetch(`${uiUrl}${connectorPath}`, options);
+    assert.equal(rejected.status, status);
+    assert.equal((await rejected.json()).error.code, code);
+    assert.equal(receivedRequests.length, beforeConnectorRead);
+  }
+
+  const invalidPublicQuery = await fetch(
+    `${uiUrl}/api/connector/v1/document-expectation-signals/${publication.request.sourceGeneration}`,
+    { headers: insightHeaders({ Host: undefined }) }
+  );
+  assert.equal(invalidPublicQuery.status, 400);
+  assert.equal((await invalidPublicQuery.json()).error.code, "invalid_filter");
+  const missingPublicGeneration = await fetch(
+    `${uiUrl}/api/connector/v1/document-expectation-signals/missing-generation?connectorRef=${publication.request.connectorRef}`,
+    { headers: insightHeaders({ Host: undefined }) }
+  );
+  assert.equal(missingPublicGeneration.status, 404);
+  assert.equal(
+    (await missingPublicGeneration.json()).error.code,
+    "source_generation_not_found"
+  );
+
   const replay = await insightRequest(
     `/document-expectation-signals/${publication.request.sourceGeneration}?connectorRef=${publication.request.connectorRef}`
   );
@@ -1438,7 +1493,7 @@ test("connector authentication is bearer-only, minimum-length, and fail-closed",
   );
 });
 
-test("connector policy exposes exactly the Mission Control bridge operations", () => {
+test("connector policy exposes exactly the backend connector operations", () => {
   const allowed = [
     ["GET", "contract"],
     ["GET", "health"],
@@ -1452,6 +1507,7 @@ test("connector policy exposes exactly the Mission Control bridge operations", (
     ["GET", "tags"],
     ["GET", "recurring"],
     ["GET", "budgets"],
+    ["GET", "document-expectation-signals/invented-generation"],
     ["POST", "sync"],
   ];
   for (const [method, path] of allowed) {
@@ -1462,6 +1518,14 @@ test("connector policy exposes exactly the Mission Control bridge operations", (
     );
     assert.equal(result.allowed, true, `${method} ${path}`);
   }
+  assert.equal(
+    evaluateConnectorRequest(
+      "GET",
+      ["document-expectation-signals", "invented-generation"],
+      new URLSearchParams("connectorRef=invented-connector")
+    ).target,
+    "finance-insight"
+  );
 
   for (const [method, path] of allowed) {
     const wrongMethod = method === "GET" ? "POST" : "GET";
@@ -2828,7 +2892,7 @@ test("container and homelab contracts separate public connector and private attr
   );
   assert.match(
     compose,
-    /routers\.tyrion-connector-secure\.rule=.*Path\(`\/api\/connector\/v1\/health`\).*\^\/api\/connector\/v1\/transactions\//
+    /routers\.tyrion-connector-secure\.rule=.*Path\(`\/api\/connector\/v1\/health`\).*\^\/api\/connector\/v1\/document-expectation-signals\/.*\^\/api\/connector\/v1\/transactions\//
   );
   assert.match(
     compose,

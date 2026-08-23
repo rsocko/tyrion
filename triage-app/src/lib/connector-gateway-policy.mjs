@@ -89,6 +89,15 @@ export function evaluateConnectorRequest(method, segments, searchParams) {
     return allowed(`/${path}`, false);
   }
 
+  if (
+    Array.isArray(segments) &&
+    segments.length === 2 &&
+    segments[0] === "document-expectation-signals"
+  ) {
+    if (method !== "GET") return methodNotAllowed();
+    return financeInsightAllowed();
+  }
+
   if (path === "sync") {
     if (method !== "POST") return methodNotAllowed();
     const keys = [...searchParams.keys()];
@@ -350,7 +359,11 @@ function appendIfPresent(searchParams, name, value) {
 }
 
 function allowed(upstreamPath, acceptsBody) {
-  return { allowed: true, upstreamPath, acceptsBody };
+  return { allowed: true, target: "bridge", upstreamPath, acceptsBody };
+}
+
+function financeInsightAllowed() {
+  return { allowed: true, target: "finance-insight", acceptsBody: false };
 }
 
 function methodNotAllowed() {

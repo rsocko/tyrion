@@ -1,6 +1,6 @@
 # Document Expectation Signals v1
 
-`DocumentExpectationSignalsV1` is Tyrion's private, read-only projection for OWL.
+`DocumentExpectationSignalsV1` is Tyrion's read-only projection for OWL.
 It provides bounded evidence that a correspondent series may recur. It does not claim
 that a statement, invoice, receipt, bill, or other document exists.
 
@@ -8,14 +8,17 @@ that a statement, invoice, receipt, bill, or other document exists.
 
 ```http
 GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
+GET /api/connector/v1/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 ```
 
-The endpoint uses the existing finance-insight private authority, bearer
-authentication, browser-origin rejection, and read rollout gate. It is not a Monarch
-Bridge operation, connector-gateway route, browser route, mutation, webhook, or push
-feed. Callers pull one immutable committed generation. An unknown, staging, rejected,
-or expired generation returns a stable not-found error rather than current or partial
-data.
+The private route retains the Finance Insights internal authority check. The public
+HTTPS route uses the connector gateway's existing `BRIDGE_API_TOKEN` bearer
+authentication and browser-origin rejection. Both routes call the same Finance
+Insights read projection and read rollout gate; the public route does not proxy this
+operation to Monarch Bridge. Neither route is a browser route, mutation, webhook, or
+push feed. Callers pull one immutable committed generation. An unknown, staging,
+rejected, or expired generation returns a stable not-found error rather than current
+or partial data.
 
 The request is generation-addressable and idempotent: repeated reads of the same
 `connectorRef` and `sourceGeneration` return the same projection while that committed

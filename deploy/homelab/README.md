@@ -27,6 +27,8 @@ The sole public finance-data transport is the backend-only
 credential on every request and has its own strict route/query/body allowlist. The
 Traefik example exposes that path over TLS without the UI private-network middleware;
 all UI routes keep the middleware and all public routers exclude `/api/internal/`.
+The exact read-only document-expectation route for OWL delegates to Finance Insights
+inside the UI container and requires its read gate, store, policy, and identity key.
 The protected finance insight service additionally requires the
 `tyrion-finance-insights` external volume, an operator-installed strict v1
 policy at `/var/lib/tyrion-finance-insights/policy.json`, and independent

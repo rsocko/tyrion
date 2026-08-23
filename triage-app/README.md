@@ -103,6 +103,8 @@ without the UI's private-network middleware. All other UI routes retain that
 middleware, and every public router continues to exclude `/api/internal/`. Traefik
 enumerates the connector paths and stamps an internal marker; the Next.js proxy checks
 that marker after URL normalization to block encoded traversal into any private API.
+The exact document-expectation connector route is read-only and delegates to the
+Finance Insights projection locally rather than forwarding to Monarch Bridge.
 
 ## Policy security and persistence
 
