@@ -8,11 +8,22 @@ export type ConnectorPolicyError = {
   error: { code: string; message: string };
 };
 
-export type AllowedConnectorRequest = {
+export type AllowedBridgeConnectorRequest = {
   allowed: true;
+  target: "bridge";
   upstreamPath: string;
   acceptsBody: boolean;
 };
+
+export type AllowedFinanceInsightConnectorRequest = {
+  allowed: true;
+  target: "finance-insight";
+  acceptsBody: false;
+};
+
+export type AllowedConnectorRequest =
+  | AllowedBridgeConnectorRequest
+  | AllowedFinanceInsightConnectorRequest;
 
 export function authenticateConnectorRequest(
   authorization: string | null,

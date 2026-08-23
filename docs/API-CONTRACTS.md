@@ -53,9 +53,10 @@ allowlist. Requests carrying browser `Origin` or `Sec-Fetch-Site` metadata are
 rejected; the gateway sends no CORS permission. Browser code must use the separate
 bounded `/api/bridge/...` operations proxy, which never exposes finance datasets.
 
-The gateway strips `/api/connector/v1` and forwards these exact Bridge v1 operations
+The gateway strips `/api/connector/v1` and forwards the Bridge v1 operations below
 to private `BRIDGE_URL`, except that connector health is derived from verified
-authentication status as described below:
+authentication status and document-expectation signals reuse the local Finance
+Insights projection:
 
 | Method | Gateway path | Bounds |
 | --- | --- | --- |
@@ -72,6 +73,7 @@ authentication status as described below:
 | `GET` | `/recurring` | No query or body |
 | `GET` | `/budgets` | No query or body |
 | `POST` | `/sync?days=1..365` | One optional `days` value; no body; default 90 |
+| `GET` | `/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; no body; read gate and 12 MiB projection bound |
 
 Unknown routes, methods, parameters, duplicate singleton parameters, malformed values,
 and request bodies on bodyless operations fail before a bridge call. `/auth/*`,
@@ -231,11 +233,13 @@ least 32 bytes. Evaluation/write, read, and confirmed-action gates are
 server-only and fail closed. Evaluation reads only the current promoted
 projection and never contacts Monarch or loads reusable session material.
 
-The same private read boundary publishes the generation-addressed, pull-only
-`DocumentExpectationSignalsV1` projection for OWL:
+The same read service publishes the generation-addressed, pull-only
+`DocumentExpectationSignalsV1` projection for OWL through both its preserved private
+route and the bearer-protected, browser-rejecting public connector gateway:
 
 ```text
 GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
+GET /api/connector/v1/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 ```
 
 Its independently versioned response, opaque series identity, advisory-only evidence,

@@ -58,47 +58,10 @@ export async function handleFinanceInsightRequest(
       segments.length === 2 &&
       segments[0] === "document-expectation-signals"
     ) {
-      requireGate(runtime.gates.read);
-      const sourceGeneration = parsePathValue(
-        sourceReferenceSchema,
-        segments[1]
-      );
-      const connectorRef = parseSingleRequiredQuery(
+      return await readDocumentExpectationSignalsV1(
+        segments[1],
         request.nextUrl.searchParams,
-        "connectorRef"
-      );
-      const source = await runtime.store.sourceGenerations.find(
-        connectorRef,
-        sourceGeneration
-      );
-      const projection = await runtime.store.loadProjection(
-        connectorRef,
-        sourceGeneration
-      );
-      if (!source || !projection) {
-        throw new FinanceInsightHttpError("source_generation_not_found");
-      }
-      return financeInsightJson(
-        parseDocumentExpectationSignalsV1(
-          projectDocumentExpectationSignalsV1(
-            {
-              connectorRef,
-              sourceGeneration,
-              sourceAsOf: source.request.sourceAsOf,
-              completeness: "complete",
-              accounts: projection.accounts,
-              recurring: projection.recurring,
-              knownOutgoingRecurringRefs:
-                await runtime.store.loadRecurringObligationRefs(
-                  connectorRef,
-                  sourceGeneration
-                ),
-            },
-            runtime.identityKey
-          )
-        ),
-        200,
-        MAX_DOCUMENT_EXPECTATION_RESPONSE_BYTES
+        Promise.resolve(runtime)
       );
     }
     if (
@@ -279,6 +242,53 @@ export async function handleFinanceInsightRequest(
   } catch (error) {
     return handleFinanceInsightError(error);
   }
+}
+
+export async function readDocumentExpectationSignalsV1(
+  sourceGenerationValue: string | undefined,
+  searchParams: URLSearchParams,
+  runtimePromise = getFinanceInsightRuntime()
+) {
+  const runtime = await runtimePromise;
+  requireGate(runtime.gates.read);
+  const sourceGeneration = parsePathValue(
+    sourceReferenceSchema,
+    sourceGenerationValue
+  );
+  const connectorRef = parseSingleRequiredQuery(searchParams, "connectorRef");
+  const source = await runtime.store.sourceGenerations.find(
+    connectorRef,
+    sourceGeneration
+  );
+  const projection = await runtime.store.loadProjection(
+    connectorRef,
+    sourceGeneration
+  );
+  if (!source || !projection) {
+    throw new FinanceInsightHttpError("source_generation_not_found");
+  }
+  return financeInsightJson(
+    parseDocumentExpectationSignalsV1(
+      projectDocumentExpectationSignalsV1(
+        {
+          connectorRef,
+          sourceGeneration,
+          sourceAsOf: source.request.sourceAsOf,
+          completeness: "complete",
+          accounts: projection.accounts,
+          recurring: projection.recurring,
+          knownOutgoingRecurringRefs:
+            await runtime.store.loadRecurringObligationRefs(
+              connectorRef,
+              sourceGeneration
+            ),
+        },
+        runtime.identityKey
+      )
+    ),
+    200,
+    MAX_DOCUMENT_EXPECTATION_RESPONSE_BYTES
+  );
 }
 
 function requireGate(enabled: boolean): void {

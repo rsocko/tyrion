@@ -12,6 +12,8 @@ import {
   composeConnectorHealth,
   MONARCH_CONTRACT_VERSION,
 } from "@/lib/connector-health.mjs";
+import { handleFinanceInsightError } from "@/lib/finance-insight-http";
+import { readDocumentExpectationSignalsV1 } from "@/lib/finance-insight-service";
 
 const BRIDGE_TIMEOUT_MS = 30_000;
 const FORWARDED_RESPONSE_HEADERS = [
@@ -162,15 +164,6 @@ async function proxyConnectorRequest(
     return jsonError(policy.status, policy.error.code, policy.error.message);
   }
 
-  const bridge = resolveConnectorBridgeUrl(process.env.BRIDGE_URL);
-  if (!bridge.configured) {
-    return jsonError(
-      503,
-      "connector_gateway_misconfigured",
-      "Connector gateway is not configured"
-    );
-  }
-
   let body: string | undefined;
   if (policy.acceptsBody) {
     const contentType = request.headers
@@ -225,6 +218,26 @@ async function proxyConnectorRequest(
         "This connector operation does not accept a body"
       );
     }
+  }
+
+  if (policy.target === "finance-insight") {
+    try {
+      return await readDocumentExpectationSignalsV1(
+        path[1],
+        request.nextUrl.searchParams
+      );
+    } catch (error) {
+      return handleFinanceInsightError(error);
+    }
+  }
+
+  const bridge = resolveConnectorBridgeUrl(process.env.BRIDGE_URL);
+  if (!bridge.configured) {
+    return jsonError(
+      503,
+      "connector_gateway_misconfigured",
+      "Connector gateway is not configured"
+    );
   }
 
   if (policy.upstreamPath === "/health") {

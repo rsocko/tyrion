@@ -161,16 +161,20 @@ Traefik surfaces:
   operations/configuration UI and `/api/bridge/...` browser proxy.
 
 The connector router targets the UI container, not the bridge container. The Next.js
-gateway accepts only its documented Bridge v1 route/method/query/body allowlist,
-rejects browser-origin metadata and missing/invalid credentials, then forwards to
-private `BRIDGE_URL`. `/auth/*`, raw bridge routes, policy routes, and attribution
-routes are unavailable through it. `/api/internal/` remains excluded from every
-public router and the attribution handler independently enforces its private Docker
-authority.
+gateway accepts only its documented route/method/query/body allowlist and rejects
+browser-origin metadata and missing/invalid credentials. Bridge operations forward to
+private `BRIDGE_URL`; the exact document-expectation route delegates locally to the
+Finance Insights read projection. `/auth/*`, raw bridge routes, policy routes, and
+attribution routes are unavailable through it. `/api/internal/` remains excluded from
+every public router and the attribution handler independently enforces its private
+Docker authority.
 
 The finance insight service shares that private-authority posture under
 `/api/internal/v1/finance/insights`. It rejects browser fetch metadata and is not
-included in either public route tree. The UI container mounts a separate
+included in either public route tree. Its document-expectation projection is also
+available through the exact bearer-protected
+`/api/connector/v1/document-expectation-signals/{sourceGeneration}` route for OWL,
+without exposing the internal route tree. The UI container mounts a separate
 access-restricted `/var/lib/tyrion-finance-insights` volume for its SQLite store
 and operator-supplied policy snapshot. Cursor and identity keys are injected
 only into the server process, contain at least 32 bytes, and are backed up with
