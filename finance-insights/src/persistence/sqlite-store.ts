@@ -460,6 +460,27 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     return row ? sourceRecord(row) : null;
   }
 
+  async findCurrentSourceGeneration(
+    connectorRef: string
+  ): Promise<SourceGenerationRecordV1 | null> {
+    if (!this.connectionContext.getStore()) {
+      return this.withConnection(() =>
+        this.findCurrentSourceGeneration(connectorRef)
+      );
+    }
+    const row = this.database
+      .prepare(
+        `SELECT generation.*
+         FROM finance_insight_connector_state AS connector
+         JOIN finance_insight_source_generations AS generation
+           ON generation.connector_ref = connector.connector_ref
+          AND generation.source_generation = connector.current_source_generation
+         WHERE connector.connector_ref = ? AND generation.state = 'promoted'`
+      )
+      .get(connectorRef) as SourceGenerationRow | undefined;
+    return row ? sourceRecord(row) : null;
+  }
+
   async putSourceBatch(input: SourceFactBatchV1): Promise<void> {
     if (!this.connectionContext.getStore()) {
       return this.withConnection(() => this.putSourceBatch(input));

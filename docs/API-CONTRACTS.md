@@ -73,6 +73,7 @@ Insights projection:
 | `GET` | `/recurring` | No query or body |
 | `GET` | `/budgets` | No query or body |
 | `POST` | `/sync?days=1..365` | One optional `days` value; no body; default 90 |
+| `GET` | `/document-expectation-signals?connectorRef={connectorRef}` | One required connector reference; current promoted snapshot; no body; read gate and 12 MiB projection bound |
 | `GET` | `/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; no body; read gate and 12 MiB projection bound |
 
 Unknown routes, methods, parameters, duplicate singleton parameters, malformed values,
@@ -236,11 +237,13 @@ Evaluation/write, read, and confirmed-action gates are server-only and fail clos
 Evaluation reads only the current promoted projection and never contacts Monarch or
 loads reusable session material.
 
-The same read service publishes the generation-addressed, pull-only
-`DocumentExpectationSignalsV1` projection for OWL through both its preserved private
-route and the bearer-protected, browser-rejecting public connector gateway:
+The same read service publishes the pull-only `DocumentExpectationSignalsV1`
+projection for OWL. The preferred bearer-protected, browser-rejecting connector route
+resolves the current promoted generation; the generation-addressed connector and
+private routes remain available for immutable replay:
 
 ```text
+GET /api/connector/v1/document-expectation-signals?connectorRef={connectorRef}
 GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 GET /api/connector/v1/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 ```

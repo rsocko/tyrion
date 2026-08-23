@@ -1079,7 +1079,7 @@ test("finance insight analysis filters can return nonqualified occurrences", asy
   );
 });
 
-test("finance insight service publishes a private generation-addressed OWL projection", async () => {
+test("finance insight service publishes current and generation-addressed OWL projections", async () => {
   const publication = financePublication(6, [], {
     account: [
       { sourceRef: "card-a", accountType: "credit", active: true },
@@ -1162,6 +1162,17 @@ test("finance insight service publishes a private generation-addressed OWL proje
   assert.deepEqual(await publicResponse.json(), projection);
   assert.equal(receivedRequests.length, beforeConnectorRead);
 
+  const currentConnectorPath =
+    "/api/connector/v1/document-expectation-signals" +
+    `?connectorRef=${publication.request.connectorRef}`;
+  const currentResponse = await fetch(`${uiUrl}${currentConnectorPath}`, {
+    headers: insightHeaders({ Host: undefined }),
+  });
+  assert.equal(currentResponse.status, 200);
+  assert.equal(currentResponse.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await currentResponse.json(), projection);
+  assert.equal(receivedRequests.length, beforeConnectorRead);
+
   for (const [options, status, code] of [
     [{}, 401, "connector_auth_required"],
     [
@@ -1195,6 +1206,21 @@ test("finance insight service publishes a private generation-addressed OWL proje
   );
   assert.equal(invalidPublicQuery.status, 400);
   assert.equal((await invalidPublicQuery.json()).error.code, "invalid_filter");
+  const invalidCurrentQuery = await fetch(
+    `${uiUrl}/api/connector/v1/document-expectation-signals`,
+    { headers: insightHeaders({ Host: undefined }) }
+  );
+  assert.equal(invalidCurrentQuery.status, 400);
+  assert.equal((await invalidCurrentQuery.json()).error.code, "invalid_filter");
+  const missingCurrentGeneration = await fetch(
+    `${uiUrl}/api/connector/v1/document-expectation-signals?connectorRef=missing-connector`,
+    { headers: insightHeaders({ Host: undefined }) }
+  );
+  assert.equal(missingCurrentGeneration.status, 404);
+  assert.equal(
+    (await missingCurrentGeneration.json()).error.code,
+    "source_generation_not_found"
+  );
   const missingPublicGeneration = await fetch(
     `${uiUrl}/api/connector/v1/document-expectation-signals/missing-generation?connectorRef=${publication.request.connectorRef}`,
     { headers: insightHeaders({ Host: undefined }) }
@@ -1250,6 +1276,18 @@ test("finance insight service publishes a private generation-addressed OWL proje
   assert.equal(maximumResponse.status, 200);
   const maximumProjection = await maximumResponse.json();
   assert.equal(maximumProjection.signals.length, 6000);
+  const currentMaximumResponse = await fetch(
+    `${uiUrl}/api/connector/v1/document-expectation-signals` +
+      `?connectorRef=${maximumPublication.request.connectorRef}`,
+    { headers: insightHeaders({ Host: undefined }) }
+  );
+  assert.equal(currentMaximumResponse.status, 200);
+  const currentMaximumProjection = await currentMaximumResponse.json();
+  assert.equal(
+    currentMaximumProjection.sourceGeneration,
+    maximumPublication.request.sourceGeneration
+  );
+  assert.deepEqual(currentMaximumProjection, maximumProjection);
   assert.ok(Buffer.byteLength(JSON.stringify(maximumProjection), "utf8") > 512 * 1024);
   assert.ok(
     maximumProjection.signals.every(
@@ -1602,6 +1640,7 @@ test("connector policy exposes exactly the backend connector operations", () => 
     ["GET", "tags"],
     ["GET", "recurring"],
     ["GET", "budgets"],
+    ["GET", "document-expectation-signals"],
     ["GET", "document-expectation-signals/invented-generation"],
     ["POST", "sync"],
   ];
@@ -2949,7 +2988,7 @@ test("container and homelab contracts separate public connector and private attr
   );
   assert.match(
     compose,
-    /routers\.tyrion-connector-secure\.rule=.*Path\(`\/api\/connector\/v1\/health`\).*\^\/api\/connector\/v1\/document-expectation-signals\/.*\^\/api\/connector\/v1\/transactions\//
+    /routers\.tyrion-connector-secure\.rule=.*Path\(`\/api\/connector\/v1\/health`\).*Path\(`\/api\/connector\/v1\/document-expectation-signals`\).*\^\/api\/connector\/v1\/document-expectation-signals\/.*\^\/api\/connector\/v1\/transactions\//
   );
   assert.match(
     compose,
