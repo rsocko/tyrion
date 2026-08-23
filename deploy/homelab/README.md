@@ -28,12 +28,16 @@ credential on every request and has its own strict route/query/body allowlist. T
 Traefik example exposes that path over TLS without the UI private-network middleware;
 all UI routes keep the middleware and all public routers exclude `/api/internal/`.
 The exact read-only document-expectation route for OWL delegates to Finance Insights
-inside the UI container and requires its read gate, store, and policy.
-The protected finance insight service additionally requires the
-`tyrion-finance-insights` external volume, an operator-installed strict v1
-policy at `/var/lib/tyrion-finance-insights/policy.json`.
-Back up the state volume. Keep all three finance insight gates off
-until the state and policy restore and metadata-only health checks pass;
+inside the UI container and requires its read gate and store.
+The protected finance insight service keeps both state and immutable policy snapshots
+in `state.sqlite` on the ordinary persistent `tyrion-finance-insights` volume. A new
+database initializes deterministic, fail-closed policy history through version 2;
+an existing database retains its current history unchanged.
+Finance Insights does not expose a policy editor today. Later policy changes must be
+delivered as explicit, validated, append-only Tyrion database migrations rather than
+by replacing a mounted file.
+Back up the volume. Keep all Finance Insights rollout gates off
+until the database restore and metadata-only health checks pass;
 enable evaluation/write, read, confirmed actions, and the automation transport in
 that order. The automation gate exposes only the private scheduled-job and exact
 delivery-acknowledgement routes; it does not create a browser or public connector
