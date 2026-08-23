@@ -16,7 +16,7 @@ import {
 
 export const ATTRIBUTION_BATCH_MAX_ITEMS = 100;
 export const ATTRIBUTION_BATCH_PROVENANCE =
-  'mission-control-normalized-v1' as const;
+  'mission-control-normalized-v2' as const;
 
 export interface AttributionBatchManualDecisionV1 {
   action: 'assign-kid' | 'parent-expense' | 'unassign';
@@ -28,7 +28,7 @@ export interface AttributionBatchItemV1 {
   sourceRef: string;
   occurredOn: string;
   merchantName: string;
-  instrumentFingerprint: string | null;
+  accountRef: string;
   observedAt: string;
   existingManualDecision: AttributionBatchManualDecisionV1 | null;
 }
@@ -195,7 +195,7 @@ function parseBatchItem(
     'sourceRef',
     'occurredOn',
     'merchantName',
-    'instrumentFingerprint',
+    'accountRef',
     'observedAt',
     'existingManualDecision',
   ]);
@@ -230,7 +230,7 @@ function parseBatchItem(
     },
     transaction: {
       merchantName: item.merchantName,
-      instrumentFingerprint: item.instrumentFingerprint,
+      accountRef: item.accountRef,
       occurredOn: item.occurredOn,
     },
     historicalAttributions: [],
@@ -240,7 +240,7 @@ function parseBatchItem(
     sourceRef: parsed.source.recordRef,
     occurredOn: parsed.transaction.occurredOn,
     merchantName: parsed.transaction.merchantName,
-    instrumentFingerprint: parsed.transaction.instrumentFingerprint,
+    accountRef: parsed.transaction.accountRef,
     observedAt: parsed.source.observedAt,
     existingManualDecision:
       parsed.existingManualDecision === null
@@ -267,7 +267,7 @@ function toAttributionInput(
     },
     transaction: {
       merchantName: item.merchantName,
-      instrumentFingerprint: item.instrumentFingerprint,
+      accountRef: item.accountRef,
       occurredOn: item.occurredOn,
     },
     historicalAttributions: [],

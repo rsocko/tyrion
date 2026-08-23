@@ -3,7 +3,7 @@ import {
   createDefaultPolicyDraftV1,
   parsePolicyDraftV1,
   policyDraftFromSnapshotV1,
-} from "@rsocko/tyrion-kid-engine/contracts/v1";
+} from "@rsocko/tyrion-kid-engine/contracts/v2";
 import { resolveHomelabPolicyActor } from "@/lib/homelab-identity";
 import {
   handlePolicyRouteError,

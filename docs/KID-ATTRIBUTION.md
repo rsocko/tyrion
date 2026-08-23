@@ -2,24 +2,28 @@
 
 ## Overview
 
-Monarch Money doesn't know *who* made a purchase — only which account/card was used. Our kid attribution engine uses rules to automatically assign transactions to the correct child.
+Monarch does not expose physical-card or authorized-user identity. It identifies the
+Monarch account associated with a transaction. Tyrion rules therefore mean: when
+Monarch account A is used, attribute the transaction to household member X.
 
 ## Attribution Methods (Priority Order)
 
-### 1. Card Rules (Highest Confidence)
+### 1. Account Rules (Highest Confidence)
 
-If a kid has their own debit card or a dedicated credit card:
+Mission Control generates a stable opaque `account-v1:` reference for each Monarch
+account without sending Tyrion the raw Monarch account ID or account mask:
 
 ```
-Card Last-4: 4521 → Jake (confidence: definite)
-Card Last-4: 7890 → Emma (confidence: definite)
+account-v1:<opaque Jake account reference> → Jake (confidence: definite)
+account-v1:<opaque Emma account reference> → Emma (confidence: definite)
 ```
 
-Transactions on these cards are **automatically assigned** with no triage needed.
+Transactions associated with those accounts are **automatically assigned** with no
+triage needed. This does not prove which physical card or person initiated a charge.
 
-### 2. Shared Card + Merchant Rules
+### 2. Shared Account + Merchant Rules
 
-For charges on shared family cards, merchant patterns identify the likely kid:
+For charges on shared family accounts, merchant patterns identify the likely kid:
 
 ```
 Merchant contains "ROBLOX" → Jake (confidence: definite)
@@ -62,8 +66,8 @@ For each child, configure:
 ```yaml
 Kid: Jake
   Color: blue
-  Cards:
-    - Chase Debit ...4521 (definite - his own card)
+  Accounts:
+    - Jake checking account reference (definite)
   Merchants:
     - "ROBLOX" (definite)
     - "STEAM" (definite)
@@ -77,8 +81,8 @@ Kid: Jake
 
 Kid: Emma
   Color: purple
-  Cards:
-    - Amex ...7890 (definite - her authorized user card)
+  Accounts:
+    - Emma spending account reference (definite)
   Merchants:
     - "SEPHORA" (likely)
     - "ULTA" (likely)
@@ -91,7 +95,7 @@ Kid: Emma
 
 Kid: Sophie
   Color: green
-  Cards: (none - uses parent cards)
+  Accounts: (none - uses shared parent accounts)
   Merchants:
     - "SCHOOL LUNCH - WESTVIEW" (definite)
     - "SCHOLASTIC" (definite)

@@ -203,7 +203,7 @@ describe('finance insight evaluation orchestration', () => {
     const racedOrchestrator = new FinanceInsightEvaluationOrchestratorV1({
       store: harness.store,
       lifecycle: harness.lifecycle,
-      identityKey: Buffer.alloc(32, 5),
+      identityNamespace: Buffer.alloc(32, 5),
       clock: () => '2026-08-11T12:05:00Z',
       testHook: async () => {
         if (!secondAssignment) {
@@ -252,7 +252,7 @@ async function createHarness(
   directories.push(directory);
   const store = new FinanceInsightSqliteStoreV1({
     path: join(directory, 'state.sqlite'),
-    cursorKey: Buffer.alloc(32, 4),
+    cursorChecksumNamespace: Buffer.from('finance-insight-cursor-test-v1'),
     clock: () => '2026-08-11T12:00:00Z',
   });
   stores.push(store);
@@ -270,7 +270,7 @@ async function createHarness(
     orchestrator: new FinanceInsightEvaluationOrchestratorV1({
       store,
       lifecycle,
-      identityKey: Buffer.alloc(32, 5),
+      identityNamespace: Buffer.alloc(32, 5),
       telemetry: { emit: (event) => events.push(event) },
       clock: () => '2026-08-11T12:05:00Z',
     }),

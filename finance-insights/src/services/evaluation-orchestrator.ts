@@ -57,7 +57,7 @@ export interface FinanceInsightTelemetrySinkV1 {
 export interface FinanceInsightEvaluationOrchestratorOptionsV1 {
   store: FinanceInsightSqliteStoreV1;
   lifecycle: FinanceInsightLifecycleServiceV1;
-  identityKey: Uint8Array;
+  identityNamespace: Uint8Array;
   telemetry?: FinanceInsightTelemetrySinkV1;
   clock?: () => string;
   testHook?: (point: 'afterClaim') => void | Promise<void>;
@@ -73,7 +73,7 @@ export interface FinanceInsightOperatorRunResultV1 {
 export class FinanceInsightEvaluationOrchestratorV1 {
   private readonly store: FinanceInsightSqliteStoreV1;
   private readonly lifecycle: FinanceInsightLifecycleServiceV1;
-  private readonly identityKey: Uint8Array;
+  private readonly identityNamespace: Uint8Array;
   private readonly telemetry: FinanceInsightTelemetrySinkV1 | undefined;
   private readonly clock: () => string;
   private readonly testHook:
@@ -81,14 +81,14 @@ export class FinanceInsightEvaluationOrchestratorV1 {
     | undefined;
 
   constructor(options: FinanceInsightEvaluationOrchestratorOptionsV1) {
-    if (options.identityKey.byteLength < 32) {
+    if (options.identityNamespace.byteLength < 32) {
       throw new RangeError(
-        'Finance insight identity key must contain at least 32 bytes'
+        'Finance insight identity namespace must contain at least 32 bytes'
       );
     }
     this.store = options.store;
     this.lifecycle = options.lifecycle;
-    this.identityKey = Uint8Array.from(options.identityKey);
+    this.identityNamespace = Uint8Array.from(options.identityNamespace);
     this.telemetry = options.telemetry;
     this.clock = options.clock ?? (() => new Date().toISOString());
     this.testHook = options.testHook;
@@ -141,7 +141,7 @@ export class FinanceInsightEvaluationOrchestratorV1 {
         projection,
         policy.policyVersion,
         policy.sourceClassification.classifierVersion,
-        this.identityKey
+        this.identityNamespace
       );
       const prior = await this.store.listLatestOccurrencePublicationsByInsightIds(
         assignment.identity.connectorRef,
@@ -149,7 +149,7 @@ export class FinanceInsightEvaluationOrchestratorV1 {
           assignment,
           projection,
           classificationLineages,
-          this.identityKey
+          this.identityNamespace
         )
       );
       const classifications = await this.store.classifyCurrentTransactions(
@@ -190,7 +190,7 @@ export class FinanceInsightEvaluationOrchestratorV1 {
         },
         assignment,
         policy,
-        identityKey: this.identityKey,
+        identityNamespace: this.identityNamespace,
         completedAt,
         priorOccurrences: recurringPrior,
       });
@@ -199,13 +199,13 @@ export class FinanceInsightEvaluationOrchestratorV1 {
         source: source.request,
         assignment,
         policy,
-        identityKey: this.identityKey,
+        identityNamespace: this.identityNamespace,
         sourceCompleteness: 'complete',
         completedAt,
         previousOccurrences: largePrior,
       });
       const variance = evaluateVarianceProjectionV1({
-        identityKey: this.identityKey,
+        identityNamespace: this.identityNamespace,
         householdScope: assignment.identity.householdScope,
         projection,
         classifications: classifications as readonly ClassifiedVarianceTransactionV1[],
@@ -447,7 +447,7 @@ function varianceLineages(
   > & {},
   policyVersion: number,
   classifierVersion: string,
-  identityKey: Uint8Array
+  identityNamespace: Uint8Array
 ): VarianceEntityClassificationLineageV1[] {
   const entities = new Map<
     string,
@@ -461,7 +461,7 @@ function varianceLineages(
       });
     }
 
-    const merchantRef = deriveMerchantKeyV1(identityKey, transaction.merchantName);
+    const merchantRef = deriveMerchantKeyV1(identityNamespace, transaction.merchantName);
     entities.set(`merchant:${merchantRef}`, {
       entityKind: 'merchant',
       entitySourceRef: merchantRef,
@@ -491,12 +491,12 @@ function relevantInsightIds(
     ReturnType<FinanceInsightSqliteStoreV1['loadCurrentProjection']>
   > & {},
   classificationLineages: readonly VarianceEntityClassificationLineageV1[],
-  identityKey: Uint8Array
+  identityNamespace: Uint8Array
 ): string[] {
   const householdScope = assignment.identity.householdScope;
   return [
     ...projection.recurring.map((fact) =>
-      deriveInsightIdV1(identityKey, {
+      deriveInsightIdV1(identityNamespace, {
         householdScope,
         kind: 'recurringAmountChange',
         entityKind: 'recurring',
@@ -504,7 +504,7 @@ function relevantInsightIds(
       })
     ),
     ...projection.transactions.map((fact) =>
-      deriveInsightIdV1(identityKey, {
+      deriveInsightIdV1(identityNamespace, {
         householdScope,
         kind: 'largeTransaction',
         entityKind: 'transaction',
@@ -512,7 +512,7 @@ function relevantInsightIds(
       })
     ),
     ...classificationLineages.map((lineage) =>
-      deriveInsightIdV1(identityKey, {
+      deriveInsightIdV1(identityNamespace, {
         householdScope,
         kind:
           lineage.entityKind === 'category'

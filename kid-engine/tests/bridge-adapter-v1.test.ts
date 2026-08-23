@@ -25,8 +25,8 @@ const bridgeTransaction: NormalizedBridgeTransactionV1 = {
 
 const mappingContext = {
   sourceRef: 'consumer-safe-ref',
-  instrumentFingerprint:
-    'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  accountRef:
+    'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   historicalAttributions: [],
   existingManualDecision: null,
 };
@@ -42,7 +42,7 @@ describe('normalized bridge v1 attribution adapter', () => {
       }
     );
     expect(input).toEqual({
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       householdId: 'household-demo',
       source: {
         system: 'monarch-bridge',
@@ -51,8 +51,8 @@ describe('normalized bridge v1 attribution adapter', () => {
       },
       transaction: {
         merchantName: 'Synthetic Shop',
-        instrumentFingerprint:
-          'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        accountRef:
+          'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
         occurredOn: '2026-08-08',
       },
       historicalAttributions: [],

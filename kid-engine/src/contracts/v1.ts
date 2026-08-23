@@ -1,5 +1,5 @@
-export const TYRION_DOMAIN_CONTRACT_VERSION = '1.0' as const;
-export const KID_ATTRIBUTION_ENGINE_VERSION = '1.0.0' as const;
+export const TYRION_DOMAIN_CONTRACT_VERSION = '2.0' as const;
+export const KID_ATTRIBUTION_ENGINE_VERSION = '2.0.0' as const;
 const SUPPORTED_CURRENCIES = new Set(Intl.supportedValuesOf('currency'));
 const SUPPORTED_TIMEZONES = new Set(Intl.supportedValuesOf('timeZone'));
 
@@ -27,10 +27,10 @@ export interface KidProfileV1 {
   active: boolean;
 }
 
-export interface CardAttributionRuleV1 {
+export interface AccountAttributionRuleV1 {
   id: string;
   kidId: string;
-  instrumentFingerprint: string;
+  accountRef: string;
   confidence: Exclude<AttributionConfidenceV1, 'none'>;
   enabled: boolean;
 }
@@ -60,7 +60,7 @@ export interface PolicyDraftV1 {
   timezone: string;
   currency: string;
   kids: KidProfileV1[];
-  cardRules: CardAttributionRuleV1[];
+  accountRules: AccountAttributionRuleV1[];
   merchantRules: MerchantAttributionRuleV1[];
   limits: SpendingLimitV1[];
   exceptionPolicy: ExceptionPolicyV1;
@@ -79,7 +79,7 @@ export function createDefaultPolicyDraftV1(): PolicyDraftV1 {
     timezone: 'UTC',
     currency: 'USD',
     kids: [],
-    cardRules: [],
+    accountRules: [],
     merchantRules: [],
     limits: [],
     exceptionPolicy: {
@@ -103,7 +103,7 @@ export function policyDraftFromSnapshotV1(
     timezone: snapshot.timezone,
     currency: snapshot.currency,
     kids: snapshot.kids,
-    cardRules: snapshot.cardRules,
+    accountRules: snapshot.accountRules,
     merchantRules: snapshot.merchantRules,
     limits: snapshot.limits,
     exceptionPolicy: snapshot.exceptionPolicy,
@@ -118,7 +118,7 @@ export interface AttributionSourceV1 {
 
 export interface NormalizedAttributionTransactionV1 {
   merchantName: string;
-  instrumentFingerprint: string | null;
+  accountRef: string;
   occurredOn: string;
 }
 
@@ -147,7 +147,7 @@ export interface AttributionInputV1 {
 
 export type AttributionMethodV1 =
   | 'manual'
-  | 'card-rule'
+  | 'account-rule'
   | 'merchant-rule'
   | 'historical-pattern'
   | 'unassigned'
@@ -156,7 +156,7 @@ export type AttributionMethodV1 =
 export type AttributionReviewReasonV1 =
   | 'no-match'
   | 'low-confidence'
-  | 'card-rule-conflict'
+  | 'account-rule-conflict'
   | 'merchant-rule-conflict'
   | 'historical-attribution-tie'
   | 'engine-unavailable'
@@ -351,7 +351,7 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
       [
         'no-match',
         'low-confidence',
-        'card-rule-conflict',
+        'account-rule-conflict',
         'merchant-rule-conflict',
         'historical-attribution-tie',
         'engine-unavailable',
@@ -399,7 +399,7 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
       result.method,
       [
         'manual',
-        'card-rule',
+        'account-rule',
         'merchant-rule',
         'historical-pattern',
         'unassigned',
@@ -571,7 +571,7 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
     'timezone',
     'currency',
     'kids',
-    'cardRules',
+    'accountRules',
     'merchantRules',
     'limits',
     'exceptionPolicy',
@@ -585,7 +585,7 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
     timezone: snapshot.timezone,
     currency: snapshot.currency,
     kids: snapshot.kids,
-    cardRules: snapshot.cardRules,
+    accountRules: snapshot.accountRules,
     merchantRules: snapshot.merchantRules,
     limits: snapshot.limits,
     exceptionPolicy: snapshot.exceptionPolicy,
@@ -606,7 +606,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     'timezone',
     'currency',
     'kids',
-    'cardRules',
+    'accountRules',
     'merchantRules',
     'limits',
     'exceptionPolicy',
@@ -628,26 +628,23 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
   });
   unique(kids.map((kid) => kid.id), 'kid ids');
   const kidIds = new Set(kids.map((kid) => kid.id));
-  const cardRules = array(draft.cardRules, 'cardRules').map((item, index) => {
-    const rule = object(item, `cardRules[${index}]`);
+  const accountRules = array(draft.accountRules, 'accountRules').map((item, index) => {
+    const rule = object(item, `accountRules[${index}]`);
     exactKeys(rule, [
       'id',
       'kidId',
-      'instrumentFingerprint',
+      'accountRef',
       'confidence',
       'enabled',
     ]);
-    const kidId = identifier(rule.kidId, `cardRules[${index}].kidId`);
-    referencedKid(kidIds, kidId, `cardRules[${index}].kidId`);
+    const kidId = identifier(rule.kidId, `accountRules[${index}].kidId`);
+    referencedKid(kidIds, kidId, `accountRules[${index}].kidId`);
     return {
-      id: identifier(rule.id, `cardRules[${index}].id`),
+      id: identifier(rule.id, `accountRules[${index}].id`),
       kidId,
-      instrumentFingerprint: instrumentFingerprint(
-        rule.instrumentFingerprint,
-        `cardRules[${index}].instrumentFingerprint`
-      ),
-      confidence: confidence(rule.confidence, `cardRules[${index}].confidence`),
-      enabled: boolean(rule.enabled, `cardRules[${index}].enabled`),
+      accountRef: accountRef(rule.accountRef, `accountRules[${index}].accountRef`),
+      confidence: confidence(rule.confidence, `accountRules[${index}].confidence`),
+      enabled: boolean(rule.enabled, `accountRules[${index}].enabled`),
     };
   });
   const merchantRules = array(draft.merchantRules, 'merchantRules').map(
@@ -674,7 +671,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     }
   );
   unique(
-    [...cardRules, ...merchantRules].map((rule) => rule.id),
+    [...accountRules, ...merchantRules].map((rule) => rule.id),
     'attribution rule ids'
   );
   const limits = array(draft.limits, 'limits').map((item, index) => {
@@ -745,7 +742,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     timezone,
     currency,
     kids,
-    cardRules,
+    accountRules,
     merchantRules,
     limits,
     exceptionPolicy,
@@ -769,7 +766,7 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
   const transaction = object(input.transaction, 'transaction');
   exactKeys(transaction, [
     'merchantName',
-    'instrumentFingerprint',
+    'accountRef',
     'occurredOn',
   ]);
   const historicalAttributions = array(
@@ -852,13 +849,7 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
         1,
         160
       ),
-      instrumentFingerprint:
-        transaction.instrumentFingerprint === null
-          ? null
-          : instrumentFingerprint(
-              transaction.instrumentFingerprint,
-              'transaction.instrumentFingerprint'
-            ),
+      accountRef: accountRef(transaction.accountRef, 'transaction.accountRef'),
       occurredOn: calendarDate(transaction.occurredOn, 'transaction.occurredOn'),
     },
     historicalAttributions,
@@ -922,10 +913,13 @@ function identifier(value: unknown, field: string): string {
   return result;
 }
 
-function instrumentFingerprint(value: unknown, field: string): string {
-  const result = boundedString(value, field, 57, 57);
-  if (!/^instrument-v1:[A-Za-z0-9_-]{43}$/.test(result)) {
-    invalid(`${field} must be a server-generated household instrument fingerprint`);
+function accountRef(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value !== value.trim()) {
+    invalid(`${field} must be a stable opaque connector-generated account reference`);
+  }
+  const result = boundedString(value, field, 54, 54);
+  if (!/^account-v1:[A-Za-z0-9_-]{43}$/.test(result)) {
+    invalid(`${field} must be a stable opaque connector-generated account reference`);
   }
   return result;
 }

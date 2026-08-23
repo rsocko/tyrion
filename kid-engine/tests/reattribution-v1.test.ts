@@ -40,7 +40,7 @@ describe('controlled re-attribution service', () => {
     ]);
     const service = createService(records);
     const preview = await service.preview(previewActor, {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       householdId: 'household-demo',
       expectedPolicyVersion: 1,
       sourceRefs: ['source-record-demo'],
@@ -73,7 +73,7 @@ describe('controlled re-attribution service', () => {
       { input: manualInput, current },
     ]);
     const preview = await createService(records).preview(previewActor, {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       householdId: 'household-demo',
       expectedPolicyVersion: 1,
       sourceRefs: ['source-record-demo'],
@@ -94,14 +94,14 @@ describe('controlled re-attribution service', () => {
     ]);
     const service = createService(records);
     await service.preview(previewActor, {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       householdId: 'household-demo',
       expectedPolicyVersion: 1,
       sourceRefs: ['source-record-demo'],
     });
     await expect(
       service.apply(previewActor, {
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         householdId: 'household-demo',
         previewId: 'preview-demo',
         expectedPolicyVersion: 1,
@@ -109,7 +109,7 @@ describe('controlled re-attribution service', () => {
       })
     ).rejects.toMatchObject({ code: 'policy_forbidden' });
     const result = await service.apply(applyActor, {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       householdId: 'household-demo',
       previewId: 'preview-demo',
       expectedPolicyVersion: 1,
@@ -125,7 +125,7 @@ describe('controlled re-attribution service', () => {
   it('rejects apply after the preview expires or policy changes', async () => {
     const records = new MemoryReattributionRepository([]);
     records.preview = {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       previewId: 'preview-demo',
       householdId: 'household-demo',
       policyVersion: 1,
@@ -135,7 +135,7 @@ describe('controlled re-attribution service', () => {
     };
     await expect(
       createService(records).apply(applyActor, {
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         householdId: 'household-demo',
         previewId: 'preview-demo',
         expectedPolicyVersion: 1,
@@ -145,7 +145,7 @@ describe('controlled re-attribution service', () => {
     const changedPolicy = { ...policyFixture, policyVersion: 2 };
     await expect(
       createService(records, changedPolicy).apply(applyActor, {
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         householdId: 'household-demo',
         previewId: 'preview-demo',
         expectedPolicyVersion: 1,
@@ -157,7 +157,7 @@ describe('controlled re-attribution service', () => {
   it('rejects an apply-time atomic policy compare-and-swap failure', async () => {
     const records = new MemoryReattributionRepository([]);
     records.preview = {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       previewId: 'preview-demo',
       householdId: 'household-demo',
       policyVersion: 1,
@@ -168,7 +168,7 @@ describe('controlled re-attribution service', () => {
     records.policyMatchesAtApply = false;
     await expect(
       createService(records).apply(applyActor, {
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         householdId: 'household-demo',
         previewId: 'preview-demo',
         expectedPolicyVersion: 1,
@@ -191,7 +191,7 @@ describe('controlled re-attribution service', () => {
           { input: inputFixture, current: mismatchedCurrent },
         ])
       ).preview(previewActor, {
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         householdId: 'household-demo',
         expectedPolicyVersion: 1,
         sourceRefs: ['source-record-demo'],
@@ -200,7 +200,7 @@ describe('controlled re-attribution service', () => {
 
     const records = new MemoryReattributionRepository([]);
     records.preview = {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       previewId: 'preview-other',
       householdId: 'household-demo',
       policyVersion: 1,
@@ -210,7 +210,7 @@ describe('controlled re-attribution service', () => {
     };
     await expect(
       createService(records).apply(applyActor, {
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         householdId: 'household-demo',
         previewId: 'preview-demo',
         expectedPolicyVersion: 1,
@@ -222,7 +222,7 @@ describe('controlled re-attribution service', () => {
   it('rejects malformed persisted preview expiration before apply', async () => {
     const records = new MemoryReattributionRepository([]);
     records.preview = {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       previewId: 'preview-demo',
       householdId: 'household-demo',
       policyVersion: 1,
@@ -232,7 +232,7 @@ describe('controlled re-attribution service', () => {
     };
     await expect(
       createService(records).apply(applyActor, {
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         householdId: 'household-demo',
         previewId: 'preview-demo',
         expectedPolicyVersion: 1,

@@ -85,7 +85,7 @@ describe('SQLite migrations and staged source publication', () => {
       },
       assignment: committed.evaluation!.assignment,
       policy,
-      identityKey: Buffer.alloc(32, 19),
+      identityNamespace: Buffer.alloc(32, 19),
       completedAt: harness.clock.value,
     });
 
@@ -1639,7 +1639,7 @@ function openStore(
 ): FinanceInsightSqliteStoreV1 {
   const store = new FinanceInsightSqliteStoreV1({
     path,
-    cursorKey: Buffer.alloc(32, 3),
+    cursorChecksumNamespace: Buffer.from('finance-insight-cursor-test-v1'),
     clock: () => clock.value,
     testHook,
   });

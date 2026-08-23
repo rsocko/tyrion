@@ -11,8 +11,8 @@ import type {
 import { inputFixture, policyFixture } from './fixtures.js';
 
 const evaluatedAt = '2026-08-08T12:03:00Z';
-const instrumentFingerprint =
-  'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const accountRef =
+  'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 describe('v1 deterministic attribution', () => {
   it('preserves a manual correction ahead of every automated rule', () => {
@@ -20,7 +20,7 @@ describe('v1 deterministic attribution', () => {
       ...inputFixture,
       transaction: {
         ...inputFixture.transaction,
-        instrumentFingerprint,
+        accountRef,
       },
       existingManualDecision: {
         action: 'assign-kid',
@@ -41,13 +41,13 @@ describe('v1 deterministic attribution', () => {
     });
   });
 
-  it('auto-assigns a definite card rule with rule provenance', () => {
+  it('auto-assigns a definite account rule with rule provenance', () => {
     const result = attributeTransactionV1(
       {
         ...inputFixture,
         transaction: {
           ...inputFixture.transaction,
-          instrumentFingerprint,
+          accountRef,
         },
       },
       policyFixture,
@@ -56,24 +56,24 @@ describe('v1 deterministic attribution', () => {
     expect(result).toMatchObject({
       status: 'attributed',
       kidId: 'kid-alpha',
-      method: 'card-rule',
+      method: 'account-rule',
       review: { status: 'not-required', reasons: [] },
-      provenance: { ruleIds: ['rule-card-alpha'], policyVersion: 1 },
+      provenance: { ruleIds: ['rule-account-alpha'], policyVersion: 1 },
     });
   });
 
   it('returns a pending conflict independent of rule order', () => {
     const conflictingPolicy: PolicySnapshotV1 = {
       ...policyFixture,
-      cardRules: [
+      accountRules: [
         {
-          id: 'rule-card-beta',
+          id: 'rule-account-beta',
           kidId: 'kid-beta',
-          instrumentFingerprint,
+          accountRef,
           confidence: 'definite',
           enabled: true,
         },
-        policyFixture.cardRules[0],
+        policyFixture.accountRules[0],
       ],
     };
     const result = attributeTransactionV1(
@@ -81,7 +81,7 @@ describe('v1 deterministic attribution', () => {
         ...inputFixture,
         transaction: {
           ...inputFixture.transaction,
-          instrumentFingerprint,
+          accountRef,
         },
       },
       conflictingPolicy,
@@ -90,9 +90,9 @@ describe('v1 deterministic attribution', () => {
     expect(result).toMatchObject({
       status: 'pending',
       kidId: null,
-      review: { reasons: ['card-rule-conflict'] },
+      review: { reasons: ['account-rule-conflict'] },
       provenance: {
-        ruleIds: ['rule-card-alpha', 'rule-card-beta'],
+        ruleIds: ['rule-account-alpha', 'rule-account-beta'],
       },
     });
   });

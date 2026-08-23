@@ -75,7 +75,7 @@ export interface LargeTransactionEvaluationInputV1 {
   readonly source: SourceGenerationCreateRequestV1;
   readonly assignment: AssignedEvaluationV1;
   readonly policy: FinanceInsightPolicySnapshotV1;
-  readonly identityKey: Uint8Array;
+  readonly identityNamespace: Uint8Array;
   readonly sourceCompleteness: LargeTransactionSourceCompletenessV1;
   readonly completedAt: string;
   readonly previousOccurrences?: readonly PreviousLargeTransactionOccurrenceV1[];
@@ -191,7 +191,7 @@ export function evaluateLargeTransactionsV1(
       classifyForLargeTransaction(
         fact,
         policy,
-        input.identityKey,
+        input.identityNamespace,
         exclusionCounts
       )
     );
@@ -375,7 +375,7 @@ function buildPublicationCandidate(
   previous: PreviousLargeTransactionOccurrenceV1 | undefined
 ): PublicationCandidateV1 {
   const fact = candidate.transaction.fact;
-  const insightId = deriveInsightIdV1(input.identityKey, {
+  const insightId = deriveInsightIdV1(input.identityNamespace, {
     householdScope: input.assignment.identity.householdScope,
     kind: 'largeTransaction',
     entityKind: 'transaction',
@@ -402,10 +402,10 @@ function buildPublicationCandidate(
         });
   const sourceRevisionRef =
     previous === undefined
-      ? deriveRevision(input.identityKey, candidate.transaction, null)
+      ? deriveRevision(input.identityNamespace, candidate.transaction, null)
       : correction
         ? deriveRevision(
-            input.identityKey,
+            input.identityNamespace,
             candidate.transaction,
             previous.sourceRevisionRef
           )
@@ -413,7 +413,7 @@ function buildPublicationCandidate(
   const occurrenceId =
     previous !== undefined && !correction
       ? previous.detail.occurrenceId
-      : deriveOccurrenceIdV1(input.identityKey, insightId, {
+      : deriveOccurrenceIdV1(input.identityNamespace, insightId, {
           kind: 'largeTransaction',
           transactionSourceRef: fact.sourceRef,
           sourceRevisionRef,
@@ -611,12 +611,12 @@ function buildPublicationCandidate(
 function classifyForLargeTransaction(
   fact: TransactionSourceFactV1,
   policy: FinanceInsightPolicySnapshotV1,
-  identityKey: Uint8Array,
+  identityNamespace: Uint8Array,
   exclusionCounts: Map<string, number>
 ): ClassifiedTransactionV1 {
   const base = classifyTransactionV1(fact, policy);
   const amountMinor = fact.amountMinor < 0 ? -fact.amountMinor : fact.amountMinor;
-  const merchantKey = deriveMerchantKeyV1(identityKey, fact.merchantName);
+  const merchantKey = deriveMerchantKeyV1(identityNamespace, fact.merchantName);
   if (base.classification !== 'postedSpend') {
     if (base.reasonCode !== null) increment(exclusionCounts, base.reasonCode);
     return {
@@ -697,11 +697,11 @@ function matchesDimension(
 }
 
 function deriveRevision(
-  identityKey: Uint8Array,
+  identityNamespace: Uint8Array,
   transaction: ClassifiedTransactionV1,
   predecessorRevisionRef: string | null
 ): string {
-  return deriveSourceRevisionRefV1(identityKey, {
+  return deriveSourceRevisionRefV1(identityNamespace, {
     sourceKind: 'transaction',
     sourceRef: transaction.fact.sourceRef,
     materialFact: {
@@ -975,7 +975,7 @@ function buildOccurrenceExclusions(
     const base = classifyTransactionV1(fact, policy);
     if (base.reasonCode) increment(counts, base.reasonCode);
     if (base.classification !== 'postedSpend') continue;
-    const merchantKey = deriveMerchantKeyV1(input.identityKey, fact.merchantName);
+    const merchantKey = deriveMerchantKeyV1(input.identityNamespace, fact.merchantName);
     if (policy.largeTransaction.approvedMerchantKeys.includes(merchantKey)) {
       increment(counts, 'approved_merchant_excluded');
     } else if (

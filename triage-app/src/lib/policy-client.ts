@@ -2,7 +2,7 @@ import type {
   PolicyDraftV1,
   PolicySnapshotV1,
   ReattributionApplyResultV1,
-} from "@rsocko/tyrion-kid-engine/contracts/v1";
+} from "@rsocko/tyrion-kid-engine/contracts/v2";
 
 export interface PolicyCapabilities {
   write: boolean;
@@ -53,15 +53,6 @@ export function savePolicy(
   return request("/api/policy", {
     method: "PUT",
     body: JSON.stringify({ expectedPolicyVersion, policy }),
-  });
-}
-
-export function fingerprintInstrument(
-  instrumentReference: string
-): Promise<{ instrumentFingerprint: string }> {
-  return request("/api/policy/instruments/fingerprint", {
-    method: "POST",
-    body: JSON.stringify({ instrumentReference }),
   });
 }
 

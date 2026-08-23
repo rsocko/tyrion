@@ -2,13 +2,13 @@ export interface KidProfile {
   id: string;
   name: string;
   color: string;
-  cardRules: CardRule[];
+  accountRules: AccountRule[];
   merchantRules: MerchantRule[];
   thresholds: ThresholdConfig;
 }
 
-export interface CardRule {
-  last4: string;
+export interface AccountRule {
+  accountRef: string;
   confidence: 'definite' | 'likely';
   label?: string;
 }
@@ -30,13 +30,13 @@ export interface Transaction {
   amount: number;
   date: string; // ISO date string
   account: {
-    mask: string; // last 4 digits
+    ref: string;
     name?: string;
   };
 }
 
 export type AttributionMethod =
-  | 'card-rule'
+  | 'account-rule'
   | 'merchant-rule'
   | 'historical-pattern'
   | 'unassigned';

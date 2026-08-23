@@ -46,7 +46,7 @@ export interface FinanceAutomationTelemetrySinkV1 {
 
 export interface FinanceAutomationJobServiceOptionsV1 {
   readonly store: FinanceAutomationSqliteStoreV1;
-  readonly identityKey: Uint8Array;
+  readonly identityNamespace: Uint8Array;
   readonly clock?: () => Date;
   readonly leaseSeconds?: number;
   readonly telemetry?: FinanceAutomationTelemetrySinkV1;
@@ -54,15 +54,15 @@ export interface FinanceAutomationJobServiceOptionsV1 {
 
 export class FinanceAutomationJobServiceV1 {
   private readonly store: FinanceAutomationSqliteStoreV1;
-  private readonly identityKey: Uint8Array;
+  private readonly identityNamespace: Uint8Array;
   private readonly clock: () => Date;
   private readonly leaseSeconds: number;
   private readonly telemetry: FinanceAutomationTelemetrySinkV1 | undefined;
 
   constructor(options: FinanceAutomationJobServiceOptionsV1) {
-    if (options.identityKey.byteLength < 32) {
+    if (options.identityNamespace.byteLength < 32) {
       throw new RangeError(
-        'Finance automation identity key must contain at least 32 bytes'
+        'Finance automation identity namespace must contain at least 32 bytes'
       );
     }
     if (
@@ -76,7 +76,7 @@ export class FinanceAutomationJobServiceV1 {
       );
     }
     this.store = options.store;
-    this.identityKey = Uint8Array.from(options.identityKey);
+    this.identityNamespace = Uint8Array.from(options.identityNamespace);
     this.clock = options.clock ?? (() => new Date());
     this.leaseSeconds = options.leaseSeconds ?? DEFAULT_LEASE_SECONDS_V1;
     this.telemetry = options.telemetry;
@@ -89,7 +89,7 @@ export class FinanceAutomationJobServiceV1 {
     const requestDigest = durableRequestDigestV1(
       normalizeFinanceAutomationJobRequestV1(request)
     );
-    const plan = evaluateFinanceAutomationJobV1(request, this.identityKey);
+    const plan = evaluateFinanceAutomationJobV1(request, this.identityNamespace);
     const acquiredAt = this.clock();
     const lease = {
       connectorRef: request.connectorRef,

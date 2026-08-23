@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tyrion Internal Attribution Service",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "Private trusted-homelab service contract. Mission Control sends only privacy-safe normalized attribution facts; Tyrion derives the fixed household and service actor from its server implementation."
   },
   "servers": [
@@ -21,9 +21,9 @@
     }
   },
   "paths": {
-    "/api/internal/v1/attribution/batch": {
+    "/api/internal/v2/attribution/batch": {
       "post": {
-        "operationId": "attributeBatchV1",
+        "operationId": "attributeBatchV2",
         "summary": "Attribute a bounded transaction batch using one current policy snapshot",
         "description": "Maximum body size is 65536 bytes. This route requires the fixed private service authority in Host and, when present, x-forwarded-host. It is excluded from every public operational UI router.",
         "security": [{ "bearerAuth": [] }],
@@ -31,7 +31,7 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/$defs/AttributionBatchRequestV1" }
+              "schema": { "$ref": "#/$defs/AttributionBatchRequestV2" }
             }
           }
         },
@@ -40,7 +40,7 @@
             "description": "The complete batch was evaluated deterministically.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/$defs/AttributionBatchResponseV1" }
+                "schema": { "$ref": "#/$defs/AttributionBatchResponseV2" }
               }
             }
           },
@@ -56,9 +56,9 @@
         }
       }
     },
-    "/api/internal/v1/attribution/actions": {
+    "/api/internal/v2/attribution/actions": {
       "post": {
-        "operationId": "applyAttributionActionV1",
+        "operationId": "applyAttributionActionV2",
         "summary": "Explain or mutate one versioned attribution exception",
         "description": "Read-only explain requests do not require confirmation. Assign/correct, parent-expense, unassign, resolve, and defer mutations require confirm=true, an idempotency key, and the expected consumer-owned state version.",
         "security": [{ "bearerAuth": [] }],
@@ -66,7 +66,7 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/$defs/AttributionActionRequestV1" }
+              "schema": { "$ref": "#/$defs/AttributionActionRequestV2" }
             }
           }
         },
@@ -75,7 +75,7 @@
             "description": "Current explanation and bounded actions, or the applied/replayed mutation with audit state.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/$defs/AttributionActionResponseV1" }
+                "schema": { "$ref": "#/$defs/AttributionActionResponseV2" }
               }
             }
           },
@@ -106,9 +106,9 @@
       "minLength": 20,
       "maxLength": 35
     },
-    "InstrumentFingerprint": {
-      "type": ["string", "null"],
-      "pattern": "^instrument-v1:[A-Za-z0-9_-]{43}$"
+    "AccountRef": {
+      "type": "string",
+      "pattern": "^account-v1:[A-Za-z0-9_-]{43}$"
     },
     "ManualDecisionV1": {
       "oneOf": [
@@ -145,14 +145,14 @@
         }
       ]
     },
-    "AttributionBatchItemV1": {
+    "AttributionBatchItemV2": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "sourceRef",
         "occurredOn",
         "merchantName",
-        "instrumentFingerprint",
+        "accountRef",
         "observedAt",
         "existingManualDecision"
       ],
@@ -168,14 +168,14 @@
           "minLength": 1,
           "maxLength": 160
         },
-        "instrumentFingerprint": {
-          "$ref": "#/$defs/InstrumentFingerprint"
+        "accountRef": {
+          "$ref": "#/$defs/AccountRef"
         },
         "observedAt": { "$ref": "#/$defs/Timestamp" },
         "existingManualDecision": { "$ref": "#/$defs/ManualDecisionV1" }
       }
     },
-    "AttributionBatchRequestV1": {
+    "AttributionBatchRequestV2": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -185,8 +185,8 @@
         "items"
       ],
       "properties": {
-        "contractVersion": { "const": "1.0" },
-        "provenance": { "const": "mission-control-normalized-v1" },
+        "contractVersion": { "const": "2.0" },
+        "provenance": { "const": "mission-control-normalized-v2" },
         "expectedPolicyVersion": {
           "type": ["integer", "null"],
           "minimum": 1
@@ -195,11 +195,11 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 100,
-          "items": { "$ref": "#/$defs/AttributionBatchItemV1" }
+          "items": { "$ref": "#/$defs/AttributionBatchItemV2" }
         }
       }
     },
-    "AttributionBatchResultV1": {
+    "AttributionBatchResultV2": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -218,7 +218,7 @@
         "evaluatedAt"
       ],
       "properties": {
-        "contractVersion": { "const": "1.0" },
+        "contractVersion": { "const": "2.0" },
         "sourceRef": { "$ref": "#/$defs/Identifier" },
         "status": {
           "enum": ["attributed", "unassigned", "pending"]
@@ -233,7 +233,7 @@
         "method": {
           "enum": [
             "manual",
-            "card-rule",
+            "account-rule",
             "merchant-rule",
             "historical-pattern",
             "unassigned",
@@ -254,7 +254,7 @@
             "enum": [
               "no-match",
               "low-confidence",
-              "card-rule-conflict",
+              "account-rule-conflict",
               "merchant-rule-conflict",
               "historical-attribution-tie",
               "engine-unavailable",
@@ -267,11 +267,11 @@
           "enum": ["manual", "automated", "fallback"]
         },
         "policyVersion": { "type": "integer", "minimum": 1 },
-        "engineVersion": { "const": "1.0.0" },
+        "engineVersion": { "const": "2.0.0" },
         "evaluatedAt": { "$ref": "#/$defs/Timestamp" }
       }
     },
-    "AttributionBatchResponseV1": {
+    "AttributionBatchResponseV2": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -281,26 +281,26 @@
         "results"
       ],
       "properties": {
-        "contractVersion": { "const": "1.0" },
+        "contractVersion": { "const": "2.0" },
         "policyVersion": { "type": "integer", "minimum": 1 },
-        "engineVersion": { "const": "1.0.0" },
+        "engineVersion": { "const": "2.0.0" },
         "results": {
           "type": "array",
           "minItems": 1,
           "maxItems": 100,
-          "items": { "$ref": "#/$defs/AttributionBatchResultV1" }
+          "items": { "$ref": "#/$defs/AttributionBatchResultV2" }
         }
       }
     },
-    "AttributionActionRequestV1": {
+    "AttributionActionRequestV2": {
       "oneOf": [
         {
           "type": "object",
           "additionalProperties": false,
           "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action"],
           "properties": {
-            "contractVersion": { "const": "1.0" },
-            "provenance": { "const": "mission-control-normalized-v1" },
+            "contractVersion": { "const": "2.0" },
+            "provenance": { "const": "mission-control-normalized-v2" },
             "sourceRef": { "$ref": "#/$defs/Identifier" },
             "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
             "action": { "const": "explain" }
@@ -311,8 +311,8 @@
           "additionalProperties": false,
           "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm", "kidId"],
           "properties": {
-            "contractVersion": { "const": "1.0" },
-            "provenance": { "const": "mission-control-normalized-v1" },
+            "contractVersion": { "const": "2.0" },
+            "provenance": { "const": "mission-control-normalized-v2" },
             "sourceRef": { "$ref": "#/$defs/Identifier" },
             "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
             "action": { "const": "assign-kid" },
@@ -327,8 +327,8 @@
           "additionalProperties": false,
           "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm"],
           "properties": {
-            "contractVersion": { "const": "1.0" },
-            "provenance": { "const": "mission-control-normalized-v1" },
+            "contractVersion": { "const": "2.0" },
+            "provenance": { "const": "mission-control-normalized-v2" },
             "sourceRef": { "$ref": "#/$defs/Identifier" },
             "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
             "action": { "enum": ["mark-parent-expense", "unassign", "resolve-exception"] },
@@ -342,8 +342,8 @@
           "additionalProperties": false,
           "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm", "deferUntil"],
           "properties": {
-            "contractVersion": { "const": "1.0" },
-            "provenance": { "const": "mission-control-normalized-v1" },
+            "contractVersion": { "const": "2.0" },
+            "provenance": { "const": "mission-control-normalized-v2" },
             "sourceRef": { "$ref": "#/$defs/Identifier" },
             "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
             "action": { "const": "defer-exception" },
@@ -355,12 +355,12 @@
         }
       ]
     },
-    "AttributionActionResultV1": {
+    "AttributionActionResultV2": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "sourceRef", "status", "kidId", "confidence", "method", "explanation", "review", "provenance"],
       "properties": {
-        "contractVersion": { "const": "1.0" },
+        "contractVersion": { "const": "2.0" },
         "sourceRef": { "$ref": "#/$defs/Identifier" },
         "status": { "enum": ["attributed", "unassigned", "pending"] },
         "kidId": {
@@ -370,7 +370,7 @@
           ]
         },
         "confidence": { "enum": ["definite", "likely", "none"] },
-        "method": { "enum": ["manual", "card-rule", "merchant-rule", "historical-pattern", "unassigned", "unavailable"] },
+        "method": { "enum": ["manual", "account-rule", "merchant-rule", "historical-pattern", "unassigned", "unavailable"] },
         "explanation": { "type": "string", "minLength": 1, "maxLength": 300 },
         "review": {
           "type": "object",
@@ -381,7 +381,7 @@
             "reasons": {
               "type": "array",
               "uniqueItems": true,
-              "items": { "$ref": "#/$defs/AttributionReviewReasonV1" }
+              "items": { "$ref": "#/$defs/AttributionReviewReasonV2" }
             }
           }
         },
@@ -397,7 +397,7 @@
                 { "type": "null" }
               ]
             },
-            "engineVersion": { "const": "1.0.0" },
+            "engineVersion": { "const": "2.0.0" },
             "ruleIds": {
               "type": "array",
               "uniqueItems": true,
@@ -408,11 +408,11 @@
         }
       }
     },
-    "AttributionReviewReasonV1": {
+    "AttributionReviewReasonV2": {
       "enum": [
         "no-match",
         "low-confidence",
-        "card-rule-conflict",
+        "account-rule-conflict",
         "merchant-rule-conflict",
         "historical-attribution-tie",
         "engine-unavailable",
@@ -420,7 +420,7 @@
         "policy-version-mismatch"
       ]
     },
-    "AttributionExceptionStateV1": {
+    "AttributionExceptionStateV2": {
       "type": "object",
       "additionalProperties": false,
       "required": ["status", "reasons", "deferredUntil", "updatedAt"],
@@ -429,7 +429,7 @@
         "reasons": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/AttributionReviewReasonV1" }
+          "items": { "$ref": "#/$defs/AttributionReviewReasonV2" }
         },
         "deferredUntil": {
           "oneOf": [
@@ -440,7 +440,7 @@
         "updatedAt": { "$ref": "#/$defs/Timestamp" }
       }
     },
-    "AttributionActionAuditV1": {
+    "AttributionActionAuditV2": {
       "oneOf": [
         { "type": "null" },
         {
@@ -461,18 +461,18 @@
         }
       ]
     },
-    "AttributionActionResponseV1": {
+    "AttributionActionResponseV2": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "sourceRef", "policyVersion", "engineVersion", "stateVersion", "attribution", "exception", "availableActions", "assignableKidIds", "authoritativeDeepLink", "provenance", "audit"],
       "properties": {
-        "contractVersion": { "const": "1.0" },
+        "contractVersion": { "const": "2.0" },
         "sourceRef": { "$ref": "#/$defs/Identifier" },
         "policyVersion": { "type": "integer", "minimum": 1 },
-        "engineVersion": { "const": "1.0.0" },
+        "engineVersion": { "const": "2.0.0" },
         "stateVersion": { "type": "integer", "minimum": 1 },
-        "attribution": { "$ref": "#/$defs/AttributionActionResultV1" },
-        "exception": { "$ref": "#/$defs/AttributionExceptionStateV1" },
+        "attribution": { "$ref": "#/$defs/AttributionActionResultV2" },
+        "exception": { "$ref": "#/$defs/AttributionExceptionStateV2" },
         "availableActions": {
           "type": "array",
           "uniqueItems": true,
@@ -507,7 +507,7 @@
             "evaluatedAt": { "$ref": "#/$defs/Timestamp" }
           }
         },
-        "audit": { "$ref": "#/$defs/AttributionActionAuditV1" }
+        "audit": { "$ref": "#/$defs/AttributionActionAuditV2" }
       }
     },
     "ErrorBody": {

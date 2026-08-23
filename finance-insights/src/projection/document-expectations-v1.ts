@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   DOCUMENT_EXPECTATION_CONTRACT_VERSION_V1,
   parseDocumentExpectationSignalsV1,
@@ -23,10 +23,10 @@ export interface DocumentExpectationProjectionInputV1 {
 
 export function projectDocumentExpectationSignalsV1(
   input: DocumentExpectationProjectionInputV1,
-  identityKey: Uint8Array
+  identityNamespace: Uint8Array
 ): DocumentExpectationSignalsV1 {
-  if (identityKey.byteLength < 32) {
-    throw new RangeError('Identity keys must contain at least 32 bytes');
+  if (identityNamespace.byteLength < 16) {
+    throw new RangeError('Identity namespaces must contain at least 16 bytes');
   }
 
   const accountSignals = input.accounts
@@ -40,7 +40,7 @@ export function projectDocumentExpectationSignalsV1(
         `${capitalize(account.accountType)} account`,
         'accountStatementCandidate',
         ADVISORY_SOURCE_CONFIDENCE_V1,
-        identityKey
+        identityNamespace
       )
     );
   const knownOutgoingRecurringRefs = new Set(input.knownOutgoingRecurringRefs);
@@ -60,7 +60,7 @@ export function projectDocumentExpectationSignalsV1(
         'Recurring expense',
         'recurringDocumentCandidate',
         ADVISORY_SOURCE_CONFIDENCE_V1,
-        identityKey
+        identityNamespace
       )
     );
 
@@ -84,7 +84,7 @@ function signal(
   displayHint: string,
   kind: DocumentExpectationSignalV1['kind'],
   confidence: number,
-  identityKey: Uint8Array
+  identityNamespace: Uint8Array
 ): DocumentExpectationSignalV1 {
   const basis =
     sourceKind === 'account'
@@ -96,7 +96,7 @@ function signal(
         : 'inactive_recurring_obligation';
   return {
     seriesRef: deriveSeriesRef(
-      identityKey,
+      identityNamespace,
       connectorRef,
       sourceKind,
       sourceRef
@@ -112,12 +112,14 @@ function signal(
 }
 
 function deriveSeriesRef(
-  identityKey: Uint8Array,
+  identityNamespace: Uint8Array,
   connectorRef: string,
   sourceKind: 'account' | 'recurring',
   sourceRef: string
 ): string {
-  const digest = createHmac('sha256', identityKey)
+  const digest = createHash('sha256')
+    .update(identityNamespace)
+    .update('\0')
     .update(
       canonicalizeV1([
         'owl',

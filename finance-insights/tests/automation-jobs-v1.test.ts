@@ -79,7 +79,7 @@ describe('durable finance automation jobs v1', () => {
     expect(held).toBe(true);
     const service = new FinanceAutomationJobServiceV1({
       store: harness.store,
-      identityKey: IDENTITY_KEY,
+      identityNamespace: IDENTITY_KEY,
       clock: () => new Date('2026-08-10T13:01:00.000Z'),
     });
     const request = healthRequest({
@@ -1099,7 +1099,7 @@ describe('durable finance automation jobs v1', () => {
     openStores.add(restartedStore);
     const restartedService = new FinanceAutomationJobServiceV1({
       store: restartedStore,
-      identityKey: IDENTITY_KEY,
+      identityNamespace: IDENTITY_KEY,
     });
 
     const replay = await restartedService.run(request);
@@ -1128,7 +1128,7 @@ function createHarness(): {
     store,
     service: new FinanceAutomationJobServiceV1({
       store,
-      identityKey: IDENTITY_KEY,
+      identityNamespace: IDENTITY_KEY,
     }),
   };
 }

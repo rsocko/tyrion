@@ -39,26 +39,37 @@ describe('v1 domain contract validation', () => {
     expect(() =>
       parsePolicySnapshotV1({
         ...policyFixture,
-        cardRules: [
-          { ...policyFixture.cardRules[0], kidId: 'kid-not-configured' },
+        accountRules: [
+          { ...policyFixture.accountRules[0], kidId: 'kid-not-configured' },
         ],
       })
     ).toThrow('references an unknown kid');
   });
 
-  it('rejects instrument values that were not fingerprinted by the server boundary', () => {
+  it('rejects account values that are not connector-generated opaque references', () => {
     expect(() =>
       parsePolicySnapshotV1({
         ...policyFixture,
-        cardRules: [
+        accountRules: [
           {
-            ...policyFixture.cardRules[0],
-            instrumentFingerprint:
-              'instrument-v1:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
+            ...policyFixture.accountRules[0],
+            accountRef:
+              'account-v1:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
           },
         ],
       })
-    ).toThrow('server-generated household instrument fingerprint');
+    ).toThrow('stable opaque connector-generated account reference');
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        accountRules: [
+          {
+            ...policyFixture.accountRules[0],
+            accountRef: ` ${policyFixture.accountRules[0].accountRef}`,
+          },
+        ],
+      })
+    ).toThrow('stable opaque connector-generated account reference');
   });
 
   it('rejects duplicate limit periods and mismatched currencies', () => {
@@ -191,7 +202,7 @@ describe('v1 domain contract validation', () => {
 
   it('strictly validates persisted previews and nested attribution results', () => {
     const result = {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       sourceRef: 'source-record-demo',
       status: 'pending',
       kidId: 'kid-beta',
@@ -202,14 +213,14 @@ describe('v1 domain contract validation', () => {
       provenance: {
         decisionSource: 'automated',
         policyVersion: 1,
-        engineVersion: '1.0.0',
+        engineVersion: '2.0.0',
         ruleIds: ['rule-merchant-beta'],
         evaluatedAt: '2026-08-08T12:03:00Z',
       },
     };
     expect(() =>
       parseReattributionPreviewV1({
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         previewId: 'preview-demo',
         householdId: 'household-demo',
         policyVersion: 1,
@@ -220,7 +231,7 @@ describe('v1 domain contract validation', () => {
     ).toThrow('expiresAt');
     expect(() =>
       parseReattributionPreviewV1({
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         previewId: 'preview-demo',
         householdId: 'household-demo',
         policyVersion: 1,
@@ -238,7 +249,7 @@ describe('v1 domain contract validation', () => {
     ).toThrow('unexpected field');
     expect(() =>
       parseReattributionPreviewV1({
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         previewId: 'preview-demo',
         householdId: 'household-demo',
         policyVersion: 2,

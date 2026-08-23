@@ -70,7 +70,7 @@ without reproducing Monarch's workspace.
   reconciliation issues, sync health, and compact summaries.
 - [ ] Build exception-only review for ambiguous attribution, anomalies,
   reconciliation mismatches, and failed write-backs.
-- [ ] Build the bounded Tyrion configuration UI for kid profiles, card and merchant
+- [ ] Build the bounded Tyrion configuration UI for kid profiles, account and merchant
   rules, limits, policy versions, and controlled re-attribution.
 - [x] Add Mission Control attribution explanations, correction, unassignment, and
   exception actions against Tyrion's versioned domain contract.

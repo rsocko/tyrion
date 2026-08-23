@@ -100,7 +100,7 @@ export interface RecurringAmountDetectorOptionsV1 {
   source: RecurringAmountSourceContextV1;
   assignment: AssignedEvaluationV1;
   policy: FinanceInsightPolicySnapshotV1;
-  identityKey: Uint8Array;
+  identityNamespace: Uint8Array;
   completedAt: string;
   configuredAssociations?: readonly ConfiguredRecurringAssociationV1[];
   evidenceBindings?: readonly RecurringEvidenceBindingV1[];
@@ -897,7 +897,7 @@ function identityFor(
   options: RecurringAmountDetectorOptionsV1,
   materialAmountMinor = spendAmount(transaction)
 ): IdentityResult {
-  const insightId = deriveInsightIdV1(options.identityKey, {
+  const insightId = deriveInsightIdV1(options.identityNamespace, {
     householdScope: options.assignment.identity.householdScope,
     kind: 'recurringAmountChange',
     entityKind: 'recurring',
@@ -932,13 +932,13 @@ function identityFor(
   const sourceRevisionRef =
     sameEpisode && !isCorrection
       ? prior.sourceRevisionRef
-      : deriveSourceRevisionRefV1(options.identityKey, {
+      : deriveSourceRevisionRefV1(options.identityNamespace, {
           sourceKind: 'transaction',
           sourceRef: transaction.sourceRef,
           materialFact,
           predecessorRevisionRef: isCorrection ? prior.sourceRevisionRef : null,
         });
-  const occurrenceId = deriveOccurrenceIdV1(options.identityKey, insightId, {
+  const occurrenceId = deriveOccurrenceIdV1(options.identityNamespace, insightId, {
     kind: 'recurringAmountChange',
     billingPeriod,
     sourceRevisionRef,

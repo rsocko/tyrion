@@ -19,6 +19,12 @@ import {
 
 const HOUSEHOLD_SCOPE = "homelab-household";
 const RETENTION_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+const FINANCE_INSIGHT_IDENTITY_NAMESPACE = new TextEncoder().encode(
+  "tyrion/finance-insight/identity/v1"
+);
+const FINANCE_INSIGHT_CURSOR_CHECKSUM_NAMESPACE = new TextEncoder().encode(
+  "tyrion/finance-insight/cursor-checksum/v1"
+);
 
 export interface FinanceInsightRuntimeGates {
   evaluationWrite: boolean;
@@ -29,7 +35,7 @@ export interface FinanceInsightRuntimeGates {
 
 export interface FinanceInsightRuntime {
   store: FinanceInsightSqliteStoreV1;
-  identityKey: Uint8Array;
+  identityNamespace: Uint8Array;
   lifecycle: FinanceInsightLifecycleServiceV1;
   orchestrator: FinanceInsightEvaluationOrchestratorV1;
   runAutomation(
@@ -120,14 +126,11 @@ export async function createFinanceInsightRuntime(
     const policyPath = requireExternalAbsolutePath(
       environment.TYRION_FINANCE_INSIGHT_POLICY_PATH
     );
-    const cursorKey = requireKey(environment.TYRION_FINANCE_INSIGHT_CURSOR_KEY);
-    const identityKey = requireKey(
-      environment.TYRION_FINANCE_INSIGHT_IDENTITY_KEY
-    );
+    const identityNamespace = FINANCE_INSIGHT_IDENTITY_NAMESPACE;
     const policy = loadPolicy(policyPath);
     const store = new FinanceInsightSqliteStoreV1({
       path: storePath,
-      cursorKey,
+      cursorChecksumNamespace: FINANCE_INSIGHT_CURSOR_CHECKSUM_NAMESPACE,
       ...(testClock ? { clock: testClock } : {}),
     });
     const maintenance = new FinanceInsightRuntimeMaintenance(store);
@@ -154,7 +157,7 @@ export async function createFinanceInsightRuntime(
         return await operation(
           new FinanceAutomationJobServiceV1({
             store: automationStore,
-            identityKey,
+            identityNamespace,
             telemetry,
           })
         );
@@ -164,12 +167,12 @@ export async function createFinanceInsightRuntime(
     };
     const runtime = {
       store,
-      identityKey: Uint8Array.from(identityKey),
+      identityNamespace: Uint8Array.from(identityNamespace),
       lifecycle,
       orchestrator: new FinanceInsightEvaluationOrchestratorV1({
         store,
         lifecycle,
-        identityKey,
+        identityNamespace,
         telemetry,
         ...(testClock ? { clock: testClock } : {}),
       }),
@@ -262,13 +265,6 @@ export async function financeInsightHealth(): Promise<{
   } catch {
     return { status: "unavailable" };
   }
-}
-
-function requireKey(value: string | undefined): Uint8Array {
-  if (!value) throw new FinanceInsightRuntimeConfigurationError();
-  const key = Buffer.from(value, "utf8");
-  if (key.byteLength < 32) throw new FinanceInsightRuntimeConfigurationError();
-  return key;
 }
 
 function requireExternalAbsolutePath(value: string | undefined): string {

@@ -43,26 +43,23 @@ export function attributeTransactionV1(
   const activeKidIds = new Set(
     policy.kids.filter((kid) => kid.active).map((kid) => kid.id)
   );
-  const cardCandidates =
-    input.transaction.instrumentFingerprint === null
-      ? []
-      : policy.cardRules
-          .filter(
-            (rule) =>
-              rule.enabled &&
-              activeKidIds.has(rule.kidId) &&
-              rule.instrumentFingerprint === input.transaction.instrumentFingerprint
-          )
-          .map(toCandidate);
-  const cardResult = evaluateCandidates(
+  const accountCandidates = policy.accountRules
+    .filter(
+      (rule) =>
+        rule.enabled &&
+        activeKidIds.has(rule.kidId) &&
+        rule.accountRef === input.transaction.accountRef
+    )
+    .map(toCandidate);
+  const accountResult = evaluateCandidates(
     input,
     policy,
     evaluatedAt,
-    cardCandidates,
-    'card-rule',
-    'card-rule-conflict'
+    accountCandidates,
+    'account-rule',
+    'account-rule-conflict'
   );
-  if (cardResult) return cardResult;
+  if (accountResult) return accountResult;
 
   const normalizedMerchant = normalizeMerchant(input.transaction.merchantName);
   const merchantCandidates = policy.merchantRules
@@ -219,8 +216,8 @@ function evaluateCandidates(
   policy: PolicySnapshotV1,
   evaluatedAt: string,
   candidates: RuleCandidate[],
-  method: 'card-rule' | 'merchant-rule',
-  conflictReason: 'card-rule-conflict' | 'merchant-rule-conflict'
+  method: 'account-rule' | 'merchant-rule',
+  conflictReason: 'account-rule-conflict' | 'merchant-rule-conflict'
 ): AttributionResultV1 | null {
   if (candidates.length === 0) return null;
   const ordered = [...candidates].sort(
@@ -256,8 +253,8 @@ function evaluateCandidates(
     confidence,
     method,
     ordered.map((candidate) => candidate.ruleId),
-    method === 'card-rule'
-      ? 'A configured payment instrument rule matched.'
+    method === 'account-rule'
+      ? 'A configured Monarch account rule matched.'
       : 'A configured merchant rule matched.',
     reviewReasons
   );
@@ -269,7 +266,7 @@ function automatedResult(
   evaluatedAt: string,
   kidId: string,
   confidence: Exclude<AttributionConfidenceV1, 'none'>,
-  method: 'card-rule' | 'merchant-rule' | 'historical-pattern',
+  method: 'account-rule' | 'merchant-rule' | 'historical-pattern',
   ruleIds: string[],
   explanation: string,
   reasons: AttributionReviewReasonV1[]
@@ -327,7 +324,7 @@ function provenance(
 }
 
 function toCandidate(
-  rule: PolicySnapshotV1['cardRules'][number] | PolicySnapshotV1['merchantRules'][number]
+  rule: PolicySnapshotV1['accountRules'][number] | PolicySnapshotV1['merchantRules'][number]
 ): RuleCandidate {
   return {
     kidId: rule.kidId,

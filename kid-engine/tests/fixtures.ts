@@ -14,12 +14,12 @@ export const policyDraftFixture: PolicyDraftV1 = {
     { id: 'kid-alpha', displayName: 'Alpha', color: 'blue', active: true },
     { id: 'kid-beta', displayName: 'Beta', color: null, active: true },
   ],
-  cardRules: [
+  accountRules: [
     {
-      id: 'rule-card-alpha',
+      id: 'rule-account-alpha',
       kidId: 'kid-alpha',
-      instrumentFingerprint:
-        'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      accountRef:
+        'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       confidence: 'definite',
       enabled: true,
     },
@@ -67,7 +67,7 @@ export const inputFixture: AttributionInputV1 = {
   },
   transaction: {
     merchantName: 'Synthetic Shop',
-    instrumentFingerprint: null,
+    accountRef: 'account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
     occurredOn: '2026-08-08',
   },
   historicalAttributions: [],

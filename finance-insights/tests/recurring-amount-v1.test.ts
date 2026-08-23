@@ -1069,7 +1069,7 @@ async function evaluate(
     source,
     assignment,
     policy: assignedPolicy,
-    identityKey: IDENTITY_KEY,
+    identityNamespace: IDENTITY_KEY,
     completedAt: overrides.completedAt ?? COMPLETED_AT,
     configuredAssociations: overrides.configuredAssociations,
     evidenceBindings: overrides.evidenceBindings,

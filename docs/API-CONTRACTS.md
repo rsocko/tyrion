@@ -21,7 +21,7 @@ The OpenAPI document at `GET /openapi.json` is the executable schema.
 
 This document covers only Monarch Bridge v1 transport. Tyrion's protected batch
 attribution service is a separate domain API defined by
-[`attribution-service-v1.openapi.json`](./attribution-service-v1.openapi.json);
+[`attribution-service-v2.openapi.json`](./attribution-service-v2.openapi.json);
 it is not added to the bridge route tree.
 
 The separately versioned private Finance insight domain contract is defined by
@@ -227,11 +227,12 @@ errors, status codes, and `Retry-After` behavior are defined by the generated
 contract; raw connection errors, request bodies, source identities, paths, and
 financial values are never returned or logged.
 
-The runtime requires an absolute external SQLite path, an absolute external
-policy snapshot path, and separate server-held cursor and identity keys of at
-least 32 bytes. Evaluation/write, read, and confirmed-action gates are
-server-only and fail closed. Evaluation reads only the current promoted
-projection and never contacts Monarch or loads reusable session material.
+The runtime requires an absolute external SQLite path and an absolute external
+policy snapshot path. Stable finding identities and cursor integrity checks use
+versioned deterministic non-secret namespaces; no separately provisioned identity
+or cursor key exists. Evaluation/write, read, and confirmed-action gates are
+server-only and fail closed. Evaluation reads only the current promoted projection
+and never contacts Monarch or loads reusable session material.
 
 The same read service publishes the generation-addressed, pull-only
 `DocumentExpectationSignalsV1` projection for OWL through both its preserved private

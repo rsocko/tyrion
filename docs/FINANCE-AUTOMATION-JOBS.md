@@ -17,12 +17,12 @@ private Finance Insights authority and bearer boundary:
 Both routes are fail-closed behind
 `TYRION_FINANCE_AUTOMATION_WRITE_ENABLED`. The private caller supplies only normalized
 Bridge facts or health observations, the durable schedule instant, and the matching
-versioned policy. The runtime holds the stable identity key and absolute external
-SQLite path; neither crosses the service boundary.
+versioned policy. The runtime uses a versioned non-secret identity namespace and an
+absolute external SQLite path; neither crosses the service boundary.
 
 ## Durable run and signal semantics
 
-`FinanceAutomationJobServiceV1` derives a keyed run identity from job kind,
+`FinanceAutomationJobServiceV1` derives a deterministic run identity from job kind,
 connector reference, and `scheduledFor`. The SQLite store commits the run, signal
 lifecycle changes, and versioned delivery outbox in one immediate transaction.
 
@@ -110,7 +110,8 @@ meaning, source lifecycle, and the durable delivery outbox. For each durable sch
 1. Load only normalized facts through the protected Bridge/source-generation
    contract.
 2. Set `scheduledFor` to the durable schedule instant, not the retry instant.
-3. Run the service with the stable external state path and stable identity key.
+3. Run the service with the stable external state path; the versioned identity
+   namespace is part of the runtime contract rather than deployment configuration.
 4. Apply each delivery's embedded signal snapshot through Mission Control's Finance
    notification provider for `create`, `update`, and `settle`, idempotently by
    `deliveryKey` and `version`. Informational signals remain notifications/status;

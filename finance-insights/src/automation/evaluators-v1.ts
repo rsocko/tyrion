@@ -71,19 +71,19 @@ export interface FinanceAutomationEvaluationPlanV1 {
 
 export function evaluateFinanceAutomationJobV1(
   request: FinanceAutomationJobRequestV1,
-  identityKey: Uint8Array
+  identityNamespace: Uint8Array
 ): FinanceAutomationEvaluationPlanV1 {
   return request.jobKind === 'duplicateTransactions'
-    ? evaluateDuplicateTransactionsV1(request, identityKey)
-    : evaluateConnectorHealthV1(request, identityKey);
+    ? evaluateDuplicateTransactionsV1(request, identityNamespace)
+    : evaluateConnectorHealthV1(request, identityNamespace);
 }
 
 export function evaluateDuplicateTransactionsV1(
   request: DuplicateTransactionJobRequestV1,
-  identityKey: Uint8Array
+  identityNamespace: Uint8Array
 ): FinanceAutomationEvaluationPlanV1 {
   const runId = deriveAutomationRunIdV1(
-    identityKey,
+    identityNamespace,
     request.jobKind,
     request.connectorRef,
     request.scheduledFor
@@ -215,7 +215,7 @@ export function evaluateDuplicateTransactionsV1(
           ],
         } as const;
         const signalId = deriveDuplicateSignalIdV1(
-          identityKey,
+          identityNamespace,
           request.connectorRef,
           sourceRefs
         );
@@ -269,10 +269,10 @@ export function evaluateDuplicateTransactionsV1(
 
 export function evaluateConnectorHealthV1(
   request: ConnectorHealthJobRequestV1,
-  identityKey: Uint8Array
+  identityNamespace: Uint8Array
 ): FinanceAutomationEvaluationPlanV1 {
   const runId = deriveAutomationRunIdV1(
-    identityKey,
+    identityNamespace,
     request.jobKind,
     request.connectorRef,
     request.scheduledFor
@@ -352,7 +352,7 @@ export function evaluateConnectorHealthV1(
     sourceAgeHours,
   } as const;
   const signalId = deriveConnectorHealthSignalIdV1(
-    identityKey,
+    identityNamespace,
     request.connectorRef
   );
   const draft: FinanceAutomationSignalDraftV1 = {

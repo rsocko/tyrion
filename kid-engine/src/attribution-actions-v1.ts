@@ -18,7 +18,7 @@ import {
 } from './policy/service.js';
 
 export const ATTRIBUTION_ACTION_PROVENANCE =
-  'mission-control-normalized-v1' as const;
+  'mission-control-normalized-v2' as const;
 export const ATTRIBUTION_ACTION_DEFER_MAX_MS = 30 * 24 * 60 * 60 * 1_000;
 
 export type AttributionMutationActionV1 =
@@ -780,7 +780,7 @@ function reviewReason(value: unknown, field: string): AttributionReviewReasonV1 
     [
       'no-match',
       'low-confidence',
-      'card-rule-conflict',
+      'account-rule-conflict',
       'merchant-rule-conflict',
       'historical-attribution-tie',
       'engine-unavailable',
