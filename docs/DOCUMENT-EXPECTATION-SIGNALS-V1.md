@@ -7,22 +7,27 @@ that a statement, invoice, receipt, bill, or other document exists.
 ## Endpoint and trust boundary
 
 ```http
+GET /api/connector/v1/document-expectation-signals?connectorRef={connectorRef}
 GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 GET /api/connector/v1/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 ```
 
 The private route retains the Finance Insights internal authority check. The public
 HTTPS route uses the connector gateway's existing `BRIDGE_API_TOKEN` bearer
-authentication and browser-origin rejection. Both routes call the same Finance
-Insights read projection and read rollout gate; the public route does not proxy this
-operation to Monarch Bridge. Neither route is a browser route, mutation, webhook, or
-push feed. Callers pull one immutable committed generation. An unknown, staging,
-rejected, or expired generation returns a stable not-found error rather than current
-or partial data.
+authentication and browser-origin rejection. All routes call the same Finance
+Insights read projection and read rollout gate; the public routes do not proxy this
+operation to Monarch Bridge. No route is a browser route, mutation, webhook, or
+push feed. The generation-free public route resolves the connector's current promoted
+snapshot, so callers do not discover or supply a generation ID. Its response still
+includes `sourceGeneration` for downstream idempotency. The generation-addressed
+routes pull one immutable committed generation and remain available for replay. An
+unknown connector or generation, or a staging, rejected, or expired generation,
+returns a stable not-found error rather than partial data.
 
-The request is generation-addressable and idempotent: repeated reads of the same
-`connectorRef` and `sourceGeneration` return the same projection while that committed
-generation remains retained.
+The response is generation-addressable and idempotent: callers use the returned
+`sourceGeneration` as the snapshot identity. Repeated generation-addressed reads of
+the same `connectorRef` and `sourceGeneration` return the same projection while that
+committed generation remains retained.
 
 ## Response
 

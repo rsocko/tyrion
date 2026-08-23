@@ -251,20 +251,22 @@ export async function readDocumentExpectationSignalsV1(
 ) {
   const runtime = await runtimePromise;
   requireGate(runtime.gates.read);
-  const sourceGeneration = parsePathValue(
-    sourceReferenceSchema,
-    sourceGenerationValue
-  );
   const connectorRef = parseSingleRequiredQuery(searchParams, "connectorRef");
-  const source = await runtime.store.sourceGenerations.find(
-    connectorRef,
-    sourceGeneration
-  );
+  const source = sourceGenerationValue !== undefined
+    ? await runtime.store.sourceGenerations.find(
+        connectorRef,
+        parsePathValue(sourceReferenceSchema, sourceGenerationValue)
+      )
+    : await runtime.store.findCurrentSourceGeneration(connectorRef);
+  if (!source) {
+    throw new FinanceInsightHttpError("source_generation_not_found");
+  }
+  const sourceGeneration = source.request.sourceGeneration;
   const projection = await runtime.store.loadProjection(
     connectorRef,
     sourceGeneration
   );
-  if (!source || !projection) {
+  if (!projection) {
     throw new FinanceInsightHttpError("source_generation_not_found");
   }
   return financeInsightJson(

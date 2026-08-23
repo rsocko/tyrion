@@ -91,7 +91,7 @@ export function evaluateConnectorRequest(method, segments, searchParams) {
 
   if (
     Array.isArray(segments) &&
-    segments.length === 2 &&
+    (segments.length === 1 || segments.length === 2) &&
     segments[0] === "document-expectation-signals"
   ) {
     if (method !== "GET") return methodNotAllowed();

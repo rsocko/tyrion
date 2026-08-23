@@ -173,8 +173,9 @@ The finance insight service shares that private-authority posture under
 `/api/internal/v1/finance/insights`. It rejects browser fetch metadata and is not
 included in either public route tree. Its document-expectation projection is also
 available through the exact bearer-protected
-`/api/connector/v1/document-expectation-signals/{sourceGeneration}` route for OWL,
-without exposing the internal route tree. The UI container mounts a separate
+`/api/connector/v1/document-expectation-signals` current-snapshot route and preserved
+`/api/connector/v1/document-expectation-signals/{sourceGeneration}` replay route for
+OWL, without exposing the internal route tree. The UI container mounts a separate
 access-restricted `/var/lib/tyrion-finance-insights` volume for `state.sqlite`,
 which stores service state and immutable policy snapshots together. A new database
 self-initializes deterministic fail-closed household defaults through policy version
