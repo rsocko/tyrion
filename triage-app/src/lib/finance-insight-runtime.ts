@@ -288,7 +288,7 @@ async function initializeDefaultPolicies(
 ): Promise<void> {
   try {
     await store.transaction(async () => {
-      if (await store.policies.find(1)) return;
+      if (await store.policies.latest()) return;
       for (const [index, effectiveAt] of DEFAULT_POLICY_EFFECTIVE_AT.entries()) {
         await store.policies.append(
           createCandidatePolicySnapshotV1({

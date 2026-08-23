@@ -336,6 +336,7 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     };
     this.policies = {
       current: async () => this.withConnection(() => this.currentPolicy()),
+      latest: async () => this.withConnection(() => this.latestPolicy()),
       find: async (policyVersion) =>
         this.withConnection(() => this.findPolicy(policyVersion)),
       append: async (snapshot) => this.appendPolicy(snapshot),

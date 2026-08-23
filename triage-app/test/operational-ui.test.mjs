@@ -6,6 +6,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { after, before, beforeEach, test } from "node:test";
 import {
@@ -32,6 +33,10 @@ import {
 } from "../src/lib/reconnect-handoff.mjs";
 
 const appRoot = process.cwd();
+const financeRequire = createRequire(
+  resolve(appRoot, "..", "finance-insights", "package.json")
+);
+const Database = financeRequire("better-sqlite3");
 const serviceToken = "synthetic-test-service-token-value";
 const internalAttributionHost = "tyrion-operations-ui:3000";
 const policyActor = {
@@ -1390,6 +1395,87 @@ test("finance insight startup preserves an existing policy history", async () =>
     assert.equal(await store.policies.find(2), null);
   } finally {
     store.close();
+  }
+});
+
+test("finance insight startup preserves a future-effective v2-only history", async () => {
+  const storePath = resolve(
+    temporaryStateDirectory,
+    "finance-insights-v2-only.sqlite"
+  );
+  const store = new financeContract.FinanceInsightSqliteStoreV1({
+    path: storePath,
+    cursorChecksumNamespace: Buffer.from(
+      "tyrion/finance-insight/cursor-checksum/v1",
+      "utf8"
+    ),
+    clock: () => "2026-08-11T14:00:00.000Z",
+  });
+  const first = financeContract.createCandidatePolicySnapshotV1({
+    policyVersion: 1,
+    effectiveAt: "2030-01-01T00:00:00.000Z",
+    currency: "USD",
+    timezone: "America/New_York",
+  });
+  const second = financeContract.createCandidatePolicySnapshotV1({
+    policyVersion: 2,
+    effectiveAt: "2030-01-02T00:00:00.000Z",
+    currency: "USD",
+    timezone: "America/New_York",
+  });
+  await store.policies.append(first);
+  await store.policies.append(second);
+  store.close();
+
+  const database = new Database(storePath);
+  database
+    .prepare(
+      "DELETE FROM finance_insight_policy_snapshots WHERE policy_version = 1"
+    )
+    .run();
+  database.close();
+
+  const port = await freePort();
+  const serverUrl = `http://127.0.0.1:${port}`;
+  const server = spawn(process.execPath, [standaloneServer], {
+    cwd: standaloneRoot,
+    env: {
+      ...process.env,
+      BRIDGE_URL: fakeBridgeUrl,
+      BRIDGE_API_TOKEN: serviceToken,
+      TYRION_POLICY_STORE_PATH: policyStorePath,
+      TYRION_FINANCE_INSIGHT_STORE_PATH: storePath,
+      TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_READ_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "false",
+      TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
+      HOSTNAME: "127.0.0.1",
+      PORT: String(port),
+    },
+    stdio: "ignore",
+  });
+  try {
+    await waitForServer(serverUrl, server);
+    const health = await (await fetch(`${serverUrl}/api/health`)).json();
+    assert.equal(health.financeInsights.status, "disabled");
+    const preserved = new financeContract.FinanceInsightSqliteStoreV1({
+      path: storePath,
+      cursorChecksumNamespace: Buffer.from(
+        "tyrion/finance-insight/cursor-checksum/v1",
+        "utf8"
+      ),
+      clock: () => "2026-08-11T14:00:00.000Z",
+    });
+    try {
+      assert.equal(await preserved.policies.current(), null);
+      assert.deepEqual(await preserved.policies.latest(), second);
+      assert.equal(await preserved.policies.find(1), null);
+    } finally {
+      preserved.close();
+    }
+  } finally {
+    await stopProcess(server);
   }
 });
 

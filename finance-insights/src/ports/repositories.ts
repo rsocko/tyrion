@@ -105,6 +105,7 @@ export interface OccurrenceRepositoryV1 {
 
 export interface FinanceInsightPolicyRepositoryV1 {
   current(): Promise<FinanceInsightPolicySnapshotV1 | null>;
+  latest(): Promise<FinanceInsightPolicySnapshotV1 | null>;
   find(policyVersion: number): Promise<FinanceInsightPolicySnapshotV1 | null>;
   append(
     snapshot: FinanceInsightPolicySnapshotV1
