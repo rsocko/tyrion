@@ -1,16 +1,16 @@
 import type {
   KidProfile,
   Transaction,
-  CardRule,
+  AccountRule,
   MerchantRule,
   HistoricalAssignment,
 } from './types.js';
 
-export interface CardMatch {
+export interface AccountMatch {
   kidId: string;
   kidName: string;
   confidence: 'definite' | 'likely';
-  rule: CardRule;
+  rule: AccountRule;
 }
 
 export interface MerchantMatch {
@@ -28,17 +28,15 @@ export interface PatternMatch {
 }
 
 /**
- * Check if a transaction's card (last 4) matches any kid's card rules.
+ * Check whether the transaction's opaque connector account reference matches a rule.
  */
-export function matchCardRules(
+export function matchAccountRules(
   transaction: Transaction,
   kids: KidProfile[]
-): CardMatch | null {
-  const accountMask = transaction.account.mask;
-
+): AccountMatch | null {
   for (const kid of kids) {
-    for (const rule of kid.cardRules) {
-      if (rule.last4 === accountMask) {
+    for (const rule of kid.accountRules) {
+      if (rule.accountRef === transaction.account.ref) {
         return {
           kidId: kid.id,
           kidName: kid.name,

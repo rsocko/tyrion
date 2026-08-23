@@ -131,7 +131,7 @@ Gitleaks can silently skip binary-looking extensions.
 | Registry and reserved-domain email addresses | 71 | Intentionally public package metadata or documentation examples |
 | Git object names in commit metadata | 100 tokens | False positive |
 | Git author and committer identities | 91 commits | Intentionally public Git metadata |
-| Demo child and card-rule dataset | 1 dataset, repeated in examples and tests | False positive; repository owner confirmed every person, issuer association, and last-four value is fabricated |
+| Legacy demo child and card-rule dataset | 1 dataset, repeated in examples and tests | False positive; repository owner confirmed every person, issuer association, and last-four value is fabricated |
 | Private predecessor links and revision details | Historical refs and blobs | Intentionally public low-risk provenance metadata by explicit owner decision; removed from current documentation and grants no access |
 | Historical predecessor package identifier | Historical refs and blobs | Intentionally public low-risk provenance metadata by explicit owner decision; not a credential or published package |
 | External private implementation repository name | Historical refs and blobs | Intentionally public low-risk provenance metadata by explicit owner decision; removed from current documentation and grants no access |

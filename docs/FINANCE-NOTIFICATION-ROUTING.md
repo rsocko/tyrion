@@ -281,7 +281,7 @@ Mission Control likewise maps the current attribution response's `availableActio
 one-to-one: `explain`, `assign-kid`, `mark-parent-expense`, `unassign`,
 `resolve-exception`, `defer-exception`, and `open-in-monarch`. It never infers an
 attribution mutation from review status. Every mutation uses fixed
-`mission-control-normalized-v1` provenance, `confirm: true`, the response's expected
+`mission-control-normalized-v2` provenance, `confirm: true`, the response's expected
 policy and state versions, and an idempotency key. Assignment is limited to the
 response's `assignableKidIds`; defer is limited to the contract's 30-day window.
 `resolve-exception` is omitted for unassigned, already resolved, stale-policy, or

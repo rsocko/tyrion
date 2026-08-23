@@ -162,7 +162,7 @@ export function varianceInput(
     ).values(),
   ];
   return {
-    identityKey: VARIANCE_IDENTITY_KEY,
+    identityNamespace: VARIANCE_IDENTITY_KEY,
     householdScope: 'demo-household-v1',
     projection: sourceProjection,
     classifications: sourceProjection.transactions.map((fact) => ({

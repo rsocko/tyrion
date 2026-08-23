@@ -176,16 +176,16 @@ available through the exact bearer-protected
 `/api/connector/v1/document-expectation-signals/{sourceGeneration}` route for OWL,
 without exposing the internal route tree. The UI container mounts a separate
 access-restricted `/var/lib/tyrion-finance-insights` volume for its SQLite store
-and operator-supplied policy snapshot. Cursor and identity keys are injected
-only into the server process, contain at least 32 bytes, and are backed up with
-the state volume. The store and policy paths must be absolute and outside the
-application image.
+and operator-supplied policy snapshot. Versioned deterministic non-secret
+namespaces provide stable finding identities and cursor corruption checks, so no
+separate identity or cursor secret is provisioned. The store and policy paths must
+be absolute and outside the application image.
 
 `TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED`,
 `TYRION_FINANCE_INSIGHT_READ_ENABLED`, and
-`TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED` default to `false`. Deployment enables
-them in rollout order only after mounting state, restoring keys, and validating
-the metadata-only health state. No gate, key, private authority, or state path is
+`TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED` default to `false`. Deployment enables them in rollout order only after mounting state, restoring
+policy, and validating
+the metadata-only health state. No gate, private authority, or state path is
 exposed to browser code.
 
 Connector `GET /health` is composed inside the server-only gateway: it makes exactly

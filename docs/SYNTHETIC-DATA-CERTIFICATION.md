@@ -12,7 +12,7 @@ classifications, and decisions without preserving candidate literals, raw scanne
 output, private identifiers, or local paths.
 
 The repository owner previously confirmed that the repeated demo people,
-relationships, issuer associations, and card-rule values are fabricated. The owner
+relationships, issuer associations, and legacy card-rule values are fabricated. The owner
 also approved the historical private-repository and package provenance described in
 the [full Git ref security audit](./SECURITY-AUDIT-2026-08-08.md) as intentionally
 public, low-risk metadata. Merging the pull request that closes issue #103 records

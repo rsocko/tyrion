@@ -1,6 +1,6 @@
 {
   "name": "@rsocko/tyrion-kid-engine",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "license": "MIT",
   "description": "Tyrion-internal household policy and kid attribution domain module",
@@ -13,6 +13,10 @@
       "import": "./dist/index.js"
     },
     "./contracts/v1": {
+      "types": "./dist/contracts/v1.d.ts",
+      "import": "./dist/contracts/v1.js"
+    },
+    "./contracts/v2": {
       "types": "./dist/contracts/v1.d.ts",
       "import": "./dist/contracts/v1.js"
     },

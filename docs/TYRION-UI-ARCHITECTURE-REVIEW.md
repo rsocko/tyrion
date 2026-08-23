@@ -117,7 +117,7 @@ The Mission Control implementation reviewed for this analysis already contains s
 
 - Finance transaction storage
 - Kid profiles and limits
-- Card and merchant attribution rules
+- Account and merchant attribution rules
 - Automatic kid attribution during sync
 - Transaction filtering APIs
 - Category and kid assignment APIs
@@ -262,7 +262,7 @@ Provide:
 
 - Per-kid current totals and limits
 - Recent attributed activity
-- Card and merchant rules
+- Account and merchant rules
 - Confidence and explanation
 - Correction and unassignment workflows
 

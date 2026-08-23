@@ -35,10 +35,10 @@ describe('v1 attribution correction and exception actions', () => {
     const result = await service.act(actor, explainRequest());
 
     expect(result).toMatchObject({
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       sourceRef: inputFixture.source.recordRef,
       policyVersion: 1,
-      engineVersion: '1.0.0',
+      engineVersion: '2.0.0',
       stateVersion: 1,
       attribution: {
         status: 'pending',
@@ -70,7 +70,7 @@ describe('v1 attribution correction and exception actions', () => {
       'open-in-monarch',
     ]);
     expect(JSON.stringify(result)).not.toContain('merchantName');
-    expect(JSON.stringify(result)).not.toContain('instrumentFingerprint');
+    expect(JSON.stringify(result)).not.toContain('accountRef');
   });
 
   it.each([
@@ -134,7 +134,7 @@ describe('v1 attribution correction and exception actions', () => {
         provenance: {
           decisionSource: 'manual',
           policyVersion: 1,
-          engineVersion: '1.0.0',
+          engineVersion: '2.0.0',
           ruleIds: [],
           evaluatedAt: now,
         },
@@ -369,7 +369,7 @@ function createService(actions: AttributionActionRepository) {
 
 function explainRequest() {
   return {
-    contractVersion: '1.0',
+    contractVersion: '2.0',
     provenance: ATTRIBUTION_ACTION_PROVENANCE,
     sourceRef: inputFixture.source.recordRef,
     expectedPolicyVersion: 1,

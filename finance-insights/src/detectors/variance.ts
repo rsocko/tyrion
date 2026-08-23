@@ -100,7 +100,7 @@ export interface VarianceDigestStateV1 {
 }
 
 export interface VarianceEvaluationInputV1 {
-  identityKey: Uint8Array;
+  identityNamespace: Uint8Array;
   householdScope: string;
   projection: SourceProjectionV1;
   classifications: readonly ClassifiedVarianceTransactionV1[];
@@ -292,8 +292,8 @@ function validateEvaluationInput(
   input: VarianceEvaluationInputV1,
   policy: FinanceInsightPolicySnapshotV1
 ): void {
-  if (input.identityKey.byteLength < 32) {
-    throw new RangeError('Variance identity keys must contain at least 32 bytes');
+  if (input.identityNamespace.byteLength < 32) {
+    throw new RangeError('Variance identity namespace must contain at least 32 bytes');
   }
   classificationLineageMap(input.classificationLineages);
   if (input.source.completeness === 'complete' && policy.currency.length !== 3) {
@@ -383,7 +383,7 @@ function aggregateEntities(
 
     const normalizedMerchantName = normalizeIdentityTextV1(transaction.merchantName);
     const normalizedMerchantKey = deriveMerchantKeyV1(
-      input.identityKey,
+      input.identityNamespace,
       normalizedMerchantName
     );
     const alias = aliases.get(normalizedMerchantKey);
@@ -553,14 +553,14 @@ function buildCandidate(
 
   const insightKind =
     bucket.kind === 'category' ? 'categoryVariance' : 'merchantVariance';
-  const insightId = deriveInsightIdV1(input.identityKey, {
+  const insightId = deriveInsightIdV1(input.identityNamespace, {
     householdScope: input.householdScope,
     kind: insightKind,
     entityKind: bucket.kind,
     entitySourceRef: bucket.sourceRef,
   });
   const occurrenceId = deriveReentrySafeOccurrenceId(
-    input.identityKey,
+    input.identityNamespace,
     insightId,
     insightKind,
     observation.key,
@@ -1250,7 +1250,7 @@ function requiredClassificationLineage(
 }
 
 function deriveReentrySafeOccurrenceId(
-  identityKey: Uint8Array,
+  identityNamespace: Uint8Array,
   insightId: string,
   kind: 'categoryVariance' | 'merchantVariance',
   comparisonPeriod: string,
@@ -1260,7 +1260,7 @@ function deriveReentrySafeOccurrenceId(
 ): string {
   let lineage = baseLineage;
   for (let attempt = 0; attempt <= previous.length; attempt += 1) {
-    const occurrenceId = deriveOccurrenceIdV1(identityKey, insightId, {
+    const occurrenceId = deriveOccurrenceIdV1(identityNamespace, insightId, {
       kind,
       comparisonPeriod,
       direction,

@@ -283,7 +283,7 @@ export async function readDocumentExpectationSignalsV1(
               sourceGeneration
             ),
         },
-        runtime.identityKey
+        runtime.identityNamespace
       )
     ),
     200,

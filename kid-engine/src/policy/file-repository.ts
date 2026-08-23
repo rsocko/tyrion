@@ -22,7 +22,7 @@ import {
   type PolicyRepository,
 } from './service.js';
 
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
 const MAX_STORE_BYTES = 5 * 1024 * 1024;
 
 interface StoredPolicies {
@@ -324,7 +324,7 @@ function parseStoredPolicies(raw: string): StoredPolicies {
     }
     const record = value as Record<string, unknown>;
     if (
-      record.storageVersion !== STORAGE_VERSION ||
+      ![1, STORAGE_VERSION].includes(record.storageVersion as number) ||
       typeof record.policies !== 'object' ||
       record.policies === null ||
       Array.isArray(record.policies) ||
@@ -334,17 +334,58 @@ function parseStoredPolicies(raw: string): StoredPolicies {
     }
     const policies: Record<string, PolicySnapshotV1> = {};
     for (const [householdId, snapshot] of Object.entries(record.policies)) {
-      const parsed = parsePolicySnapshotV1(snapshot);
+      const parsed = parsePolicySnapshotV1(migratePolicySnapshot(snapshot));
       if (householdId !== parsed.householdId) {
         throw new PolicyStoreCorruptError();
       }
       policies[householdId] = parsed;
     }
-    const audit = record.audit.map(parseAuditEvent);
+    const audit = record.audit.map((event) =>
+      parseAuditEvent(migrateAuditEvent(event))
+    );
     return { storageVersion: STORAGE_VERSION, policies, audit };
   } catch (error) {
     if (error instanceof PolicyStoreCorruptError) throw error;
     throw new PolicyStoreCorruptError();
+  }
+
+  function migratePolicySnapshot(value: unknown): unknown {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value) ||
+      !('contractVersion' in value) ||
+      value.contractVersion !== '1.0'
+    ) {
+      return value;
+    }
+    const legacy = value as Record<string, unknown>;
+    if (!Array.isArray(legacy.cardRules) || legacy.cardRules.length !== 0) {
+      throw new PolicyStoreCorruptError();
+    }
+    const { cardRules: _discarded, ...snapshot } = legacy;
+    return {
+      ...snapshot,
+      contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
+      engineVersion: '2.0.0',
+      accountRules: [],
+    };
+  }
+
+  function migrateAuditEvent(value: unknown): unknown {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value) ||
+      !('contractVersion' in value) ||
+      value.contractVersion !== '1.0'
+    ) {
+      return value;
+    }
+    return {
+      ...(value as Record<string, unknown>),
+      contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
+    };
   }
 }
 

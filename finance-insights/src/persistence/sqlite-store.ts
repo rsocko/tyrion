@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -83,7 +83,7 @@ const MAX_LIST_SNAPSHOT_ITEMS = 10_000;
 
 export interface FinanceInsightStoreOptionsV1 {
   path: string;
-  cursorKey: Uint8Array;
+  cursorChecksumNamespace: Uint8Array;
   clock?: () => string;
   testHook?: (
     point: 'beforePromotion' | 'afterProjection' | 'afterPromotion'
@@ -248,7 +248,7 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
   readonly documentEvidence: DocumentEvidencePortV1;
 
   private readonly database: Database.Database;
-  private readonly cursorKey: Uint8Array;
+  private readonly cursorChecksumNamespace: Uint8Array;
   private readonly clock: () => string;
   private readonly testHook:
     | ((
@@ -265,8 +265,8 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         'Finance insight state path must be an absolute external file path'
       );
     }
-    if (options.cursorKey.byteLength < 32) {
-      throw new RangeError('Finance insight cursor key must contain at least 32 bytes');
+    if (options.cursorChecksumNamespace.byteLength < 16) {
+      throw new RangeError('Finance insight cursor checksum namespace must contain at least 16 bytes');
     }
     const path = resolve(options.path);
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -276,7 +276,7 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
       // Windows does not implement POSIX mode enforcement.
     }
     this.database = new Database(path);
-    this.cursorKey = Uint8Array.from(options.cursorKey);
+    this.cursorChecksumNamespace = Uint8Array.from(options.cursorChecksumNamespace);
     this.clock = options.clock ?? (() => new Date().toISOString());
     this.testHook = options.testHook;
     migrateFinanceInsightStoreV1(this.database, this.now());
@@ -3270,7 +3270,9 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         expiresAt: payload.expiresAt,
       })
     ).toString('base64url');
-    const signature = createHmac('sha256', this.cursorKey)
+    const signature = createHash('sha256')
+      .update(this.cursorChecksumNamespace)
+      .update('\0')
       .update(encoded)
       .digest('base64url');
     return `${encoded}.${signature}`;
@@ -3281,19 +3283,12 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     if (!encoded || !signature || extra !== undefined) {
       return storeError('invalid_cursor');
     }
-    const expected = createHmac('sha256', this.cursorKey)
+    const expected = createHash('sha256')
+      .update(this.cursorChecksumNamespace)
+      .update('\0')
       .update(encoded)
-      .digest();
-    let supplied: Buffer;
-    try {
-      supplied = Buffer.from(signature, 'base64url');
-    } catch {
-      return storeError('invalid_cursor');
-    }
-    if (
-      supplied.byteLength !== expected.byteLength ||
-      !timingSafeEqual(supplied, expected)
-    ) {
+      .digest('base64url');
+    if (signature !== expected) {
       return storeError('invalid_cursor');
     }
     try {

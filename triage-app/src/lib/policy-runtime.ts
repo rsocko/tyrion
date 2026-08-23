@@ -1,11 +1,3 @@
-import { createHmac } from "node:crypto";
-import {
-  chmodSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname } from "node:path";
 import {
   FilePolicyRepository,
   AttributionActionService,
@@ -34,15 +26,12 @@ import { HOMELAB_HOUSEHOLD_ID } from "@/lib/homelab-identity";
 
 const MAX_INTEGRATION_RESPONSE_BYTES = 1_048_576;
 const INTEGRATION_TIMEOUT_MS = 10_000;
-const FINGERPRINT_KEY_DOMAIN = "tyrion/instrument-fingerprint/v1";
-
 export interface PolicyRuntime {
   mode: "demo" | "production";
   policyService: PolicyService;
   attributionBatchService: AttributionBatchService;
   getAttributionActionService(): AttributionActionService;
   getReattributionService(): ReattributionService;
-  fingerprintInstrument(householdId: string, instrumentReference: string): string;
 }
 
 export class PolicyRuntimeConfigurationError extends Error {
@@ -78,8 +67,6 @@ export function getPolicyRuntime(
   const policyRepository: PolicyRepository = demo
     ? new MemoryPolicyRepository()
     : createFilePolicyRepository(environment);
-  const fingerprintKey = loadFingerprintKey(environment, demo);
-
   let reattributionService: ReattributionService | undefined;
   let attributionActionService: AttributionActionService | undefined;
   let integrationClient: AttributionStateIntegrationClient | undefined;
@@ -115,27 +102,8 @@ export function getPolicyRuntime(
       }
       return reattributionService;
     },
-    fingerprintInstrument(householdId, instrumentReference) {
-      const normalized = instrumentReference.trim();
-      if (normalized.length < 8 || normalized.length > 256) {
-        throw new InstrumentReferenceError();
-      }
-      const digest = createHmac("sha256", fingerprintKey)
-        .update(`${householdId}\n${normalized}`)
-        .digest("base64url");
-      return `instrument-v1:${digest}`;
-    },
   };
   return cachedRuntime;
-}
-
-export class InstrumentReferenceError extends Error {
-  readonly code = "invalid_instrument_reference";
-
-  constructor() {
-    super("Instrument reference must contain between 8 and 256 characters");
-    this.name = "InstrumentReferenceError";
-  }
 }
 
 function createFilePolicyRepository(
@@ -146,79 +114,6 @@ function createFilePolicyRepository(
   return new FilePolicyRepository(path, {
     canonicalHouseholdId: HOMELAB_HOUSEHOLD_ID,
   });
-}
-
-function requireSecret(value: string | undefined): string {
-  if (!value || value.length < 32) {
-    throw new PolicyRuntimeConfigurationError();
-  }
-  return value;
-}
-
-function loadFingerprintKey(
-  environment: NodeJS.ProcessEnv,
-  demo: boolean
-): Buffer {
-  const rootKey = demo
-    ? "deterministic-demo-fingerprint-key-not-for-production"
-    : requireSecret(environment.BRIDGE_API_TOKEN);
-  const derivedKey = createHmac("sha256", rootKey)
-    .update(FINGERPRINT_KEY_DOMAIN)
-    .digest();
-  if (demo) return derivedKey;
-
-  const policyStorePath = environment.TYRION_POLICY_STORE_PATH;
-  if (!policyStorePath) throw new PolicyRuntimeConfigurationError();
-  const keyPath = `${policyStorePath}.fingerprint-key`;
-  const keyDirectory = dirname(keyPath);
-  try {
-    mkdirSync(keyDirectory, { recursive: true, mode: 0o700 });
-    chmodSync(keyDirectory, 0o700);
-  } catch {
-    throw new PolicyRuntimeConfigurationError();
-  }
-  try {
-    return readFingerprintKey(keyPath);
-  } catch (error) {
-    if (nodeErrorCode(error) !== "ENOENT") {
-      throw new PolicyRuntimeConfigurationError();
-    }
-  }
-  try {
-    writeFileSync(keyPath, derivedKey.toString("hex"), {
-      encoding: "utf8",
-      mode: 0o600,
-      flag: "wx",
-    });
-    return derivedKey;
-  } catch (error) {
-    if (nodeErrorCode(error) === "EEXIST") {
-      try {
-        return readFingerprintKey(keyPath);
-      } catch {
-        throw new PolicyRuntimeConfigurationError();
-      }
-    }
-    throw new PolicyRuntimeConfigurationError();
-  }
-}
-
-function readFingerprintKey(path: string): Buffer {
-  const value = readFileSync(path, "utf8");
-  if (!/^[a-f0-9]{64}$/.test(value)) {
-    throw new PolicyRuntimeConfigurationError();
-  }
-  chmodSync(path, 0o600);
-  return Buffer.from(value, "hex");
-}
-
-function nodeErrorCode(error: unknown): string | undefined {
-  return typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string"
-    ? error.code
-    : undefined;
 }
 
 class MemoryPolicyRepository implements PolicyRepository {
@@ -271,7 +166,7 @@ class DemoReattributionRepository implements ReattributionRepository {
     [
       "demo-record-manual",
       demoRecord("demo-record-manual", {
-        contractVersion: "1.0",
+        contractVersion: "2.0",
         sourceRef: "demo-record-manual",
         status: "attributed",
         kidId: "demo-kid",
@@ -282,7 +177,7 @@ class DemoReattributionRepository implements ReattributionRepository {
         provenance: {
           decisionSource: "manual",
           policyVersion: null,
-          engineVersion: "1.0.0",
+          engineVersion: "2.0.0",
           ruleIds: [],
           evaluatedAt: "2026-01-01T00:00:00.000Z",
         },
@@ -407,7 +302,7 @@ class AttributionStateIntegrationClient {
   private readonly token: string;
 
   constructor(environment: NodeJS.ProcessEnv) {
-    const token = environment.TYRION_REATTRIBUTION_TOKEN;
+    const token = environment.BRIDGE_API_TOKEN;
     if (!token || token.length < 32) throw new ReattributionIntegrationError();
     this.token = token;
     const rawUrl = environment.TYRION_REATTRIBUTION_URL;
@@ -592,7 +487,7 @@ function demoRecord(
   current: AttributionResultV1 | null
 ): ReattributionRecordV1 {
   const input = parseAttributionInputV1({
-    contractVersion: "1.0",
+    contractVersion: "2.0",
     householdId: HOMELAB_HOUSEHOLD_ID,
     source: {
       system: "monarch-bridge",
@@ -601,7 +496,7 @@ function demoRecord(
     },
     transaction: {
       merchantName: "Synthetic Store",
-      instrumentFingerprint: null,
+      accountRef: "account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       occurredOn: "2026-01-01",
     },
     historicalAttributions: [],
@@ -621,7 +516,7 @@ function demoRecord(
     current:
       current ??
       parseAttributionResultV1({
-        contractVersion: "1.0",
+        contractVersion: "2.0",
         sourceRef,
         status: "unassigned",
         kidId: null,
@@ -632,7 +527,7 @@ function demoRecord(
         provenance: {
           decisionSource: "fallback",
           policyVersion: null,
-          engineVersion: "1.0.0",
+          engineVersion: "2.0.0",
           ruleIds: [],
           evaluatedAt: "2026-01-01T00:00:00.000Z",
         },

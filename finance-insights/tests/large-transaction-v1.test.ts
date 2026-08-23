@@ -584,7 +584,7 @@ describe('unusually large transaction detector v1', () => {
         source,
         assignment,
         policy,
-        identityKey: IDENTITY_KEY,
+        identityNamespace: IDENTITY_KEY,
         sourceCompleteness: 'complete',
         completedAt: COMPLETED_AT,
       })
@@ -631,7 +631,7 @@ function evaluate(
     source,
     assignment,
     policy,
-    identityKey: IDENTITY_KEY,
+    identityNamespace: IDENTITY_KEY,
     sourceCompleteness: options.sourceCompleteness ?? 'complete',
     completedAt: options.completedAt ?? COMPLETED_AT,
     previousOccurrences: options.previousOccurrences,

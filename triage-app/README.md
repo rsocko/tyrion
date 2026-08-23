@@ -124,15 +124,11 @@ application checkout. The file adapter provides atomic replacement, a cross-proc
 lease, metadata-only audit events, and compare-and-swap policy versions. On first
 access it atomically adopts a sole policy and its audit events from the superseded
 configurable household ID into `homelab-household`.
-Raw integration references are accepted only by the protected fingerprint endpoint.
-On first startup, Tyrion derives a domain-separated HMAC key from the required
-server-only `BRIDGE_API_TOKEN` and persists only that derived key beside the protected
-policy store with restrictive permissions. Later bridge-token rotation reuses the
-derived key, so current card rules remain stable. Tyrion fingerprints each reference
-with household scope, then discards the raw value without returning or persisting it.
-Existing card-rule fingerprints created with the superseded standalone fingerprint
-key remain private but cannot be converted; re-enroll those card rules once during
-this contract transition.
+Account rules store only `account-v1:` opaque references generated and retained by the
+Mission Control connector. Tyrion compares those values exactly and never accepts or
+persists raw Monarch account IDs or masks. `BRIDGE_API_TOKEN` authenticates protected
+calls only; it is not identity or fingerprint material. A v1 policy is upgraded only
+when its legacy card-rule array is empty; non-empty legacy rules fail closed.
 
 Policy browser endpoints are:
 
@@ -140,7 +136,6 @@ Policy browser endpoints are:
 | --- | --- | --- |
 | `GET` | `/api/policy` | `policy:read` |
 | `PUT` | `/api/policy` | `policy:write` |
-| `POST` | `/api/policy/instruments/fingerprint` | `policy:write` |
 | `POST` | `/api/policy/reattribution/preview` | `reattribution:preview` |
 | `POST` | `/api/policy/reattribution/apply` | `reattribution:apply` |
 
@@ -150,7 +145,7 @@ impact counts. Apply requires a separately authorized request with `confirm: tru
 an unexpired persisted preview, and the same policy version.
 
 Production re-attribution and Mission Control attribution actions use the server-only
-`TYRION_REATTRIBUTION_URL`/`TYRION_REATTRIBUTION_TOKEN` adapter. It calls fixed
+`TYRION_REATTRIBUTION_URL` adapter and authenticate with `BRIDGE_API_TOKEN`. It calls fixed
 internal `POST` operations under `/v1/reattribution/` to resolve records, persist and
 resolve previews, and atomically apply a preview, plus
 `/v1/attribution-actions/records:resolve` and
@@ -166,15 +161,15 @@ policy CRUD and connector operations remain available.
 
 ## Internal attribution services
 
-Mission Control calls `POST /api/internal/v1/attribution/batch` and
-`POST /api/internal/v1/attribution/actions` by private backend DNS. These are Tyrion
+Mission Control calls `POST /api/internal/v2/attribution/batch` and
+`POST /api/internal/v2/attribution/actions` by private backend DNS. These are Tyrion
 domain endpoints, not Bridge proxies or browser routes. The
 public `tyrion.socko.us` Traefik routers must exclude `/api/internal/`; the service
 also requires `Host: tyrion-operations-ui:3000` and, when present, the same value in
 `x-forwarded-host`.
 
-The exact v1 request, response, header, status, and schema contract is
-[`../docs/attribution-service-v1.openapi.json`](../docs/attribution-service-v1.openapi.json).
+The exact v2 request, response, header, status, and schema contract is
+[`../docs/attribution-service-v2.openapi.json`](../docs/attribution-service-v2.openapi.json).
 Requests are limited to 64 KiB; batch requests contain at most 100 unique items.
 Mission Control sends the
 existing server-only
@@ -228,9 +223,8 @@ Runtime configuration:
 | Variable | Purpose |
 | --- | --- |
 | `BRIDGE_URL` | Private server-side bridge endpoint |
-| `BRIDGE_API_TOKEN` | Shared server-only bridge/finance-manager token (minimum 32 characters); authenticates the public connector gateway and private attribution, and domain-separates fingerprinting |
+| `BRIDGE_API_TOKEN` | Shared server-only bearer token (minimum 32 characters); authenticates protected Bridge, connector, attribution, re-attribution, and finance calls |
 | `MISSION_CONTROL_RETURN_URL` | Optional exact HTTPS return page shown only after verified authentication and bounded sync |
 | `MISSION_CONTROL_RETURN_ALLOWED_ORIGINS` | Optional exact HTTPS origin allowlist for the return page |
 | `TYRION_POLICY_STORE_PATH` | External absolute policy/audit store path |
 | `TYRION_REATTRIBUTION_URL` | Optional protected internal re-attribution and attribution-action state service |
-| `TYRION_REATTRIBUTION_TOKEN` | Optional server-only attribution-state integration token |

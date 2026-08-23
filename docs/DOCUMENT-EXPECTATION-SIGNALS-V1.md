@@ -83,13 +83,11 @@ explicit review.
 
 ## Identity, ordering, and bounds
 
-`seriesRef` is a stable, OWL-scoped opaque HMAC derived from the connector reference,
-source kind, and source reference. Raw account and recurring identifiers are never
-returned. Distinct source accounts receive distinct series references even when they
-share an institution. Series references remain stable across source generations but
-change when connector scope changes. Operators must keep
-`TYRION_FINANCE_INSIGHT_IDENTITY_KEY` durable; rotating it intentionally creates new
-consumer identities.
+`seriesRef` is a stable, OWL-scoped opaque digest derived with a versioned non-secret
+namespace from the connector reference, source kind, and source reference. Raw account
+and recurring identifiers are never returned. Distinct source accounts receive
+distinct series references even when they share an institution. Series references
+remain stable across source generations but change when connector scope changes.
 
 OWL must use `connectorRef`, `seriesRef`, and `kind` for reconciliation, fingerprint
 suppression, and durable negative decisions. It must never join on `displayHint`.

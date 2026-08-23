@@ -33,7 +33,6 @@ import {
 
 const appRoot = process.cwd();
 const serviceToken = "synthetic-test-service-token-value";
-const reattributionToken = "synthetic-reattribution-token-value-1234";
 const internalAttributionHost = "tyrion-operations-ui:3000";
 const policyActor = {
   actorId: "local-operator",
@@ -252,7 +251,7 @@ before(async () => {
         response.end(JSON.stringify({ error: "synthetic private detail" }));
         return;
       }
-      if (request.headers.authorization !== `Bearer ${reattributionToken}`) {
+      if (request.headers.authorization !== `Bearer ${serviceToken}`) {
         response.writeHead(401, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ error: "unauthorized" }));
         return;
@@ -396,8 +395,8 @@ before(async () => {
   );
   const staleStore = new financeContract.FinanceInsightSqliteStoreV1({
     path: financeInsightStorePath,
-    cursorKey: Buffer.from(
-      "invented-finance-cursor-key-value-0001",
+    cursorChecksumNamespace: Buffer.from(
+      "tyrion/finance-insight/cursor-checksum/v1",
       "utf8"
     ),
     clock: () => "2026-08-09T03:00:00.000Z",
@@ -448,17 +447,12 @@ before(async () => {
       TYRION_POLICY_STORE_PATH: policyStorePath,
       TYRION_FINANCE_INSIGHT_STORE_PATH: financeInsightStorePath,
       TYRION_FINANCE_INSIGHT_POLICY_PATH: financeInsightPolicyPath,
-      TYRION_FINANCE_INSIGHT_CURSOR_KEY:
-        "invented-finance-cursor-key-value-0001",
-      TYRION_FINANCE_INSIGHT_IDENTITY_KEY:
-        "invented-finance-identity-key-value-001",
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "true",
       TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
       TYRION_REATTRIBUTION_URL: fakeReattributionUrl,
-      TYRION_REATTRIBUTION_TOKEN: reattributionToken,
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "true",
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
@@ -599,8 +593,8 @@ test("finance insight runtime applies retention cleanup on startup", async () =>
   assert.equal((await health.json()).financeInsights.status, "ready");
   const store = new financeContract.FinanceInsightSqliteStoreV1({
     path: financeInsightStorePath,
-    cursorKey: Buffer.from(
-      "invented-finance-cursor-key-value-0001",
+    cursorChecksumNamespace: Buffer.from(
+      "tyrion/finance-insight/cursor-checksum/v1",
       "utf8"
     ),
   });
@@ -959,8 +953,8 @@ test("finance insight service publishes detail and enforces action CAS and suppr
 test("finance insight evaluation claims return bounded Retry-After", async () => {
   const store = new financeContract.FinanceInsightSqliteStoreV1({
     path: financeInsightStorePath,
-    cursorKey: Buffer.from(
-      "invented-finance-cursor-key-value-0001",
+    cursorChecksumNamespace: Buffer.from(
+      "tyrion/finance-insight/cursor-checksum/v1",
       "utf8"
     ),
   });
@@ -1333,10 +1327,6 @@ test("finance insight rollout gates fail closed and health remains metadata-only
         "finance-insights-disabled.sqlite"
       ),
       TYRION_FINANCE_INSIGHT_POLICY_PATH: financeInsightPolicyPath,
-      TYRION_FINANCE_INSIGHT_CURSOR_KEY:
-        "invented-disabled-cursor-key-value-001",
-      TYRION_FINANCE_INSIGHT_IDENTITY_KEY:
-        "invented-disabled-identity-key-value-01",
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "false",
@@ -1545,7 +1535,7 @@ test("connector policy exposes exactly the backend connector operations", () => 
     "auth/logout",
     "cashflow",
     "openapi.json",
-    "api/internal/v1/attribution/batch",
+    "api/internal/v2/attribution/batch",
     "unknown",
     "transactions/invented-transaction/unknown",
   ]) {
@@ -2266,7 +2256,7 @@ test("policy API uses a fixed trusted-homelab identity", async () => {
   assert.equal((await spoofed.json()).policy, null);
 });
 
-test("policy and attribution fail closed without the shared backend credential", async () => {
+test("policy remains independent while attribution fails closed without its bearer credential", async () => {
   const standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
   const standaloneServer = join(standaloneRoot, "server.js");
   const port = await freePort();
@@ -2294,11 +2284,8 @@ test("policy and attribution fail closed without the shared backend credential",
     );
     await waitForServer(url, processWithoutBackendCredential);
     const response = await fetch(`${url}/api/policy`);
-    assert.equal(response.status, 503);
-    assert.equal(
-      (await response.json()).error.code,
-      "policy_runtime_not_configured"
-    );
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).policy, null);
     const attribution = await rawAttributionFetch(url, "{}", {
       Authorization: ["Bearer", serviceToken].join(" "),
     });
@@ -2397,8 +2384,8 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
 
 test("batch attribution returns only strict normalized decisions", async () => {
   const response = await attributionFetch({
-    contractVersion: "1.0",
-    provenance: "mission-control-normalized-v1",
+    contractVersion: "2.0",
+    provenance: "mission-control-normalized-v2",
     expectedPolicyVersion: activePolicy.policyVersion,
     items: [
       attributionItem("consumer-source-one"),
@@ -2416,17 +2403,17 @@ test("batch attribution returns only strict normalized decisions", async () => {
   const text = await response.text();
   assert.doesNotMatch(
     text,
-    /merchantName|instrumentFingerprint|occurredOn|observedAt|householdId|actorId/
+    /merchantName|accountRef|occurredOn|observedAt|householdId|actorId/
   );
   const payload = JSON.parse(text);
   assert.equal(payload.policyVersion, activePolicy.policyVersion);
-  assert.equal(payload.engineVersion, "1.0.0");
+  assert.equal(payload.engineVersion, "2.0.0");
   assert.deepEqual(
     payload.results.map((result) => result.sourceRef),
     ["consumer-source-one", "consumer-source-manual"]
   );
   assert.deepEqual(payload.results[0], {
-    contractVersion: "1.0",
+    contractVersion: "2.0",
     sourceRef: "consumer-source-one",
     status: "attributed",
     kidId: "kid-synthetic",
@@ -2437,7 +2424,7 @@ test("batch attribution returns only strict normalized decisions", async () => {
     reasons: [],
     decisionSource: "automated",
     policyVersion: activePolicy.policyVersion,
-    engineVersion: "1.0.0",
+    engineVersion: "2.0.0",
     evaluatedAt: payload.results[0].evaluatedAt,
   });
   assert.match(payload.results[0].evaluatedAt, /^\d{4}-\d{2}-\d{2}T/);
@@ -2447,6 +2434,14 @@ test("batch attribution returns only strict normalized decisions", async () => {
 
 test("batch attribution fails closed for auth, host, body, and policy conflicts", async () => {
   const body = attributionRequest([attributionItem("consumer-auth")]);
+  const retired = await rawInternalAttributionFetch(
+    uiUrl,
+    "/api/internal/v1/attribution/batch",
+    JSON.stringify(body),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  assert.equal(retired.status, 410);
+  assert.equal((await retired.json()).error.code, "contract_version_retired");
   const missing = await rawAttributionFetch(uiUrl, JSON.stringify(body));
   assert.equal(missing.status, 401);
   assert.equal((await missing.json()).error.code, "attribution_auth_required");
@@ -2550,6 +2545,16 @@ test("batch attribution rejects private fields and enforces size bounds", async 
 });
 
 test("attribution actions explain bounded corrections and Monarch provenance", async () => {
+  const retired = await rawInternalAttributionFetch(
+    uiUrl,
+    "/api/internal/v1/attribution/actions",
+    JSON.stringify(
+      attributionActionRequest("consumer-action-retired", "explain")
+    ),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  assert.equal(retired.status, 410);
+  assert.equal((await retired.json()).error.code, "contract_version_retired");
   const response = await attributionActionFetch(
     attributionActionRequest("consumer-action-explain", "explain")
   );
@@ -2557,11 +2562,11 @@ test("attribution actions explain bounded corrections and Monarch provenance", a
   const text = await response.text();
   assert.doesNotMatch(
     text,
-    /merchantName|instrumentFingerprint|occurredOn|observedAt|householdId/
+    /merchantName|accountRef|occurredOn|observedAt|householdId/
   );
   const payload = JSON.parse(text);
   assert.deepEqual(payload.attribution, {
-    contractVersion: "1.0",
+    contractVersion: "2.0",
     sourceRef: "consumer-action-explain",
     status: "pending",
     kidId: "kid-synthetic",
@@ -2572,7 +2577,7 @@ test("attribution actions explain bounded corrections and Monarch provenance", a
     provenance: {
       decisionSource: "automated",
       policyVersion: activePolicy.policyVersion,
-      engineVersion: "1.0.0",
+      engineVersion: "2.0.0",
       ruleIds: ["rule-merchant-synthetic"],
       evaluatedAt: "2026-08-08T12:58:00.000Z",
     },
@@ -2755,18 +2760,19 @@ test("policy mutations reject cross-site requests and ignore client identity hea
   assert.equal(activePolicy.householdId, policyActor.householdId);
 });
 
-test("instrument references are fingerprinted server-side and never persisted raw", async () => {
-  const instrumentReference = "opaque-integration-reference-synthetic";
+test("account rules persist only connector-generated opaque account references", async () => {
+  const accountRef =
+    "account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
   const previousPolicyVersion = activePolicy.policyVersion;
   const bypass = await policyFetch("/api/policy", "PUT", {
     expectedPolicyVersion: activePolicy.policyVersion,
     policy: {
       ...policyDraft(activePolicy),
-      cardRules: [
+      accountRules: [
         {
-          id: "rule-card-bypass",
+          id: "rule-account-bypass",
           kidId: "kid-synthetic",
-          instrumentFingerprint: instrumentReference,
+          accountRef: "raw-monarch-account-id",
           confidence: "definite",
           enabled: true,
         },
@@ -2776,67 +2782,12 @@ test("instrument references are fingerprinted server-side and never persisted ra
   assert.equal(bypass.status, 422);
   assert.equal((await bypass.json()).error.code, "invalid_domain_contract");
 
-  const fingerprintResponse = await policyFetch(
-    "/api/policy/instruments/fingerprint",
-    "POST",
-    { instrumentReference }
-  );
-  assert.equal(fingerprintResponse.status, 200);
-  const fingerprintText = await fingerprintResponse.text();
-  assert.doesNotMatch(fingerprintText, new RegExp(instrumentReference));
-  const fingerprint = JSON.parse(fingerprintText).instrumentFingerprint;
-  assert.match(fingerprint, /^instrument-v1:[A-Za-z0-9_-]{43}$/);
-  const persistedKey = await readFile(
-    `${policyStorePath}.fingerprint-key`,
-    "utf8"
-  );
-  assert.match(persistedKey, /^[a-f0-9]{64}$/);
-  assert.doesNotMatch(persistedKey, new RegExp(instrumentReference));
-
-  const standaloneRoot = join(appRoot, ".next", "standalone", "triage-app");
-  const standaloneServer = join(standaloneRoot, "server.js");
-  const rotatedPort = await freePort();
-  const rotatedUrl = `http://127.0.0.1:${rotatedPort}`;
-  const rotatedProcess = spawn(process.execPath, [standaloneServer], {
-    cwd: standaloneRoot,
-    env: {
-      ...process.env,
-      BRIDGE_URL: fakeBridgeUrl,
-      BRIDGE_API_TOKEN: "rotated-synthetic-service-token-value",
-      TYRION_POLICY_STORE_PATH: policyStorePath,
-      HOSTNAME: "127.0.0.1",
-      PORT: String(rotatedPort),
-    },
-    stdio: "ignore",
-  });
-  try {
-    await waitForServer(rotatedUrl, rotatedProcess);
-    const afterRotation = await fetch(
-      `${rotatedUrl}/api/policy/instruments/fingerprint`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Origin: rotatedUrl,
-        },
-        body: JSON.stringify({ instrumentReference }),
-      }
-    );
-    assert.equal(afterRotation.status, 200);
-    assert.equal(
-      (await afterRotation.json()).instrumentFingerprint,
-      fingerprint
-    );
-  } finally {
-    if (rotatedProcess.exitCode === null) rotatedProcess.kill();
-  }
-
   const updatedDraft = policyDraft(activePolicy);
-  updatedDraft.cardRules = [
+  updatedDraft.accountRules = [
     {
-      id: "rule-card-synthetic",
+      id: "rule-account-synthetic",
       kidId: "kid-synthetic",
-      instrumentFingerprint: fingerprint,
+      accountRef,
       confidence: "definite",
       enabled: true,
     },
@@ -2849,7 +2800,8 @@ test("instrument references are fingerprinted server-side and never persisted ra
   activePolicy = (await updated.json()).policy;
   assert.equal(activePolicy.policyVersion, previousPolicyVersion + 1);
   const stored = await readFile(policyStorePath, "utf8");
-  assert.doesNotMatch(stored, new RegExp(instrumentReference));
+  assert.match(stored, new RegExp(accountRef));
+  await assert.rejects(readFile(`${policyStorePath}.fingerprint-key`, "utf8"));
   assert.doesNotMatch(stored, /password|cookie|authorization|sessionPath/i);
 });
 
@@ -3084,7 +3036,7 @@ function attributionActionFetch(body, options = {}) {
   const serialized = JSON.stringify(body);
   return rawInternalAttributionFetch(
     uiUrl,
-    "/api/internal/v1/attribution/actions",
+    "/api/internal/v2/attribution/actions",
     serialized,
     {
       Authorization: ["Bearer", options.token ?? serviceToken].join(" "),
@@ -3096,7 +3048,7 @@ function attributionActionFetch(body, options = {}) {
 function rawAttributionFetch(baseUrl, body, requestHeaders = {}) {
   return rawInternalAttributionFetch(
     baseUrl,
-    "/api/internal/v1/attribution/batch",
+    "/api/internal/v2/attribution/batch",
     body,
     requestHeaders
   );
@@ -3171,8 +3123,8 @@ function rawHttpFetch(path, method = "GET", requestHeaders = {}) {
 
 function attributionRequest(items) {
   return {
-    contractVersion: "1.0",
-    provenance: "mission-control-normalized-v1",
+    contractVersion: "2.0",
+    provenance: "mission-control-normalized-v2",
     expectedPolicyVersion: activePolicy.policyVersion,
     items,
   };
@@ -3183,7 +3135,7 @@ function attributionItem(sourceRef) {
     sourceRef,
     occurredOn: "2026-08-08",
     merchantName: "Synthetic Store",
-    instrumentFingerprint: null,
+    accountRef: "account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     observedAt: "2026-08-08T12:58:00Z",
     existingManualDecision: null,
   };
@@ -3191,8 +3143,8 @@ function attributionItem(sourceRef) {
 
 function attributionActionRequest(sourceRef, action, extra = {}) {
   return {
-    contractVersion: "1.0",
-    provenance: "mission-control-normalized-v1",
+    contractVersion: "2.0",
+    provenance: "mission-control-normalized-v2",
     sourceRef,
     expectedPolicyVersion: activePolicy.policyVersion,
     action,
@@ -3205,7 +3157,7 @@ function policyDraft(policy) {
     timezone: policy.timezone,
     currency: policy.currency,
     kids: policy.kids,
-    cardRules: policy.cardRules,
+    accountRules: policy.accountRules,
     merchantRules: policy.merchantRules,
     limits: policy.limits,
     exceptionPolicy: policy.exceptionPolicy,
@@ -3217,7 +3169,7 @@ function reattributionRecord(householdId, sourceRef) {
   const evaluatedAt = "2026-01-01T00:00:00.000Z";
   return {
     input: {
-      contractVersion: "1.0",
+      contractVersion: "2.0",
       householdId,
       source: {
         system: "monarch-bridge",
@@ -3226,7 +3178,7 @@ function reattributionRecord(householdId, sourceRef) {
       },
       transaction: {
         merchantName: "Synthetic Store",
-        instrumentFingerprint: null,
+        accountRef: "account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
         occurredOn: "2026-01-01",
       },
       historicalAttributions: [],
@@ -3241,7 +3193,7 @@ function reattributionRecord(householdId, sourceRef) {
         : null,
     },
     current: {
-      contractVersion: "1.0",
+      contractVersion: "2.0",
       sourceRef,
       status: manual ? "attributed" : "unassigned",
       kidId: manual ? "kid-synthetic" : null,
@@ -3257,7 +3209,7 @@ function reattributionRecord(householdId, sourceRef) {
       provenance: {
         decisionSource: manual ? "manual" : "fallback",
         policyVersion: null,
-        engineVersion: "1.0.0",
+        engineVersion: "2.0.0",
         ruleIds: [],
         evaluatedAt,
       },
@@ -3269,7 +3221,7 @@ function attributionActionRecord(householdId, sourceRef) {
   const evaluatedAt = "2026-08-08T12:58:00.000Z";
   return {
     input: {
-      contractVersion: "1.0",
+      contractVersion: "2.0",
       householdId,
       source: {
         system: "monarch-bridge",
@@ -3278,14 +3230,14 @@ function attributionActionRecord(householdId, sourceRef) {
       },
       transaction: {
         merchantName: "Synthetic Store",
-        instrumentFingerprint: null,
+        accountRef: "account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
         occurredOn: "2026-08-08",
       },
       historicalAttributions: [],
       existingManualDecision: null,
     },
     attribution: {
-      contractVersion: "1.0",
+      contractVersion: "2.0",
       sourceRef,
       status: "pending",
       kidId: "kid-synthetic",
@@ -3296,7 +3248,7 @@ function attributionActionRecord(householdId, sourceRef) {
       provenance: {
         decisionSource: "automated",
         policyVersion: activePolicy.policyVersion,
-        engineVersion: "1.0.0",
+        engineVersion: "2.0.0",
         ruleIds: ["rule-merchant-synthetic"],
         evaluatedAt,
       },

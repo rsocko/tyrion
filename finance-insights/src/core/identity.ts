@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   canonicalizeV1,
   normalizeIdentityTextV1,
@@ -127,7 +127,7 @@ const sourceRevisionInputSchema = z.strictObject({
 });
 
 export function deriveInsightIdV1(
-  key: Uint8Array,
+  namespace: Uint8Array,
   input: InsightIdentityInputV1
 ): string {
   const parsed = parseContractV1(
@@ -135,7 +135,7 @@ export function deriveInsightIdV1(
     input,
     'insight identity input'
   );
-  return deriveKeyedId('insight', key, {
+  return deriveDeterministicId('insight', namespace, {
     namespace: 'finance-insight-series-v1',
     householdScope: parsed.householdScope,
     kind: parsed.kind,
@@ -145,7 +145,7 @@ export function deriveInsightIdV1(
 }
 
 export function deriveOccurrenceIdV1(
-  key: Uint8Array,
+  namespace: Uint8Array,
   insightId: string,
   discriminator: OccurrenceDiscriminatorV1
 ): string {
@@ -155,7 +155,7 @@ export function deriveOccurrenceIdV1(
     discriminator,
     'occurrence discriminator'
   );
-  return deriveKeyedId('occurrence', key, {
+  return deriveDeterministicId('occurrence', namespace, {
     namespace: 'finance-insight-occurrence-v1',
     insightId: parsedInsightId,
     discriminator: parsedDiscriminator,
@@ -163,7 +163,7 @@ export function deriveOccurrenceIdV1(
 }
 
 export function deriveSourceRevisionRefV1(
-  key: Uint8Array,
+  namespace: Uint8Array,
   input: SourceRevisionInputV1
 ): string {
   const parsed = parseContractV1(
@@ -171,7 +171,7 @@ export function deriveSourceRevisionRefV1(
     input,
     'source revision input'
   );
-  return deriveKeyedId('revision', key, {
+  return deriveDeterministicId('revision', namespace, {
     namespace: 'finance-insight-source-revision-v1',
     sourceKind: parsed.sourceKind,
     sourceRef: parsed.sourceRef,
@@ -181,7 +181,7 @@ export function deriveSourceRevisionRefV1(
 }
 
 export function deriveMerchantKeyV1(
-  key: Uint8Array,
+  namespace: Uint8Array,
   normalizedName: string
 ): string {
   const parsedName = parseContractV1(
@@ -189,7 +189,7 @@ export function deriveMerchantKeyV1(
     normalizedName,
     'merchant display name'
   );
-  return deriveKeyedId('merchant', key, {
+  return deriveDeterministicId('merchant', namespace, {
     namespace: 'finance-insight-merchant-v1',
     normalizedName: normalizeIdentityTextV1(parsedName),
   });
@@ -291,15 +291,17 @@ function safeIncrement(value: number): number {
   return value + 1;
 }
 
-function deriveKeyedId(
+function deriveDeterministicId(
   prefix: 'insight' | 'occurrence' | 'revision' | 'merchant',
-  key: Uint8Array,
+  namespace: Uint8Array,
   value: CanonicalJsonValue
 ): string {
-  if (key.byteLength < 32) {
-    throw new RangeError('Identity keys must contain at least 32 bytes');
+  if (namespace.byteLength < 16) {
+    throw new RangeError('Identity namespaces must contain at least 16 bytes');
   }
-  const digest = createHmac('sha256', key)
+  const digest = createHash('sha256')
+    .update(namespace)
+    .update('\0')
     .update(canonicalizeV1(value))
     .digest('base64url');
   return `${prefix}-v1_${digest}`;

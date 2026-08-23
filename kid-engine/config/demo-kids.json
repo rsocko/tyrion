@@ -4,8 +4,8 @@
       "id": "jake",
       "name": "Jake",
       "color": "blue",
-      "cardRules": [
-        { "last4": "4521", "confidence": "definite", "label": "Chase Debit" }
+      "accountRules": [
+        { "accountRef": "acct-demo-jake", "confidence": "definite", "label": "Jake account" }
       ],
       "merchantRules": [
         { "pattern": "ROBLOX", "confidence": "definite" },
@@ -25,8 +25,8 @@
       "id": "emma",
       "name": "Emma",
       "color": "purple",
-      "cardRules": [
-        { "last4": "7890", "confidence": "definite", "label": "Amex Authorized User" }
+      "accountRules": [
+        { "accountRef": "acct-demo-emma", "confidence": "definite", "label": "Emma account" }
       ],
       "merchantRules": [
         { "pattern": "SEPHORA", "confidence": "likely" },
@@ -44,7 +44,7 @@
       "id": "sophie",
       "name": "Sophie",
       "color": "green",
-      "cardRules": [],
+      "accountRules": [],
       "merchantRules": [
         { "pattern": "SCHOOL LUNCH", "confidence": "definite" },
         { "pattern": "SCHOLASTIC", "confidence": "definite" },

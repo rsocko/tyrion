@@ -1,13 +1,13 @@
-import { createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { canonicalizeV1, type CanonicalJsonValue } from '../core/canonical.js';
 
 export function deriveAutomationRunIdV1(
-  key: Uint8Array,
+  namespace: Uint8Array,
   jobKind: 'duplicateTransactions' | 'connectorHealth',
   connectorRef: string,
   scheduledFor: string
 ): string {
-  return derive(key, 'run', {
+  return derive(namespace, 'run', {
     namespace: 'finance-automation-run-v1',
     jobKind,
     connectorRef,
@@ -20,11 +20,11 @@ export function canonicalAutomationTimestampV1(value: string): string {
 }
 
 export function deriveDuplicateSignalIdV1(
-  key: Uint8Array,
+  namespace: Uint8Array,
   connectorRef: string,
   sourceRefs: readonly [string, string]
 ): string {
-  return derive(key, 'signal', {
+  return derive(namespace, 'signal', {
     namespace: 'finance-automation-signal-v1',
     kind: 'duplicateTransaction',
     connectorRef,
@@ -33,10 +33,10 @@ export function deriveDuplicateSignalIdV1(
 }
 
 export function deriveConnectorHealthSignalIdV1(
-  key: Uint8Array,
+  namespace: Uint8Array,
   connectorRef: string
 ): string {
-  return derive(key, 'signal', {
+  return derive(namespace, 'signal', {
     namespace: 'finance-automation-signal-v1',
     kind: 'connectorHealth',
     connectorRef,
@@ -48,14 +48,16 @@ export function automationDeliveryKeyV1(signalId: string): string {
 }
 
 function derive(
-  key: Uint8Array,
+  namespace: Uint8Array,
   prefix: 'run' | 'signal',
   value: CanonicalJsonValue
 ): string {
-  if (key.byteLength < 32) {
-    throw new RangeError('Automation identity keys must contain at least 32 bytes');
+  if (namespace.byteLength < 16) {
+    throw new RangeError('Automation identity namespaces must contain at least 16 bytes');
   }
-  const digest = createHmac('sha256', key)
+  const digest = createHash('sha256')
+    .update(namespace)
+    .update('\0')
     .update(canonicalizeV1(value))
     .digest('base64url');
   return `${prefix}-v1_${digest}`;

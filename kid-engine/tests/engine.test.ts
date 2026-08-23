@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { attributeTransaction, type EngineConfig } from '../src/engine.js';
-import { matchCardRules, matchMerchantRules, matchHistoricalPattern } from '../src/rules.js';
+import { matchAccountRules, matchMerchantRules, matchHistoricalPattern } from '../src/rules.js';
 import { checkThresholds, sumTransactionsInPeriod, getPeriodStart } from '../src/thresholds.js';
 import { generateSuggestions } from '../src/suggestions.js';
 import type {
@@ -15,7 +15,7 @@ const jake: KidProfile = {
   id: 'jake',
   name: 'Jake',
   color: 'blue',
-  cardRules: [{ last4: '4521', confidence: 'definite', label: 'Chase Debit' }],
+  accountRules: [{ accountRef: 'acct-jake', confidence: 'definite', label: 'Jake account' }],
   merchantRules: [
     { pattern: 'ROBLOX', confidence: 'definite' },
     { pattern: 'STEAM', confidence: 'definite' },
@@ -31,7 +31,7 @@ const emma: KidProfile = {
   id: 'emma',
   name: 'Emma',
   color: 'purple',
-  cardRules: [{ last4: '7890', confidence: 'definite', label: 'Amex' }],
+  accountRules: [{ accountRef: 'acct-emma', confidence: 'definite', label: 'Emma account' }],
   merchantRules: [
     { pattern: 'SEPHORA', confidence: 'likely' },
     { pattern: 'ULTA', confidence: 'likely' },
@@ -45,7 +45,7 @@ const sophie: KidProfile = {
   id: 'sophie',
   name: 'Sophie',
   color: 'green',
-  cardRules: [],
+  accountRules: [],
   merchantRules: [
     { pattern: 'SCHOOL LUNCH', confidence: 'definite' },
     { pattern: 'SCHOLASTIC', confidence: 'definite' },
@@ -62,41 +62,41 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     merchantName: 'UNKNOWN MERCHANT',
     amount: 10.0,
     date: '2026-06-18T12:00:00Z',
-    account: { mask: '9876' },
+    account: { ref: 'acct-parent' },
     ...overrides,
   };
 }
 
 // --- Card Rule Tests ---
 
-describe('Card Rule Matching', () => {
-  it('matches Jake card with definite confidence', () => {
-    const tx = makeTx({ account: { mask: '4521' } });
-    const result = matchCardRules(tx, kids);
+describe('Account Rule Matching', () => {
+  it('matches Jake account with definite confidence', () => {
+    const tx = makeTx({ account: { ref: 'acct-jake' } });
+    const result = matchAccountRules(tx, kids);
     expect(result).not.toBeNull();
     expect(result!.kidId).toBe('jake');
     expect(result!.confidence).toBe('definite');
   });
 
-  it('matches Emma card with definite confidence', () => {
-    const tx = makeTx({ account: { mask: '7890' } });
-    const result = matchCardRules(tx, kids);
+  it('matches Emma account with definite confidence', () => {
+    const tx = makeTx({ account: { ref: 'acct-emma' } });
+    const result = matchAccountRules(tx, kids);
     expect(result).not.toBeNull();
     expect(result!.kidId).toBe('emma');
     expect(result!.confidence).toBe('definite');
   });
 
-  it('returns null for unknown card', () => {
-    const tx = makeTx({ account: { mask: '0000' } });
-    const result = matchCardRules(tx, kids);
+  it('returns null for unknown account', () => {
+    const tx = makeTx({ account: { ref: 'acct-unknown' } });
+    const result = matchAccountRules(tx, kids);
     expect(result).toBeNull();
   });
 
-  it('card rule produces auto-assigned triage status in engine', () => {
-    const tx = makeTx({ account: { mask: '4521' }, merchantName: 'WALMART' });
+  it('account rule produces auto-assigned triage status in engine', () => {
+    const tx = makeTx({ account: { ref: 'acct-jake' }, merchantName: 'WALMART' });
     const config: EngineConfig = { kids, history: [] };
     const result = attributeTransaction(tx, config);
-    expect(result.method).toBe('card-rule');
+    expect(result.method).toBe('account-rule');
     expect(result.triageStatus).toBe('auto-assigned');
     expect(result.kidId).toBe('jake');
   });
@@ -143,7 +143,7 @@ describe('Merchant Rule Matching', () => {
   });
 
   it('merchant definite rule produces auto-assigned', () => {
-    const tx = makeTx({ merchantName: 'ROBLOX PREMIUM', account: { mask: '9999' } });
+    const tx = makeTx({ merchantName: 'ROBLOX PREMIUM', account: { ref: 'acct-parent' } });
     const config: EngineConfig = { kids, history: [] };
     const result = attributeTransaction(tx, config);
     expect(result.method).toBe('merchant-rule');
@@ -152,7 +152,7 @@ describe('Merchant Rule Matching', () => {
   });
 
   it('merchant likely rule produces pending-confirmation', () => {
-    const tx = makeTx({ merchantName: 'GAMESTOP #1234', account: { mask: '9999' } });
+    const tx = makeTx({ merchantName: 'GAMESTOP #1234', account: { ref: 'acct-parent' } });
     const config: EngineConfig = { kids, history: [] };
     const result = attributeTransaction(tx, config);
     expect(result.method).toBe('merchant-rule');
@@ -186,7 +186,7 @@ describe('Historical Pattern Matching', () => {
   });
 
   it('pattern match produces pending-confirmation in engine', () => {
-    const tx = makeTx({ merchantName: 'CHIPOTLE', account: { mask: '9999' } });
+    const tx = makeTx({ merchantName: 'CHIPOTLE', account: { ref: 'acct-parent' } });
     const config: EngineConfig = { kids, history };
     const result = attributeTransaction(tx, config);
     expect(result.method).toBe('historical-pattern');
@@ -199,7 +199,7 @@ describe('Historical Pattern Matching', () => {
 
 describe('Unmatched Transactions', () => {
   it('returns unassigned for completely unknown transaction', () => {
-    const tx = makeTx({ merchantName: 'RANDOM STORE', account: { mask: '1111' } });
+    const tx = makeTx({ merchantName: 'RANDOM STORE', account: { ref: 'acct-unknown' } });
     const config: EngineConfig = { kids, history: [] };
     const result = attributeTransaction(tx, config);
     expect(result.method).toBe('unassigned');
@@ -349,24 +349,24 @@ describe('Rule Suggestions', () => {
 // --- Edge Cases ---
 
 describe('Edge Cases', () => {
-  it('card rule takes priority over merchant rule', () => {
-    // Transaction on Jake's card at a merchant matching Emma
+  it('account rule takes priority over merchant rule', () => {
+    // Transaction on Jake's account at a merchant matching Emma
     const tx = makeTx({
       merchantName: 'SEPHORA STORE',
-      account: { mask: '4521' },
+      account: { ref: 'acct-jake' },
     });
     const config: EngineConfig = { kids, history: [] };
     const result = attributeTransaction(tx, config);
-    // Card rule wins
+    // Account rule wins
     expect(result.kidId).toBe('jake');
-    expect(result.method).toBe('card-rule');
+    expect(result.method).toBe('account-rule');
   });
 
   it('merchant rule takes priority over historical pattern', () => {
     const history: HistoricalAssignment[] = [
       { merchantName: 'STARBUCKS', kidId: 'jake', count: 10 },
     ];
-    const tx = makeTx({ merchantName: 'STARBUCKS', account: { mask: '9999' } });
+    const tx = makeTx({ merchantName: 'STARBUCKS', account: { ref: 'acct-parent' } });
     const config: EngineConfig = { kids, history };
     const result = attributeTransaction(tx, config);
     // Merchant rule for Emma wins over historical pattern for Jake

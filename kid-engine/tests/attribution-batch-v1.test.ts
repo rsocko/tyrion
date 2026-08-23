@@ -26,9 +26,9 @@ describe('v1 batch attribution service', () => {
     const response = await service.attribute(actor, request([item('source-one'), item('source-two')]));
 
     expect(response).toMatchObject({
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       policyVersion: 1,
-      engineVersion: '1.0.0',
+      engineVersion: '2.0.0',
     });
     expect(response.results).toHaveLength(2);
     expect(response.results[0]).toMatchObject({
@@ -39,11 +39,11 @@ describe('v1 batch attribution service', () => {
       reviewStatus: 'pending',
       reasons: ['low-confidence'],
       policyVersion: 1,
-      engineVersion: '1.0.0',
+      engineVersion: '2.0.0',
       evaluatedAt: '2026-08-08T13:00:00.000Z',
     });
     expect(JSON.stringify(response)).not.toContain('merchantName');
-    expect(JSON.stringify(response)).not.toContain('instrumentFingerprint');
+    expect(JSON.stringify(response)).not.toContain('accountRef');
   });
 
   it('preserves safe manual context without accepting a free-form explanation', async () => {
@@ -136,7 +136,7 @@ describe('v1 batch attribution service', () => {
 
 function request(items: unknown[]) {
   return {
-    contractVersion: '1.0',
+    contractVersion: '2.0',
     provenance: ATTRIBUTION_BATCH_PROVENANCE,
     expectedPolicyVersion: null,
     items,
@@ -148,7 +148,7 @@ function item(sourceRef: string) {
     sourceRef,
     occurredOn: '2026-08-08',
     merchantName: 'Synthetic Shop',
-    instrumentFingerprint: null,
+    accountRef: 'account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
     observedAt: '2026-08-08T12:58:00Z',
     existingManualDecision: null,
   };

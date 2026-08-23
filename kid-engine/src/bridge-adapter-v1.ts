@@ -39,7 +39,7 @@ export interface AttributionInputAdapterContextV1 {
   householdId: string;
   sourceRef: string;
   observedAt: string;
-  instrumentFingerprint: string | null;
+  accountRef: string;
   historicalAttributions: HistoricalAttributionV1[];
   existingManualDecision: ManualAttributionDecisionV1 | null;
 }
@@ -59,7 +59,7 @@ export function createAttributionInputFromBridgeTransactionV1(
     'householdId',
     'sourceRef',
     'observedAt',
-    'instrumentFingerprint',
+    'accountRef',
     'historicalAttributions',
     'existingManualDecision',
   ]);
@@ -83,7 +83,7 @@ export function createAttributionInputsFromBridgePageV1(
     const context = object(recordContexts[index], `recordContexts[${index}]`);
     exactKeys(context, [
       'sourceRef',
-      'instrumentFingerprint',
+      'accountRef',
       'historicalAttributions',
       'existingManualDecision',
     ]);
@@ -91,7 +91,7 @@ export function createAttributionInputsFromBridgePageV1(
       householdId,
       sourceRef: context.sourceRef,
       observedAt: page.provenance.fetchedAt,
-      instrumentFingerprint: context.instrumentFingerprint,
+      accountRef: context.accountRef,
       historicalAttributions: context.historicalAttributions,
       existingManualDecision: context.existingManualDecision,
     });
@@ -117,7 +117,7 @@ function buildAttributionInput(
     },
     transaction: {
       merchantName: transaction.merchant.name,
-      instrumentFingerprint: context.instrumentFingerprint,
+      accountRef: context.accountRef,
       occurredOn: transaction.date,
     },
     historicalAttributions: context.historicalAttributions,
@@ -181,7 +181,7 @@ export function parseNormalizedBridgeTransactionsPageV1(
   value: unknown
 ): NormalizedBridgeTransactionsPageV1 {
   const response = object(value, 'bridge transactions response');
-  if (response.contractVersion !== TYRION_DOMAIN_CONTRACT_VERSION) {
+  if (response.contractVersion !== '1.0') {
     invalid('contractVersion must be 1.0');
   }
   const provenance = object(response.provenance, 'provenance');
@@ -210,7 +210,7 @@ export function parseNormalizedBridgeTransactionsPageV1(
     invalid('page.limit must be between 1 and 5000');
   }
   return {
-    contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
+    contractVersion: '1.0',
     provenance: { provider: provenance.provider, fetchedAt },
     transactions: response.transactions.map(parseNormalizedBridgeTransactionV1),
     total: response.total as number,

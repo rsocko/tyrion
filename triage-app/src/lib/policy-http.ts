@@ -12,7 +12,6 @@ import {
 } from "@rsocko/tyrion-kid-engine";
 import {
   PolicyRuntimeConfigurationError,
-  InstrumentReferenceError,
   ReattributionIntegrationError,
 } from "@/lib/policy-runtime";
 
@@ -33,9 +32,6 @@ export function policyError(error: unknown) {
     return jsonError(409, error.code, error.message);
   }
   if (error instanceof ContractValidationError) {
-    return jsonError(422, error.code, error.message);
-  }
-  if (error instanceof InstrumentReferenceError) {
     return jsonError(422, error.code, error.message);
   }
   if (

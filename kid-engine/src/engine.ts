@@ -4,7 +4,7 @@ import type {
   AttributionResult,
   HistoricalAssignment,
 } from './types.js';
-import { matchCardRules, matchMerchantRules, matchHistoricalPattern } from './rules.js';
+import { matchAccountRules, matchMerchantRules, matchHistoricalPattern } from './rules.js';
 
 export interface EngineConfig {
   kids: KidProfile[];
@@ -16,7 +16,7 @@ export interface EngineConfig {
 /**
  * Main attribution engine. Given a transaction, determine which kid (if any)
  * it belongs to using the priority order:
- * 1. Card rules (highest confidence)
+ * 1. Account rules (highest confidence)
  * 2. Merchant rules
  * 3. Historical patterns
  * 4. Unassigned (triage required)
@@ -27,20 +27,20 @@ export function attributeTransaction(
 ): AttributionResult {
   const { kids, history, minPatternAssignments } = config;
 
-  // 1. Card rule match
-  const cardMatch = matchCardRules(transaction, kids);
-  if (cardMatch) {
+  // 1. Account rule match
+  const accountMatch = matchAccountRules(transaction, kids);
+  if (accountMatch) {
     return {
       transactionId: transaction.id,
-      kidId: cardMatch.kidId,
-      kidName: cardMatch.kidName,
-      confidence: cardMatch.confidence,
-      method: 'card-rule',
+      kidId: accountMatch.kidId,
+      kidName: accountMatch.kidName,
+      confidence: accountMatch.confidence,
+      method: 'account-rule',
       triageStatus:
-        cardMatch.confidence === 'definite'
+        accountMatch.confidence === 'definite'
           ? 'auto-assigned'
           : 'pending-confirmation',
-      matchedRule: `card:${cardMatch.rule.last4}`,
+      matchedRule: `account:${accountMatch.rule.accountRef}`,
     };
   }
 

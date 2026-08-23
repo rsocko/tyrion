@@ -80,7 +80,7 @@ describe('policy service authorization and versioning', () => {
     const audit = await service.listAudit(writer, 'household-demo');
     expect(audit).toEqual([
       {
-        contractVersion: '1.0',
+        contractVersion: '2.0',
         eventId: 'audit-event-demo',
         householdId: 'household-demo',
         actorId: 'actor-demo',
@@ -160,7 +160,7 @@ describe('durable file policy repository', () => {
     const path = resolve(directory, 'policies.json');
     const legacy = new FilePolicyRepository(path);
     await legacy.save(policyFixture, null, {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       eventId: 'audit-event-legacy',
       householdId: 'household-demo',
       actorId: 'actor-demo',
@@ -173,6 +173,7 @@ describe('durable file policy repository', () => {
     const canonical = new FilePolicyRepository(path, {
       canonicalHouseholdId: 'homelab-household',
     });
+
     const migrated = await canonical.load('homelab-household');
     expect(migrated).toMatchObject({
       householdId: 'homelab-household',
@@ -188,11 +189,76 @@ describe('durable file policy repository', () => {
     expect(await readFile(path, 'utf8')).not.toContain('"household-demo"');
   });
 
+  it('upgrades only empty v1 card-rule policy stores', async () => {
+    const directory = await temporaryDirectory();
+    const path = resolve(directory, 'policies.json');
+    const { accountRules: _discarded, ...draft } = policyDraftFixture;
+    let legacyCardRules: unknown[] = [];
+    const legacySnapshot = {
+      ...policyFixture,
+      ...draft,
+      contractVersion: '1.0',
+      engineVersion: '1.0.0',
+      cardRules: legacyCardRules,
+    };
+    const legacyAudit = {
+      contractVersion: '1.0',
+      eventId: 'audit-event-v1',
+      householdId: policyFixture.householdId,
+      actorId: writer.actorId,
+      action: 'policy-created',
+      previousPolicyVersion: null,
+      policyVersion: policyFixture.policyVersion,
+      occurredAt: policyFixture.updatedAt,
+    };
+    await writeFile(
+      path,
+      JSON.stringify({
+        storageVersion: 1,
+        policies: { [policyFixture.householdId]: legacySnapshot },
+        audit: [legacyAudit],
+      })
+    );
+
+    const repository = new FilePolicyRepository(path);
+    await expect(repository.load(policyFixture.householdId)).resolves.toMatchObject({
+      contractVersion: '2.0',
+      engineVersion: '2.0.0',
+      accountRules: [],
+    });
+    await expect(repository.listAudit(policyFixture.householdId)).resolves.toMatchObject([
+      { contractVersion: '2.0', eventId: 'audit-event-v1' },
+    ]);
+
+    legacyCardRules = [
+      {
+        id: 'legacy-card-rule',
+        kidId: 'kid-alpha',
+        instrumentFingerprint:
+          'instrument-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        confidence: 'definite',
+        enabled: true,
+      },
+    ];
+    legacySnapshot.cardRules = legacyCardRules;
+    await writeFile(
+      path,
+      JSON.stringify({
+        storageVersion: 1,
+        policies: { [policyFixture.householdId]: legacySnapshot },
+        audit: [legacyAudit],
+      })
+    );
+    await expect(repository.load(policyFixture.householdId)).rejects.toBeInstanceOf(
+      PolicyStoreCorruptError
+    );
+  });
+
   it('enforces compare-and-swap when a writer uses a stale version', async () => {
     const directory = await temporaryDirectory();
     const repository = new FilePolicyRepository(resolve(directory, 'policies.json'));
     const event: PolicyAuditEventV1 = {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       eventId: 'audit-event-demo',
       householdId: 'household-demo',
       actorId: 'actor-demo',
@@ -261,7 +327,7 @@ describe('durable file policy repository', () => {
     const path = resolve(directory, 'policies.json');
     const repository = new FilePolicyRepository(path);
     const auditWithUnexpectedData = {
-      contractVersion: '1.0' as const,
+      contractVersion: '2.0' as const,
       eventId: 'audit-event-demo',
       householdId: 'household-demo',
       actorId: 'actor-demo',
@@ -285,7 +351,7 @@ describe('durable file policy repository', () => {
     await utimes(lockPath, new Date(0), new Date(0));
     const repository = new FilePolicyRepository(path);
     await repository.save(policyFixture, null, {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       eventId: 'audit-event-demo',
       householdId: 'household-demo',
       actorId: 'actor-demo',
@@ -317,7 +383,7 @@ describe('durable file policy repository', () => {
     const path = resolve(directory, 'policies.json');
     const repository = new FilePolicyRepository(path);
     await repository.save(policyFixture, null, {
-      contractVersion: '1.0',
+      contractVersion: '2.0',
       eventId: 'audit-event-demo',
       householdId: 'household-demo',
       actorId: 'actor-demo',
