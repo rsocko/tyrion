@@ -14,16 +14,22 @@ const IDENTITY_KEY = Buffer.from(
 const ACCOUNTS: AccountSourceFactV1[] = [
   {
     sourceRef: 'same-bank-card-a',
+    displayName: 'Invented Rewards Card',
+    institutionName: 'Invented Bank',
     accountType: 'credit',
+    accountLastFour: '1234',
     active: true,
   },
   {
     sourceRef: 'same-bank-card-b',
+    displayName: 'Invented Travel Card',
+    institutionName: 'Invented Bank',
     accountType: 'credit',
     active: true,
   },
   {
     sourceRef: 'closed-loan',
+    displayName: 'Invented Auto Loan',
     accountType: 'loan',
     active: false,
   },
@@ -97,6 +103,7 @@ describe('DocumentExpectationSignalsV1', () => {
       )
     ).toBe(true);
     expect(JSON.stringify(result)).not.toContain('same-bank-card');
+    expect(JSON.stringify(result)).not.toContain('currentBalance');
     expect(JSON.stringify(result)).not.toContain('amountMinor');
     expect(JSON.stringify(result)).not.toContain('nextDate');
     expect(JSON.stringify(result)).not.toContain('wallet-cash');
@@ -120,9 +127,16 @@ describe('DocumentExpectationSignalsV1', () => {
           (signal) =>
             signal.confidence === 0.6 &&
             signal.basis[0] === 'active_non_cash_account' &&
-            signal.displayHint === 'Credit account'
+            signal.accountType === 'credit' &&
+            signal.institutionName === 'Invented Bank'
         )
     ).toBe(true);
+    expect(
+      accounts.find((signal) => signal.accountName === 'Invented Rewards Card')
+    ).toMatchObject({
+      displayHint: 'Invented Rewards Card',
+      accountLastFour: '1234',
+    });
     expect(accounts.find((signal) => !signal.active)?.basis).toEqual([
       'inactive_non_cash_account',
     ]);
@@ -150,6 +164,15 @@ describe('DocumentExpectationSignalsV1', () => {
     ).toMatchObject({
       length: 2,
     });
+    expect(
+      recurring.every(
+        (signal) =>
+          !('accountName' in signal) &&
+          !('institutionName' in signal) &&
+          !('accountType' in signal) &&
+          !('accountLastFour' in signal)
+      )
+    ).toBe(true);
   });
 
   it('keeps series identities stable across generations and scoped by connector', () => {
@@ -181,6 +204,23 @@ describe('DocumentExpectationSignalsV1', () => {
       IDENTITY_KEY
     );
     expect(renamed.signals).toEqual(second.signals);
+
+    const renamedAccount = projectDocumentExpectationSignalsV1(
+      {
+        ...projectionInput('generation-2'),
+        accounts: ACCOUNTS.map((account) => ({
+          ...account,
+          displayName: account.displayName
+            ? `Renamed ${account.displayName}`
+            : undefined,
+        })),
+      },
+      IDENTITY_KEY
+    );
+    expect(renamedAccount.signals.map((signal) => signal.seriesRef)).toEqual(
+      second.signals.map((signal) => signal.seriesRef)
+    );
+    expect(renamedAccount.signals).not.toEqual(second.signals);
   });
 
   it('accepts additive evidence reasons and rejects invalid response structure', () => {
@@ -229,6 +269,28 @@ describe('DocumentExpectationSignalsV1', () => {
         ),
       })
     ).toThrow('must contain unique reason codes');
+    const recurring = response.signals.find(
+      (signal) => signal.kind === 'recurringDocumentCandidate'
+    );
+    expect(() =>
+      parseDocumentExpectationSignalsV1({
+        ...response,
+        signals: response.signals.map((signal) =>
+          signal === recurring ? { ...signal, accountName: 'Not allowed' } : signal
+        ),
+      })
+    ).toThrow('Unrecognized key');
+    const account = response.signals.find(
+      (signal) => signal.kind === 'accountStatementCandidate'
+    );
+    expect(() =>
+      parseDocumentExpectationSignalsV1({
+        ...response,
+        signals: response.signals.map((signal) =>
+          signal === account ? { ...signal, accountLastFour: '12345' } : signal
+        ),
+      })
+    ).toThrow('Too big');
   });
 });
 

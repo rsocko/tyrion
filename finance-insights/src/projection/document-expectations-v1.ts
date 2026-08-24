@@ -32,14 +32,9 @@ export function projectDocumentExpectationSignalsV1(
   const accountSignals = input.accounts
     .filter((account) => account.accountType !== 'cash')
     .map((account) =>
-      signal(
+      accountSignal(
         input.connectorRef,
-        'account',
-        account.sourceRef,
-        account.active,
-        `${capitalize(account.accountType)} account`,
-        'accountStatementCandidate',
-        ADVISORY_SOURCE_CONFIDENCE_V1,
+        account,
         identityNamespace
       )
     );
@@ -52,14 +47,10 @@ export function projectDocumentExpectationSignalsV1(
           : knownOutgoingRecurringRefs.has(recurring.sourceRef)
     )
     .map((recurring) =>
-      signal(
+      recurringSignal(
         input.connectorRef,
-        'recurring',
         recurring.sourceRef,
         recurring.active,
-        'Recurring expense',
-        'recurringDocumentCandidate',
-        ADVISORY_SOURCE_CONFIDENCE_V1,
         identityNamespace
       )
     );
@@ -76,38 +67,65 @@ export function projectDocumentExpectationSignalsV1(
   });
 }
 
-function signal(
+function accountSignal(
   connectorRef: string,
-  sourceKind: 'account' | 'recurring',
-  sourceRef: string,
-  active: boolean,
-  displayHint: string,
-  kind: DocumentExpectationSignalV1['kind'],
-  confidence: number,
+  account: AccountSourceFactV1,
   identityNamespace: Uint8Array
 ): DocumentExpectationSignalV1 {
-  const basis =
-    sourceKind === 'account'
-      ? active
-        ? 'active_non_cash_account'
-        : 'inactive_non_cash_account'
-      : active
-        ? 'active_recurring_obligation'
-        : 'inactive_recurring_obligation';
   return {
     seriesRef: deriveSeriesRef(
       identityNamespace,
       connectorRef,
-      sourceKind,
-      sourceRef
+      'account',
+      account.sourceRef
     ),
-    kind,
-    active,
-    displayHint,
+    kind: 'accountStatementCandidate',
+    active: account.active,
+    displayHint:
+      account.displayName ?? `${capitalize(account.accountType)} account`,
     cadence: null,
     nextExpectedDate: null,
-    confidence,
-    basis: [basis],
+    confidence: ADVISORY_SOURCE_CONFIDENCE_V1,
+    basis: [
+      account.active
+        ? 'active_non_cash_account'
+        : 'inactive_non_cash_account',
+    ],
+    ...(account.displayName ? { accountName: account.displayName } : {}),
+    ...(account.institutionName
+      ? { institutionName: account.institutionName }
+      : {}),
+    accountType: account.accountType,
+    ...(account.accountLastFour
+      ? { accountLastFour: account.accountLastFour }
+      : {}),
+  };
+}
+
+function recurringSignal(
+  connectorRef: string,
+  sourceRef: string,
+  active: boolean,
+  identityNamespace: Uint8Array
+): DocumentExpectationSignalV1 {
+  return {
+    seriesRef: deriveSeriesRef(
+      identityNamespace,
+      connectorRef,
+      'recurring',
+      sourceRef
+    ),
+    kind: 'recurringDocumentCandidate',
+    active,
+    displayHint: 'Recurring expense',
+    cadence: null,
+    nextExpectedDate: null,
+    confidence: ADVISORY_SOURCE_CONFIDENCE_V1,
+    basis: [
+      active
+        ? 'active_recurring_obligation'
+        : 'inactive_recurring_obligation',
+    ],
   };
 }
 

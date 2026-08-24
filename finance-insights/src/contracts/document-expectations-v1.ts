@@ -5,6 +5,10 @@ import {
   sourceReferenceSchema,
   utcTimestampSchema,
 } from './primitives.js';
+import {
+  accountLastFourSchema,
+  accountTypeSchema,
+} from './source-v1.js';
 
 export const DOCUMENT_EXPECTATION_CONTRACT_VERSION_V1 = '1' as const;
 export const MAX_DOCUMENT_EXPECTATION_SIGNALS_V1 = 6_000;
@@ -19,20 +23,31 @@ export const documentExpectationBasisSchema = z
   .max(64)
   .regex(/^[a-z0-9_]+$/);
 
+const documentExpectationSignalBaseShape = {
+  seriesRef: documentExpectationSeriesRefSchema,
+  active: z.boolean(),
+  displayHint: normalizedDisplayNameSchema,
+  cadence: z.null(),
+  nextExpectedDate: z.null(),
+  confidence: z.number().finite().min(0).max(1),
+  basis: z.array(documentExpectationBasisSchema).min(1).max(20),
+} as const;
+
 export const documentExpectationSignalSchema = z
-  .strictObject({
-    seriesRef: documentExpectationSeriesRefSchema,
-    kind: z.enum([
-      'accountStatementCandidate',
-      'recurringDocumentCandidate',
-    ]),
-    active: z.boolean(),
-    displayHint: normalizedDisplayNameSchema,
-    cadence: z.null(),
-    nextExpectedDate: z.null(),
-    confidence: z.number().finite().min(0).max(1),
-    basis: z.array(documentExpectationBasisSchema).min(1).max(20),
-  })
+  .discriminatedUnion('kind', [
+    z.strictObject({
+      ...documentExpectationSignalBaseShape,
+      kind: z.literal('accountStatementCandidate'),
+      accountName: normalizedDisplayNameSchema.optional(),
+      institutionName: normalizedDisplayNameSchema.optional(),
+      accountType: accountTypeSchema.optional(),
+      accountLastFour: accountLastFourSchema.optional(),
+    }),
+    z.strictObject({
+      ...documentExpectationSignalBaseShape,
+      kind: z.literal('recurringDocumentCandidate'),
+    }),
+  ])
   .superRefine((value, context) => {
     const expectedBasis =
       value.kind === 'accountStatementCandidate'

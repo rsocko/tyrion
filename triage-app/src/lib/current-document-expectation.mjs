@@ -216,14 +216,30 @@ function requireEnvelope(value, itemKey, maximumItems) {
 function normalizeAccount(value) {
   if (
     !isPlainObject(value) ||
+    typeof value.displayName !== "string" ||
     typeof value.type !== "string" ||
-    typeof value.isActive !== "boolean"
+    typeof value.isActive !== "boolean" ||
+    (value.institution !== null &&
+      value.institution !== undefined &&
+      typeof value.institution !== "string") ||
+    (value.mask !== null &&
+      value.mask !== undefined &&
+      typeof value.mask !== "string")
   ) {
     throw new CurrentDocumentExpectationSourceError();
   }
+  const institutionName =
+    value.institution === null || value.institution === undefined
+      ? undefined
+      : optionalBoundedAccountIdentityText(value.institution);
+  const displayName = optionalBoundedAccountIdentityText(value.displayName);
+  const lastFour = accountLastFour(value.mask);
   return {
     sourceRef: sourceReference(value.id),
+    ...(displayName ? { displayName } : {}),
+    ...(institutionName ? { institutionName } : {}),
     accountType: accountType(value.type),
+    ...(lastFour ? { accountLastFour: lastFour } : {}),
     active: value.isActive,
   };
 }
@@ -378,6 +394,20 @@ function normalizedDisplayName(value) {
     throw new CurrentDocumentExpectationSourceError();
   }
   return normalized;
+}
+
+function optionalBoundedAccountIdentityText(value) {
+  const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ");
+  if (!normalized || normalized.length > 120 || /[\u0000-\u001f\u007f-\u009f]/.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function accountLastFour(value) {
+  if (value === null || value === undefined) return undefined;
+  const digits = value.normalize("NFKC").match(/[0-9]/g) ?? [];
+  return digits.length >= 4 ? digits.slice(-4).join("") : undefined;
 }
 
 function validBridgeToken(value) {

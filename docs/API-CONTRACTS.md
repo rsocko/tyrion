@@ -262,6 +262,8 @@ Its independently versioned response, opaque series identity, advisory-only evid
 OWL-owned durable negative decisions, complete-snapshot deactivation semantics,
 deterministic ordering, and strict data exclusions are defined in
 [`DOCUMENT-EXPECTATION-SIGNALS-V1.md`](./DOCUMENT-EXPECTATION-SIGNALS-V1.md).
+OWL must deploy support for the optional bounded account identity fields before Tyrion
+starts emitting them because older OWL readers may enforce a strict signal shape.
 
 ### Errors
 

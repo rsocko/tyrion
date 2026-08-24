@@ -624,8 +624,8 @@ test("current OWL publication bootstraps a fresh store and advances only for cha
         id: "invented-card",
         displayName: "Invented Card",
         type: "credit",
-        mask: null,
-        institution: null,
+        mask: "0000111122224242",
+        institution: "Invented Bank",
         currentBalance: 0,
         isActive: true,
       },
@@ -678,12 +678,19 @@ test("current OWL publication bootstraps a fresh store and advances only for cha
     assert.equal(first.state, "promoted");
     assert.equal(first.request.sourceSequence, 1);
     assert.equal(replay.request.sourceGeneration, first.request.sourceGeneration);
-    assert.equal(
+    assert.deepEqual(
       (await store.loadProjection(
         first.request.connectorRef,
         first.request.sourceGeneration
-      )).accounts.length,
-      1
+      )).accounts,
+      [{
+        sourceRef: "invented-card",
+        displayName: "Invented Card",
+        institutionName: "Invented Bank",
+        accountType: "credit",
+        accountLastFour: "4242",
+        active: true,
+      }]
     );
 
     await lifecycle.beginSourceGeneration(
@@ -694,6 +701,8 @@ test("current OWL publication bootstraps a fresh store and advances only for cha
         idempotencyKey: "interrupted-owl-publication-begin",
       })
     );
+    source.accounts[0].displayName = "A".repeat(121);
+    source.accounts[0].institution = "B".repeat(121);
     source.accounts.push({
       id: "invented-savings",
       displayName: "Invented Savings",
@@ -707,6 +716,18 @@ test("current OWL publication bootstraps a fresh store and advances only for cha
     assert.equal(updated.state, "promoted");
     assert.equal(updated.request.sourceSequence, 3);
     assert.notEqual(updated.request.sourceGeneration, first.request.sourceGeneration);
+    assert.deepEqual(
+      (await store.loadProjection(
+        updated.request.connectorRef,
+        updated.request.sourceGeneration
+      )).accounts[0],
+      {
+        sourceRef: "invented-card",
+        accountType: "credit",
+        accountLastFour: "4242",
+        active: true,
+      }
+    );
     assert.equal(
       (
         await store.sourceGenerations.find(
@@ -758,7 +779,12 @@ test("current OWL publication refetches before resolving an overtaken commit", a
       }),
       loadProjection: async () => ({
         accounts: [
-          { sourceRef: "invented-card", accountType: "credit", active: true },
+          {
+            sourceRef: "invented-card",
+            displayName: "Invented Card",
+            accountType: "credit",
+            active: true,
+          },
         ],
         recurring: [],
       }),
@@ -1415,6 +1441,8 @@ test("finance insight service publishes current and generation-addressed OWL pro
 
   const currentConnectorPath =
     "/api/connector/v1/document-expectation-signals";
+  bridgeAccounts[0].institution = "Invented Bank";
+  bridgeAccounts[0].mask = "**** 4242";
   const currentResponse = await fetch(`${uiUrl}${currentConnectorPath}`, {
     headers: insightHeaders({ Host: undefined }),
   });
@@ -1428,6 +1456,27 @@ test("finance insight service publishes current and generation-addressed OWL pro
     "monarch-current-document-expectations"
   );
   assert.equal(currentProjection.signals.length, 2);
+  assert.deepEqual(
+    currentProjection.signals.find(
+      (signal) => signal.kind === "accountStatementCandidate"
+    ),
+    {
+      seriesRef: currentProjection.signals.find(
+        (signal) => signal.kind === "accountStatementCandidate"
+      ).seriesRef,
+      kind: "accountStatementCandidate",
+      active: true,
+      displayHint: "Invented Card",
+      cadence: null,
+      nextExpectedDate: null,
+      confidence: 0.6,
+      basis: ["active_non_cash_account"],
+      accountName: "Invented Card",
+      institutionName: "Invented Bank",
+      accountType: "credit",
+      accountLastFour: "4242",
+    }
+  );
   assert.equal(receivedRequests.length, beforeConnectorRead + 2);
   assert.deepEqual(
     receivedRequests.slice(-2).map(({ path, authorized }) => ({ path, authorized })),

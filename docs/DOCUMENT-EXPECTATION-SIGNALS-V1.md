@@ -55,11 +55,15 @@ committed generation remains retained.
       "seriesRef": "expectation-v1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "kind": "accountStatementCandidate",
       "active": true,
-      "displayHint": "Credit account",
+      "displayHint": "Invented Rewards Card",
       "cadence": null,
       "nextExpectedDate": null,
       "confidence": 0.6,
-      "basis": ["active_non_cash_account"]
+      "basis": ["active_non_cash_account"],
+      "accountName": "Invented Rewards Card",
+      "institutionName": "Invented Bank",
+      "accountType": "credit",
+      "accountLastFour": "1234"
     }
   ]
 }
@@ -74,7 +78,12 @@ only `complete` committed generations. OWL must not interpret omissions from a
 
 - Each non-cash account source fact produces one `accountStatementCandidate`.
   This is advisory inventory evidence (`confidence: 0.60`,
-  `active_non_cash_account`), not evidence that an account emits documents.
+  `active_non_cash_account`), not evidence that an account emits documents. Account
+  candidates may include bounded `accountName` and `institutionName` strings (1-120
+  characters), `accountType` (`checking`, `savings`, `credit`, `cash`, `loan`,
+  `investment`, or `other`), and `accountLastFour` (exactly four ASCII digits).
+  The projection uses the account name as `displayHint` when available and otherwise
+  falls back to the normalized account type.
 - Each outgoing recurring source fact produces one `recurringDocumentCandidate`
   (`confidence: 0.60`). Positive recurring amounts are income and are excluded;
   recurring income is never projected as a bill candidate.
@@ -83,6 +92,7 @@ only `complete` committed generations. OWL must not interpret omissions from a
   excluded. The classification is frozen per committed generation, so late historical
   publication cannot change an earlier response. Amount, cadence, next date, category,
   and account references are not emitted.
+  Recurring candidates never contain any of the account identity fields.
 - Inactive source facts remain visible with `active: false` and the corresponding
   `inactive_non_cash_account` or `inactive_recurring_obligation` basis. This reports
   source deactivation; it never instructs OWL to delete confirmed policy or prior
@@ -127,6 +137,18 @@ reason codes they do not use.
 The projection excludes balances, amounts, transactions, notes, credentials,
 authorization values, cookies, session material, URLs, ownership, document content,
 raw upstream responses, raw account identifiers, and raw recurring identifiers.
-Account display hints contain only normalized account type. Recurring display hints
-use the generic `Recurring expense` label and never contain merchant or recurring-item
-display text.
+Account display hints use the normalized account name when available and otherwise use
+only the normalized account type. Recurring display hints use the generic
+`Recurring expense` label and never contain merchant or recurring-item display text.
+Account names and institution names are normalized, bounded display labels.
+Labels that cannot satisfy the bound are omitted rather than failing the projection.
+`accountLastFour` is derived from the normalized Bridge mask and never returns more
+than four digits; absent or unusable masks are omitted. No Monarch deep link is emitted
+because the normalized account DTO does not provide one.
+
+## Rollout compatibility
+
+Deploy OWL's additive optional-field reader before deploying this Tyrion producer.
+The envelope remains version `1`, but older strict OWL readers may reject the newly
+emitted account fields. Existing generation-addressed projections without descriptors
+remain valid because all four account identity fields are optional.

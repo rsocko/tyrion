@@ -2483,6 +2483,18 @@
                       "maxLength": 160,
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
                     },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "institutionName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
                     "accountType": {
                       "type": "string",
                       "enum": [
@@ -2494,6 +2506,12 @@
                         "investment",
                         "other"
                       ]
+                    },
+                    "accountLastFour": {
+                      "type": "string",
+                      "minLength": 4,
+                      "maxLength": 4,
+                      "pattern": "^[0-9]{4}$"
                     },
                     "active": {
                       "type": "boolean"
@@ -10501,62 +10519,148 @@
             "maxItems": 6000,
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "seriesRef": {
-                  "type": "string",
-                  "pattern": "^expectation-v1_[A-Za-z0-9_-]{43}$"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "seriesRef": {
+                      "type": "string",
+                      "pattern": "^expectation-v1_[A-Za-z0-9_-]{43}$"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "displayHint": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "cadence": {
+                      "type": "null"
+                    },
+                    "nextExpectedDate": {
+                      "type": "null"
+                    },
+                    "confidence": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "basis": {
+                      "minItems": 1,
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9_]+$"
+                      }
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "accountStatementCandidate"
+                    },
+                    "accountName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "institutionName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "accountType": {
+                      "type": "string",
+                      "enum": [
+                        "checking",
+                        "savings",
+                        "credit",
+                        "cash",
+                        "loan",
+                        "investment",
+                        "other"
+                      ]
+                    },
+                    "accountLastFour": {
+                      "type": "string",
+                      "minLength": 4,
+                      "maxLength": 4,
+                      "pattern": "^[0-9]{4}$"
+                    }
+                  },
+                  "required": [
+                    "seriesRef",
+                    "active",
+                    "displayHint",
+                    "cadence",
+                    "nextExpectedDate",
+                    "confidence",
+                    "basis",
+                    "kind"
+                  ],
+                  "additionalProperties": false
                 },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "accountStatementCandidate",
-                    "recurringDocumentCandidate"
-                  ]
-                },
-                "active": {
-                  "type": "boolean"
-                },
-                "displayHint": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120,
-                  "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
-                },
-                "cadence": {
-                  "type": "null"
-                },
-                "nextExpectedDate": {
-                  "type": "null"
-                },
-                "confidence": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1
-                },
-                "basis": {
-                  "minItems": 1,
-                  "maxItems": 20,
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64,
-                    "pattern": "^[a-z0-9_]+$"
-                  }
+                {
+                  "type": "object",
+                  "properties": {
+                    "seriesRef": {
+                      "type": "string",
+                      "pattern": "^expectation-v1_[A-Za-z0-9_-]{43}$"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "displayHint": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "cadence": {
+                      "type": "null"
+                    },
+                    "nextExpectedDate": {
+                      "type": "null"
+                    },
+                    "confidence": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "basis": {
+                      "minItems": 1,
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9_]+$"
+                      }
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "recurringDocumentCandidate"
+                    }
+                  },
+                  "required": [
+                    "seriesRef",
+                    "active",
+                    "displayHint",
+                    "cadence",
+                    "nextExpectedDate",
+                    "confidence",
+                    "basis",
+                    "kind"
+                  ],
+                  "additionalProperties": false
                 }
-              },
-              "required": [
-                "seriesRef",
-                "kind",
-                "active",
-                "displayHint",
-                "cadence",
-                "nextExpectedDate",
-                "confidence",
-                "basis"
-              ],
-              "additionalProperties": false
+              ]
             }
           }
         },
