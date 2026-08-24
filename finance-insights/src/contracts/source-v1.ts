@@ -183,17 +183,27 @@ export const categorySourceFactSchema = z.strictObject({
   active: z.boolean(),
 });
 
+export const accountTypeSchema = z.enum([
+  'checking',
+  'savings',
+  'credit',
+  'cash',
+  'loan',
+  'investment',
+  'other',
+]);
+
+export const accountLastFourSchema = z
+  .string()
+  .length(4)
+  .regex(/^[0-9]{4}$/, 'must contain exactly four digits');
+
 export const accountSourceFactSchema = z.strictObject({
   sourceRef: sourceReferenceSchema,
-  accountType: z.enum([
-    'checking',
-    'savings',
-    'credit',
-    'cash',
-    'loan',
-    'investment',
-    'other',
-  ]),
+  displayName: normalizedDisplayNameSchema.optional(),
+  institutionName: normalizedDisplayNameSchema.optional(),
+  accountType: accountTypeSchema,
+  accountLastFour: accountLastFourSchema.optional(),
   active: z.boolean(),
 });
 

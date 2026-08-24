@@ -56,6 +56,21 @@ describe('executable contract and internal package boundary', () => {
         properties?: {
           signals?: {
             items?: {
+              anyOf?: Array<{
+                additionalProperties?: boolean;
+                properties?: {
+                  kind?: { const?: string };
+                  basis?: { minItems?: number; maxItems?: number };
+                  accountName?: { minLength?: number; maxLength?: number };
+                  institutionName?: { minLength?: number; maxLength?: number };
+                  accountType?: { enum?: string[] };
+                  accountLastFour?: {
+                    minLength?: number;
+                    maxLength?: number;
+                    pattern?: string;
+                  };
+                };
+              }>;
               properties?: {
                 basis?: { minItems?: number; maxItems?: number };
               };
@@ -64,10 +79,53 @@ describe('executable contract and internal package boundary', () => {
         };
       }
     ).properties?.signals?.items;
-    expect(expectationSignal?.properties?.basis).toMatchObject({
-      minItems: 1,
-      maxItems: 20,
+    expect(expectationSignal?.anyOf).toHaveLength(2);
+    expect(
+       expectationSignal?.anyOf?.every(
+         (variant) =>
+           variant.additionalProperties === false &&
+           variant.properties?.basis?.minItems === 1 &&
+           variant.properties?.basis?.maxItems === 20
+       )
+    ).toBe(true);
+    const accountSignalSchema = expectationSignal?.anyOf?.find(
+       (variant) =>
+         variant.properties?.kind?.const === 'accountStatementCandidate'
+    );
+    expect(accountSignalSchema?.properties?.accountName).toMatchObject({
+       minLength: 1,
+       maxLength: 120,
     });
+    expect(accountSignalSchema?.properties?.institutionName).toMatchObject({
+       minLength: 1,
+       maxLength: 120,
+    });
+    expect(accountSignalSchema?.properties?.accountType?.enum).toEqual([
+       'checking',
+       'savings',
+       'credit',
+       'cash',
+       'loan',
+       'investment',
+       'other',
+    ]);
+    expect(accountSignalSchema?.properties?.accountLastFour).toMatchObject({
+       minLength: 4,
+       maxLength: 4,
+       pattern: '^[0-9]{4}$',
+    });
+    const recurringSignalSchema = expectationSignal?.anyOf?.find(
+       (variant) =>
+         variant.properties?.kind?.const === 'recurringDocumentCandidate'
+    );
+    expect(recurringSignalSchema?.properties).not.toHaveProperty('accountName');
+    expect(recurringSignalSchema?.properties).not.toHaveProperty(
+       'institutionName'
+    );
+    expect(recurringSignalSchema?.properties).not.toHaveProperty('accountType');
+    expect(recurringSignalSchema?.properties).not.toHaveProperty(
+       'accountLastFour'
+    );
     expect(JSON.stringify(document)).not.toContain(
       '"minimum":-9007199254740991'
     );
