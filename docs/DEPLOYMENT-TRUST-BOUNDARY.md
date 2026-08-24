@@ -189,7 +189,9 @@ container and backed by the persistent volume.
 `TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED` default to `false`. Deployment enables them
 in rollout order only after mounting or restoring the database and validating the
 metadata-only health state. No gate, private authority, or state path is exposed to
-browser code.
+browser code. The homelab environment example enables only the read gate because OWL's
+canonical `GET /api/connector/v1/document-expectation-signals` pull requires it; the
+route remains bearer-authenticated and rejects browser-originated requests.
 
 Connector `GET /health` is composed inside the server-only gateway: it makes exactly
 one protected Bridge `/auth/status` verification with `BRIDGE_API_TOKEN`, validates

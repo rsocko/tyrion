@@ -73,7 +73,7 @@ Insights projection:
 | `GET` | `/recurring` | No query or body |
 | `GET` | `/budgets` | No query or body |
 | `POST` | `/sync?days=1..365` | One optional `days` value; no body; default 90 |
-| `GET` | `/document-expectation-signals?connectorRef={connectorRef}` | One required connector reference; current promoted snapshot; no body; read gate and 12 MiB projection bound |
+| `GET` | `/document-expectation-signals` | No query or body; latest promoted snapshot across connector scope; read gate and 12 MiB projection bound |
 | `GET` | `/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; no body; read gate and 12 MiB projection bound |
 
 Unknown routes, methods, parameters, duplicate singleton parameters, malformed values,
@@ -239,14 +239,21 @@ loads reusable session material.
 
 The same read service publishes the pull-only `DocumentExpectationSignalsV1`
 projection for OWL. The preferred bearer-protected, browser-rejecting connector route
-resolves the current promoted generation; the generation-addressed connector and
-private routes remain available for immutable replay:
+resolves the latest promoted generation across connector scope; the
+generation-addressed connector and private routes remain available for immutable
+replay:
 
 ```text
-GET /api/connector/v1/document-expectation-signals?connectorRef={connectorRef}
+GET /api/connector/v1/document-expectation-signals
 GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 GET /api/connector/v1/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 ```
+
+The collection route is OWL's canonical flow. It selects the greatest promotion
+timestamp across current promoted connector snapshots, breaking ties by ordinal
+`connectorRef` and then `sourceGeneration`; the selected connector reference remains
+in the response projection. Generation-addressed routes remain connector-scoped for
+immutable replay.
 
 Its independently versioned response, opaque series identity, advisory-only evidence,
 OWL-owned durable negative decisions, complete-snapshot deactivation semantics,

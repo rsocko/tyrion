@@ -481,6 +481,24 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     return row ? sourceRecord(row) : null;
   }
 
+  async findLatestPromotedSourceGeneration(): Promise<SourceGenerationRecordV1 | null> {
+    if (!this.connectionContext.getStore()) {
+      return this.withConnection(() =>
+        this.findLatestPromotedSourceGeneration()
+      );
+    }
+    const row = this.database
+      .prepare(
+        `SELECT *
+         FROM finance_insight_source_generations
+         WHERE state = 'promoted'
+         ORDER BY promoted_at DESC, connector_ref ASC, source_generation ASC
+         LIMIT 1`
+      )
+      .get() as SourceGenerationRow | undefined;
+    return row ? sourceRecord(row) : null;
+  }
+
   async putSourceBatch(input: SourceFactBatchV1): Promise<void> {
     if (!this.connectionContext.getStore()) {
       return this.withConnection(() => this.putSourceBatch(input));

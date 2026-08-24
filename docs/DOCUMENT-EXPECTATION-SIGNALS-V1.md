@@ -7,7 +7,7 @@ that a statement, invoice, receipt, bill, or other document exists.
 ## Endpoint and trust boundary
 
 ```http
-GET /api/connector/v1/document-expectation-signals?connectorRef={connectorRef}
+GET /api/connector/v1/document-expectation-signals
 GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 GET /api/connector/v1/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 ```
@@ -17,12 +17,15 @@ HTTPS route uses the connector gateway's existing `BRIDGE_API_TOKEN` bearer
 authentication and browser-origin rejection. All routes call the same Finance
 Insights read projection and read rollout gate; the public routes do not proxy this
 operation to Monarch Bridge. No route is a browser route, mutation, webhook, or
-push feed. The generation-free public route resolves the connector's current promoted
-snapshot, so callers do not discover or supply a generation ID. Its response still
-includes `sourceGeneration` for downstream idempotency. The generation-addressed
-routes pull one immutable committed generation and remain available for replay. An
-unknown connector or generation, or a staging, rejected, or expired generation,
-returns a stable not-found error rather than partial data.
+push feed. The generation-free public route accepts no query parameters and resolves
+the latest promoted committed snapshot across connector scope, so OWL does not discover
+or configure either a connector reference or generation ID. "Latest" is the greatest
+promotion timestamp; ties choose the ordinally smallest `connectorRef`, then
+`sourceGeneration`. Its response still includes both identity fields for downstream
+idempotency and reconciliation. The generation-addressed routes pull one immutable
+committed generation and retain their required `connectorRef` for replay. An unknown
+connector or generation, or a staging, rejected, or expired generation, returns a
+stable not-found error rather than partial data.
 
 The response is generation-addressable and idempotent: callers use the returned
 `sourceGeneration` as the snapshot identity. Repeated generation-addressed reads of

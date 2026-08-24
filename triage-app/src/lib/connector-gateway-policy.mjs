@@ -95,6 +95,18 @@ export function evaluateConnectorRequest(method, segments, searchParams) {
     segments[0] === "document-expectation-signals"
   ) {
     if (method !== "GET") return methodNotAllowed();
+    if (segments.length === 1) {
+      if ([...searchParams.keys()].length > 0) return queryNotAccepted();
+    } else if (
+      [...searchParams.keys()].some((key) => key !== "connectorRef") ||
+      searchParams.getAll("connectorRef").length !== 1
+    ) {
+      return reject(
+        422,
+        "invalid_query",
+        "Replay requires exactly one connectorRef parameter"
+      );
+    }
     return financeInsightAllowed();
   }
 

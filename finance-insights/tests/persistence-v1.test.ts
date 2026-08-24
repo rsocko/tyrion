@@ -367,6 +367,52 @@ describe('SQLite migrations and staged source publication', () => {
     harness.store.close();
   });
 
+  it('selects the latest promoted generation across connector scope deterministically', async () => {
+    const harness = await createHarness();
+    expect(await harness.store.findLatestPromotedSourceGeneration()).toBeNull();
+
+    const first = makePublicationForConnector(
+      'connector-z',
+      1,
+      '2026-08-10T15:00:00Z'
+    );
+    await publish(harness, first);
+    harness.clock.value = '2026-08-10T15:06:00Z';
+    const tiedSecond = makePublicationForConnector(
+      'connector-b',
+      1,
+      '2026-08-10T15:01:00Z'
+    );
+    const tiedWinner = makePublicationForConnector(
+      'connector-a',
+      1,
+      '2026-08-10T15:02:00Z'
+    );
+    await publish(harness, tiedSecond);
+    await publish(harness, tiedWinner);
+
+    expect(
+      (await harness.store.findLatestPromotedSourceGeneration())?.request
+    ).toMatchObject({
+      connectorRef: tiedWinner.request.connectorRef,
+      sourceGeneration: tiedWinner.request.sourceGeneration,
+    });
+    harness.clock.value = '2026-08-10T15:07:00Z';
+    const latest = makePublicationForConnector(
+      'connector-z',
+      2,
+      '2026-08-10T15:03:00Z'
+    );
+    await publish(harness, latest);
+    expect(
+      (await harness.store.findLatestPromotedSourceGeneration())?.request
+    ).toMatchObject({
+      connectorRef: latest.request.connectorRef,
+      sourceGeneration: latest.request.sourceGeneration,
+    });
+    harness.store.close();
+  });
+
   it('freezes recurring obligation classification per committed generation', async () => {
     const harness = await createHarness();
     const recurring = (amountMinor: number | null, active: boolean) => [
