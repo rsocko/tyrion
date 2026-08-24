@@ -33,6 +33,7 @@ const FINANCE_INSIGHT_CURSOR_CHECKSUM_NAMESPACE = new TextEncoder().encode(
 export interface FinanceInsightRuntimeGates {
   evaluationWrite: boolean;
   read: boolean;
+  projectionRefresh: boolean;
   actions: boolean;
   automationWrite: boolean;
 }
@@ -188,6 +189,8 @@ export async function createFinanceInsightRuntime(
         evaluationWrite:
           environment.TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED === "true",
         read: environment.TYRION_FINANCE_INSIGHT_READ_ENABLED === "true",
+        projectionRefresh:
+          environment.TYRION_FINANCE_INSIGHT_PROJECTION_REFRESH_ENABLED === "true",
         actions: environment.TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED === "true",
         automationWrite:
           environment.TYRION_FINANCE_AUTOMATION_WRITE_ENABLED === "true",
@@ -256,6 +259,7 @@ export async function financeInsightHealth(): Promise<{
     const enabled =
       runtime.gates.evaluationWrite ||
       runtime.gates.read ||
+      runtime.gates.projectionRefresh ||
       runtime.gates.actions ||
       runtime.gates.automationWrite;
     return {

@@ -52,7 +52,8 @@ export class FinanceInsightLifecycleServiceV1 {
 
   async commitSourceGeneration(
     connectorRef: string,
-    input: SourceGenerationCommitRequestV1
+    input: SourceGenerationCommitRequestV1,
+    expectedCurrentSourceGeneration?: string | null
   ): Promise<CommitSourceGenerationResultV1> {
     const request = parseSourceGenerationCommitRequestV1(input);
     const policy = await this.store.policies.current();
@@ -65,7 +66,8 @@ export class FinanceInsightLifecycleServiceV1 {
       request,
       this.detectorSetVersion,
       policy.policyVersion,
-      this.householdScope
+      this.householdScope,
+      expectedCurrentSourceGeneration
     );
   }
 

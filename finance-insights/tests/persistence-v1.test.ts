@@ -367,6 +367,28 @@ describe('SQLite migrations and staged source publication', () => {
     harness.store.close();
   });
 
+  it('rejects promotion when the observed current generation changed', async () => {
+    const harness = await createHarness();
+    const older = makePublication(1, '2026-08-10T15:00:00Z');
+    const newer = makePublication(2, '2026-08-10T15:10:00Z');
+    await stage(harness, older);
+    expect((await publish(harness, newer)).generation.state).toBe('promoted');
+
+    await expectStoreError(
+      harness.service.commitSourceGeneration(
+        older.request.connectorRef,
+        older.commit,
+        null
+      ),
+      'source_generation_conflict'
+    );
+    expect(
+      (await harness.store.findCurrentSourceGeneration(older.request.connectorRef))
+        ?.request.sourceGeneration
+    ).toBe(newer.request.sourceGeneration);
+    harness.store.close();
+  });
+
   it('selects the latest promoted generation across connector scope deterministically', async () => {
     const harness = await createHarness();
     expect(await harness.store.findLatestPromotedSourceGeneration()).toBeNull();

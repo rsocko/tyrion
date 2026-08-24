@@ -24,6 +24,9 @@ import {
   composeConnectorHealth,
   CONNECTOR_HEALTH_RESPONSE_BYTES,
 } from "../src/lib/connector-health.mjs";
+import {
+  refreshCurrentDocumentExpectationGeneration,
+} from "../src/lib/current-document-expectation.mjs";
 import { connectionPresentation } from "../src/lib/operational-state.mjs";
 import { policyStatePresentation } from "../src/lib/policy-ui-state.mjs";
 import {
@@ -68,6 +71,8 @@ let bridgePathResponseModes = new Map();
 let authState = "connected";
 let healthPayloadOverride;
 let authStatusPayloadOverride;
+let bridgeAccounts;
+let bridgeRecurring;
 let previews = new Map();
 let attributionActionRecords = new Map();
 let attributionActionReplays = new Map();
@@ -230,7 +235,25 @@ before(async () => {
                 authState,
                 email: null,
               }
-            : request.url === "/auth/logout"
+            : request.url === "/accounts"
+              ? {
+                  contractVersion: "1.0",
+                  provenance: {
+                    provider: "live",
+                    fetchedAt: "2026-08-11T13:59:00.000Z",
+                  },
+                  accounts: bridgeAccounts,
+                }
+              : request.url === "/recurring"
+                ? {
+                    contractVersion: "1.0",
+                    provenance: {
+                      provider: "live",
+                      fetchedAt: "2026-08-11T14:00:00.000Z",
+                    },
+                    recurring: bridgeRecurring,
+                  }
+                : request.url === "/auth/logout"
               ? { contractVersion: "1.0", status: "logged_out", message: "Session cleared", email: null }
               : request.url === "/sync?days=30"
                 ? { contractVersion: "1.0", status: "complete" }
@@ -429,6 +452,7 @@ before(async () => {
       TYRION_FINANCE_INSIGHT_STORE_PATH: financeInsightStorePath,
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "true",
+      TYRION_FINANCE_INSIGHT_PROJECTION_REFRESH_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "true",
       TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
@@ -566,6 +590,232 @@ function financePublication(sequence, transactions = [], additionalFacts = {}) {
     },
   };
 }
+
+test("current OWL publication bootstraps a fresh store and advances only for changed facts", async () => {
+  const storePath = resolve(temporaryStateDirectory, "fresh-owl-projection.sqlite");
+  const store = new financeContract.FinanceInsightSqliteStoreV1({
+    path: storePath,
+    cursorChecksumNamespace: Buffer.from(
+      "tyrion/finance-insight/cursor-checksum/v1",
+      "utf8"
+    ),
+    clock: () => "2026-08-11T14:00:00.000Z",
+  });
+  const policy = financeContract.createCandidatePolicySnapshotV1({
+    policyVersion: 1,
+    effectiveAt: "2026-08-01T00:00:00.000Z",
+    currency: "USD",
+    timezone: "America/New_York",
+  });
+  await store.policies.append(policy);
+  const lifecycle = new financeContract.FinanceInsightLifecycleServiceV1({
+    store,
+    householdScope: "homelab-household",
+    detectorSetVersion: "detectors-v1",
+  });
+  const runtime = {
+    store,
+    lifecycle,
+    orchestrator: { run: async () => undefined },
+  };
+  const source = {
+    accounts: [
+      {
+        id: "invented-card",
+        displayName: "Invented Card",
+        type: "credit",
+        mask: null,
+        institution: null,
+        currentBalance: 0,
+        isActive: true,
+      },
+    ],
+    recurring: [
+      {
+        id: "invented-utility",
+        merchant: "Invented Utility",
+        amount: -42.5,
+        frequency: "monthly",
+        nextExpectedDate: "2026-09-01",
+        account: null,
+        category: null,
+      },
+    ],
+  };
+  const fetchImpl = async (url, options) => {
+    assert.equal(options.headers.Authorization.slice("Bearer ".length), serviceToken);
+    const items = url.pathname === "/accounts" ? source.accounts : source.recurring;
+    const key = url.pathname === "/accounts" ? "accounts" : "recurring";
+    return Response.json(
+      {
+        contractVersion: "1.0",
+        provenance: {
+          provider: "live",
+          fetchedAt:
+            url.pathname === "/accounts"
+              ? "2026-08-11T13:59:00.000Z"
+              : "2026-08-11T14:00:00.000Z",
+        },
+        [key]: items,
+      },
+      {
+        headers: {
+          "X-Monarch-Contract-Version": "1.0",
+        },
+      }
+    );
+  };
+  const options = {
+    runtime,
+    bridgeBaseUrl: new URL("https://bridge.example.invalid/"),
+    bridgeToken: serviceToken,
+    fetchImpl,
+  };
+
+  try {
+    const first = await refreshCurrentDocumentExpectationGeneration(options);
+    const replay = await refreshCurrentDocumentExpectationGeneration(options);
+    assert.equal(first.state, "promoted");
+    assert.equal(first.request.sourceSequence, 1);
+    assert.equal(replay.request.sourceGeneration, first.request.sourceGeneration);
+    assert.equal(
+      (await store.loadProjection(
+        first.request.connectorRef,
+        first.request.sourceGeneration
+      )).accounts.length,
+      1
+    );
+
+    await lifecycle.beginSourceGeneration(
+      financeContract.parseSourceGenerationCreateRequestV1({
+        ...first.request,
+        sourceGeneration: "interrupted-owl-publication",
+        sourceSequence: 2,
+        idempotencyKey: "interrupted-owl-publication-begin",
+      })
+    );
+    source.accounts.push({
+      id: "invented-savings",
+      displayName: "Invented Savings",
+      type: "savings",
+      mask: null,
+      institution: null,
+      currentBalance: 0,
+      isActive: true,
+    });
+    const updated = await refreshCurrentDocumentExpectationGeneration(options);
+    assert.equal(updated.state, "promoted");
+    assert.equal(updated.request.sourceSequence, 3);
+    assert.notEqual(updated.request.sourceGeneration, first.request.sourceGeneration);
+    assert.equal(
+      (
+        await store.sourceGenerations.find(
+          first.request.connectorRef,
+          first.request.sourceGeneration
+        )
+      ).state,
+      "historical"
+    );
+    assert.equal(
+      (await store.loadProjection(
+        first.request.connectorRef,
+        first.request.sourceGeneration
+      )).accounts.length,
+      1
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("current OWL publication refetches before resolving an overtaken commit", async () => {
+  const promoted = {
+    state: "promoted",
+    request: {
+      connectorRef: "monarch-current-document-expectations",
+      sourceGeneration: "concurrent-promoted-generation",
+      sourceSequence: 3,
+    },
+  };
+  const historical = {
+    state: "historical",
+    assignedDetectorSetVersion: "detectors-v1",
+    assignedPolicyVersion: 1,
+    request: {
+      connectorRef: "monarch-current-document-expectations",
+      sourceGeneration: "concurrent-historical-generation",
+      sourceSequence: 2,
+    },
+  };
+  let currentReads = 0;
+  const runtime = {
+    store: {
+      findCurrentSourceGeneration: async () =>
+        currentReads++ === 0 ? null : promoted,
+      findLatestSourceGeneration: async () => ({
+        state: "staging",
+        request: { sourceSequence: 1 },
+      }),
+      loadProjection: async () => ({
+        accounts: [
+          { sourceRef: "invented-card", accountType: "credit", active: true },
+        ],
+        recurring: [],
+      }),
+    },
+    lifecycle: {
+      beginSourceGeneration: async () => undefined,
+      putSourceBatch: async () => undefined,
+      commitSourceGeneration: async (_connectorRef, _commit, expectedCurrent) => {
+        assert.equal(expectedCurrent, null);
+        return {
+          generation: historical,
+          evaluation: null,
+        };
+      },
+    },
+    orchestrator: { run: async () => undefined },
+  };
+  let fetchCalls = 0;
+  const fetchImpl = async (url) => {
+    fetchCalls += 1;
+    return Response.json(
+      {
+        contractVersion: "1.0",
+        provenance: {
+          provider: "live",
+          fetchedAt: "2026-08-11T14:00:00.000Z",
+        },
+        ...(url.pathname === "/accounts"
+          ? {
+              accounts: [
+                {
+                  id: "invented-card",
+                  displayName: "Invented Card",
+                  type: "credit",
+                  mask: null,
+                  institution: null,
+                  currentBalance: 0,
+                  isActive: true,
+                },
+              ],
+            }
+          : { recurring: [] }),
+      },
+      { headers: { "X-Monarch-Contract-Version": "1.0" } }
+    );
+  };
+
+  const result = await refreshCurrentDocumentExpectationGeneration({
+    runtime,
+    bridgeBaseUrl: new URL("https://bridge.example.invalid/"),
+    bridgeToken: serviceToken,
+    fetchImpl,
+  });
+  assert.equal(result, promoted);
+  assert.equal(currentReads, 2);
+  assert.equal(fetchCalls, 4);
+});
 
 test("finance insight runtime applies retention cleanup on startup", async () => {
   const health = await fetch(`${uiUrl}/api/health`);
@@ -1170,9 +1420,60 @@ test("finance insight service publishes current and generation-addressed OWL pro
   });
   assert.equal(currentResponse.status, 200);
   assert.equal(currentResponse.headers.get("cache-control"), "no-store");
-  assert.deepEqual(await currentResponse.json(), projection);
-  assert.equal(receivedRequests.length, beforeConnectorRead);
+  const currentProjection = financeContract.parseDocumentExpectationSignalsV1(
+    await currentResponse.json()
+  );
+  assert.equal(
+    currentProjection.connectorRef,
+    "monarch-current-document-expectations"
+  );
+  assert.equal(currentProjection.signals.length, 2);
+  assert.equal(receivedRequests.length, beforeConnectorRead + 2);
+  assert.deepEqual(
+    receivedRequests.slice(-2).map(({ path, authorized }) => ({ path, authorized })),
+    [
+      { path: "/accounts", authorized: true },
+      { path: "/recurring", authorized: true },
+    ]
+  );
 
+  const unchangedResponse = await fetch(`${uiUrl}${currentConnectorPath}`, {
+    headers: insightHeaders({ Host: undefined }),
+  });
+  assert.equal(unchangedResponse.status, 200);
+  assert.equal(
+    (await unchangedResponse.json()).sourceGeneration,
+    currentProjection.sourceGeneration
+  );
+
+  bridgeAccounts.push({
+    id: "invented-savings",
+    displayName: "Invented Savings",
+    type: "savings",
+    mask: null,
+    institution: null,
+    currentBalance: 0,
+    isActive: true,
+  });
+  const updatedCurrentResponse = await fetch(`${uiUrl}${currentConnectorPath}`, {
+    headers: insightHeaders({ Host: undefined }),
+  });
+  assert.equal(updatedCurrentResponse.status, 200);
+  const updatedCurrentProjection = await updatedCurrentResponse.json();
+  assert.notEqual(
+    updatedCurrentProjection.sourceGeneration,
+    currentProjection.sourceGeneration
+  );
+  assert.equal(updatedCurrentProjection.signals.length, 3);
+  const currentReplay = await fetch(
+    `${uiUrl}/api/connector/v1/document-expectation-signals/${currentProjection.sourceGeneration}` +
+      `?connectorRef=${currentProjection.connectorRef}`,
+    { headers: insightHeaders({ Host: undefined }) }
+  );
+  assert.equal(currentReplay.status, 200);
+  assert.deepEqual(await currentReplay.json(), currentProjection);
+
+  const beforeRejectedReads = receivedRequests.length;
   for (const [options, status, code] of [
     [{}, 401, "connector_auth_required"],
     [
@@ -1197,7 +1498,7 @@ test("finance insight service publishes current and generation-addressed OWL pro
     const rejected = await fetch(`${uiUrl}${connectorPath}`, options);
     assert.equal(rejected.status, status);
     assert.equal((await rejected.json()).error.code, code);
-    assert.equal(receivedRequests.length, beforeConnectorRead);
+    assert.equal(receivedRequests.length, beforeRejectedReads);
   }
 
   const invalidPublicQuery = await fetch(
@@ -1275,15 +1576,27 @@ test("finance insight service publishes current and generation-addressed OWL pro
   const currentMaximumProjection = await currentMaximumResponse.json();
   assert.equal(
     currentMaximumProjection.sourceGeneration,
-    maximumPublication.request.sourceGeneration
+    updatedCurrentProjection.sourceGeneration
   );
-  assert.deepEqual(currentMaximumProjection, maximumProjection);
+  assert.deepEqual(currentMaximumProjection, updatedCurrentProjection);
   assert.ok(Buffer.byteLength(JSON.stringify(maximumProjection), "utf8") > 512 * 1024);
   assert.ok(
     maximumProjection.signals.every(
       (signal) => !signal.displayHint.startsWith("Private recurring name")
     )
   );
+
+  bridgePathResponseModes.set("/accounts", "non-2xx");
+  const unavailable = await fetch(
+    `${uiUrl}/api/connector/v1/document-expectation-signals`,
+    { headers: insightHeaders({ Host: undefined }) }
+  );
+  assert.equal(unavailable.status, 503);
+  assert.equal(
+    (await unavailable.json()).error.code,
+    "insight_source_unavailable"
+  );
+  bridgePathResponseModes.clear();
 });
 
 test("finance insight HTTP bounds and filters fail without unexpected 500", async () => {
@@ -1336,6 +1649,7 @@ test("finance insight rollout gates fail closed and health remains metadata-only
       ),
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_PROJECTION_REFRESH_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "false",
       TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
@@ -1402,6 +1716,49 @@ test("finance insight rollout gates fail closed and health remains metadata-only
     );
   } finally {
     await stopProcess(disabledProcess);
+  }
+});
+
+test("OWL projection refresh gate fails closed independently of read access", async () => {
+  const port = await freePort();
+  const serverUrl = `http://127.0.0.1:${port}`;
+  const server = spawn(process.execPath, [standaloneServer], {
+    cwd: standaloneRoot,
+    env: {
+      ...process.env,
+      BRIDGE_URL: fakeBridgeUrl,
+      BRIDGE_API_TOKEN: serviceToken,
+      TYRION_POLICY_STORE_PATH: policyStorePath,
+      TYRION_FINANCE_INSIGHT_STORE_PATH: resolve(
+        temporaryStateDirectory,
+        "finance-insights-refresh-disabled.sqlite"
+      ),
+      TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_READ_ENABLED: "true",
+      TYRION_FINANCE_INSIGHT_PROJECTION_REFRESH_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "false",
+      TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "false",
+      TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
+      HOSTNAME: "127.0.0.1",
+      PORT: String(port),
+    },
+    stdio: "ignore",
+  });
+  try {
+    await waitForServer(serverUrl, server);
+    const beforeCount = receivedRequests.length;
+    const response = await fetch(
+      `${serverUrl}/api/connector/v1/document-expectation-signals`,
+      { headers: insightHeaders({ Host: undefined }) }
+    );
+    assert.equal(response.status, 503);
+    assert.equal(
+      (await response.json()).error.code,
+      "insight_service_not_configured"
+    );
+    assert.equal(receivedRequests.length, beforeCount);
+  } finally {
+    await stopProcess(server);
   }
 });
 
@@ -1514,6 +1871,46 @@ beforeEach(() => {
   authState = "connected";
   healthPayloadOverride = undefined;
   authStatusPayloadOverride = undefined;
+  bridgeAccounts = [
+    {
+      id: "invented-card",
+      displayName: "Invented Card",
+      type: "credit",
+      mask: null,
+      institution: null,
+      currentBalance: 0,
+      isActive: true,
+    },
+    {
+      id: "invented-cash",
+      displayName: "Invented Cash",
+      type: "cash",
+      mask: null,
+      institution: null,
+      currentBalance: 0,
+      isActive: true,
+    },
+  ];
+  bridgeRecurring = [
+    {
+      id: "invented-utility",
+      merchant: "Invented Utility",
+      amount: -42.5,
+      frequency: "monthly",
+      nextExpectedDate: "2026-09-01",
+      account: null,
+      category: null,
+    },
+    {
+      id: "invented-income",
+      merchant: "Invented Income",
+      amount: 5000,
+      frequency: "monthly",
+      nextExpectedDate: "2026-09-01",
+      account: null,
+      category: null,
+    },
+  ];
   expireNextPreview = false;
   reattributionResponseMode = "normal";
   attributionActionRecords = new Map();

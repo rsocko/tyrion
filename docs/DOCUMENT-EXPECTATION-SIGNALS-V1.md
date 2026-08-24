@@ -15,21 +15,30 @@ GET /api/connector/v1/document-expectation-signals/{sourceGeneration}?connectorR
 The private route retains the Finance Insights internal authority check. The public
 HTTPS route uses the connector gateway's existing `BRIDGE_API_TOKEN` bearer
 authentication and browser-origin rejection. All routes call the same Finance
-Insights read projection and read rollout gate; the public routes do not proxy this
-operation to Monarch Bridge. No route is a browser route, mutation, webhook, or
-push feed. The generation-free public route accepts no query parameters and resolves
-the latest promoted committed snapshot across connector scope, so OWL does not discover
-or configure either a connector reference or generation ID. "Latest" is the greatest
-promotion timestamp; ties choose the ordinally smallest `connectorRef`, then
-`sourceGeneration`. Its response still includes both identity fields for downstream
-idempotency and reconciliation. The generation-addressed routes pull one immutable
+Insights read projection and read rollout gate. No route is a browser route, externally
+available mutation, webhook, or push feed. The generation-free public route accepts no
+query parameters and additionally requires the server-only projection-refresh rollout
+gate. That narrow gate does not enable the general source-generation ingestion API. On
+every authenticated read, Tyrion obtains the bounded normalized account and recurring
+DTOs from its private Monarch Bridge and promotes them as a dedicated current projection
+when their canonical content changed. A fresh Finance Insights store therefore
+initializes on the first successful read. Content-equivalent reads reuse the existing
+generation and changed content advances its source sequence and creates a new immutable
+generation. OWL does not discover or configure either a connector reference or
+generation ID. The response still includes both identity fields for downstream
+idempotency and reconciliation.
+
+The generation-addressed routes never refresh from Monarch. They pull one immutable
 committed generation and retain their required `connectorRef` for replay. An unknown
 connector or generation, or a staging, rejected, or expired generation, returns a
-stable not-found error rather than partial data.
+stable not-found error rather than partial data. If the private normalized source is
+unavailable or invalid during a collection read, Tyrion returns the stable
+`insight_source_unavailable` error and does not fabricate an empty projection.
 
 The response is generation-addressable and idempotent: callers use the returned
-`sourceGeneration` as the snapshot identity. Repeated generation-addressed reads of
-the same `connectorRef` and `sourceGeneration` return the same projection while that
+`sourceGeneration` as the snapshot identity. Repeated collection reads with unchanged
+normalized facts return the same generation. Repeated generation-addressed reads of the
+same `connectorRef` and `sourceGeneration` return the same projection while that
 committed generation remains retained.
 
 ## Response
