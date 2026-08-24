@@ -1119,6 +1119,7 @@ test("finance insight service publishes current and generation-addressed OWL pro
     await response.json()
   );
   assert.equal(projection.contractVersion, "1");
+  assert.equal(projection.connectorRef, publication.request.connectorRef);
   assert.equal(projection.sourceGeneration, publication.request.sourceGeneration);
   assert.equal(projection.completeness, "complete");
   assert.equal(projection.signals.length, 3);
@@ -1163,8 +1164,7 @@ test("finance insight service publishes current and generation-addressed OWL pro
   assert.equal(receivedRequests.length, beforeConnectorRead);
 
   const currentConnectorPath =
-    "/api/connector/v1/document-expectation-signals" +
-    `?connectorRef=${publication.request.connectorRef}`;
+    "/api/connector/v1/document-expectation-signals";
   const currentResponse = await fetch(`${uiUrl}${currentConnectorPath}`, {
     headers: insightHeaders({ Host: undefined }),
   });
@@ -1204,23 +1204,14 @@ test("finance insight service publishes current and generation-addressed OWL pro
     `${uiUrl}/api/connector/v1/document-expectation-signals/${publication.request.sourceGeneration}`,
     { headers: insightHeaders({ Host: undefined }) }
   );
-  assert.equal(invalidPublicQuery.status, 400);
-  assert.equal((await invalidPublicQuery.json()).error.code, "invalid_filter");
+  assert.equal(invalidPublicQuery.status, 422);
+  assert.equal((await invalidPublicQuery.json()).error.code, "invalid_query");
   const invalidCurrentQuery = await fetch(
-    `${uiUrl}/api/connector/v1/document-expectation-signals`,
+    `${uiUrl}/api/connector/v1/document-expectation-signals?connectorRef=${publication.request.connectorRef}`,
     { headers: insightHeaders({ Host: undefined }) }
   );
-  assert.equal(invalidCurrentQuery.status, 400);
-  assert.equal((await invalidCurrentQuery.json()).error.code, "invalid_filter");
-  const missingCurrentGeneration = await fetch(
-    `${uiUrl}/api/connector/v1/document-expectation-signals?connectorRef=missing-connector`,
-    { headers: insightHeaders({ Host: undefined }) }
-  );
-  assert.equal(missingCurrentGeneration.status, 404);
-  assert.equal(
-    (await missingCurrentGeneration.json()).error.code,
-    "source_generation_not_found"
-  );
+  assert.equal(invalidCurrentQuery.status, 422);
+  assert.equal((await invalidCurrentQuery.json()).error.code, "invalid_query");
   const missingPublicGeneration = await fetch(
     `${uiUrl}/api/connector/v1/document-expectation-signals/missing-generation?connectorRef=${publication.request.connectorRef}`,
     { headers: insightHeaders({ Host: undefined }) }
@@ -1277,8 +1268,7 @@ test("finance insight service publishes current and generation-addressed OWL pro
   const maximumProjection = await maximumResponse.json();
   assert.equal(maximumProjection.signals.length, 6000);
   const currentMaximumResponse = await fetch(
-    `${uiUrl}/api/connector/v1/document-expectation-signals` +
-      `?connectorRef=${maximumPublication.request.connectorRef}`,
+    `${uiUrl}/api/connector/v1/document-expectation-signals`,
     { headers: insightHeaders({ Host: undefined }) }
   );
   assert.equal(currentMaximumResponse.status, 200);
@@ -1641,7 +1631,6 @@ test("connector policy exposes exactly the backend connector operations", () => 
     ["GET", "recurring"],
     ["GET", "budgets"],
     ["GET", "document-expectation-signals"],
-    ["GET", "document-expectation-signals/invented-generation"],
     ["POST", "sync"],
   ];
   for (const [method, path] of allowed) {
@@ -1659,6 +1648,22 @@ test("connector policy exposes exactly the backend connector operations", () => 
       new URLSearchParams("connectorRef=invented-connector")
     ).target,
     "finance-insight"
+  );
+  assert.equal(
+    evaluateConnectorRequest(
+      "GET",
+      ["document-expectation-signals"],
+      new URLSearchParams("connectorRef=invented-connector")
+    ).status,
+    422
+  );
+  assert.equal(
+    evaluateConnectorRequest(
+      "GET",
+      ["document-expectation-signals", "invented-generation"],
+      new URLSearchParams()
+    ).status,
+    422
   );
 
   for (const [method, path] of allowed) {
