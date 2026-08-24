@@ -239,8 +239,8 @@ loads reusable session material.
 
 The same read service publishes the pull-only `DocumentExpectationSignalsV1`
 projection for OWL. The preferred bearer-protected, browser-rejecting connector route
-resolves the latest promoted generation across connector scope; the
-generation-addressed connector and private routes remain available for immutable
+refreshes a dedicated current generation from bounded normalized Monarch Bridge data;
+the generation-addressed connector and private routes remain available for immutable
 replay:
 
 ```text
@@ -249,11 +249,14 @@ GET /api/internal/v1/finance/insights/document-expectation-signals/{sourceGenera
 GET /api/connector/v1/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}
 ```
 
-The collection route is OWL's canonical flow. It selects the greatest promotion
-timestamp across current promoted connector snapshots, breaking ties by ordinal
-`connectorRef` and then `sourceGeneration`; the selected connector reference remains
-in the response projection. Generation-addressed routes remain connector-scoped for
-immutable replay.
+The collection route is OWL's canonical flow. It refreshes a dedicated current
+generation from the private Monarch Bridge's bounded normalized account and recurring
+DTOs, including on a fresh Finance Insights store. Canonically unchanged facts reuse
+the current generation; changed facts advance the sequence and promote a new immutable
+generation. The selected connector reference remains in the response projection.
+Generation-addressed routes remain connector-scoped and never contact Monarch, so they
+continue to provide immutable replay. A failed or invalid source refresh returns
+`insight_source_unavailable` rather than an empty success-shaped snapshot.
 
 Its independently versioned response, opaque series identity, advisory-only evidence,
 OWL-owned durable negative decisions, complete-snapshot deactivation semantics,

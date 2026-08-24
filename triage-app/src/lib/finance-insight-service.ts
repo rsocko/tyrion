@@ -31,6 +31,11 @@ import {
   readFinanceInsightJson,
 } from "@/lib/finance-insight-http";
 import { getFinanceInsightRuntime } from "@/lib/finance-insight-runtime";
+import {
+  CurrentDocumentExpectationSourceError,
+  refreshCurrentDocumentExpectationGeneration,
+} from "@/lib/current-document-expectation.mjs";
+import { resolveConnectorBridgeUrl } from "@/lib/connector-gateway-policy.mjs";
 
 const ARRAY_FILTERS = new Set([
   "kind",
@@ -256,7 +261,24 @@ export async function readDocumentExpectationSignalsV1(
     if ([...searchParams.keys()].length > 0) {
       throw new FinanceInsightHttpError("invalid_filter");
     }
-    source = await runtime.store.findLatestPromotedSourceGeneration();
+    requireGate(runtime.gates.projectionRefresh);
+    const bridge = resolveConnectorBridgeUrl(process.env.BRIDGE_URL);
+    const bridgeToken = process.env.BRIDGE_API_TOKEN;
+    if (!bridge.configured || !bridgeToken) {
+      throw new FinanceInsightHttpError("insight_service_not_configured");
+    }
+    try {
+      source = await refreshCurrentDocumentExpectationGeneration({
+        runtime,
+        bridgeBaseUrl: bridge.baseUrl,
+        bridgeToken,
+      });
+    } catch (error) {
+      if (error instanceof CurrentDocumentExpectationSourceError) {
+        throw new FinanceInsightHttpError("insight_source_unavailable");
+      }
+      throw error;
+    }
   } else {
     const connectorRef = parseSingleRequiredQuery(searchParams, "connectorRef");
     source = await runtime.store.sourceGenerations.find(

@@ -481,6 +481,26 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     return row ? sourceRecord(row) : null;
   }
 
+  async findLatestSourceGeneration(
+    connectorRef: string
+  ): Promise<SourceGenerationRecordV1 | null> {
+    if (!this.connectionContext.getStore()) {
+      return this.withConnection(() =>
+        this.findLatestSourceGeneration(connectorRef)
+      );
+    }
+    const row = this.database
+      .prepare(
+        `SELECT *
+         FROM finance_insight_source_generations
+         WHERE connector_ref = ?
+         ORDER BY source_sequence DESC
+         LIMIT 1`
+      )
+      .get(connectorRef) as SourceGenerationRow | undefined;
+    return row ? sourceRecord(row) : null;
+  }
+
   async findLatestPromotedSourceGeneration(): Promise<SourceGenerationRecordV1 | null> {
     if (!this.connectionContext.getStore()) {
       return this.withConnection(() =>
@@ -605,7 +625,8 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
     input: SourceGenerationCommitRequestV1,
     detectorSetVersion: string,
     policyVersion: number,
-    householdScope: string
+    householdScope: string,
+    expectedCurrentSourceGeneration?: string | null
   ): Promise<CommitSourceGenerationResultV1> {
     if (!this.connectionContext.getStore()) {
       return this.withConnection(() =>
@@ -614,7 +635,8 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
           input,
           detectorSetVersion,
           policyVersion,
-          householdScope
+          householdScope,
+          expectedCurrentSourceGeneration
         )
       );
     }
@@ -694,6 +716,12 @@ export class FinanceInsightSqliteStoreV1 implements FinanceInsightUnitOfWorkV1 {
         current_source_generation: string | null;
         current_evaluation_sequence: number;
       };
+      if (
+        expectedCurrentSourceGeneration !== undefined &&
+        connector.current_source_generation !== expectedCurrentSourceGeneration
+      ) {
+        return storeError('source_generation_conflict');
+      }
       if (generation.source_sequence < connector.current_source_sequence) {
         this.insertProjection(generation, batches);
         this.testHook?.('afterProjection');

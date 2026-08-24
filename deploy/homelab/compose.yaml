@@ -72,8 +72,9 @@ services:
       TYRION_POLICY_DEMO_MODE: "false"
       TYRION_FINANCE_INSIGHT_STORE_PATH: /var/lib/tyrion-finance-insights/state.sqlite
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "${TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED:-false}"
-      # Enable after the persistent store is initialized so OWL can pull the canonical collection route.
+      # Enable so OWL can pull the canonical collection route; it initializes from normalized bridge data.
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "${TYRION_FINANCE_INSIGHT_READ_ENABLED:-false}"
+      TYRION_FINANCE_INSIGHT_PROJECTION_REFRESH_ENABLED: "${TYRION_FINANCE_INSIGHT_PROJECTION_REFRESH_ENABLED:-false}"
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "${TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED:-false}"
       TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "${TYRION_FINANCE_AUTOMATION_WRITE_ENABLED:-false}"
       NEXT_TELEMETRY_DISABLED: "1"

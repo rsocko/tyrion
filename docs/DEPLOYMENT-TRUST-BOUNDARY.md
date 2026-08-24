@@ -186,12 +186,16 @@ container and backed by the persistent volume.
 
 `TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED`,
 `TYRION_FINANCE_INSIGHT_READ_ENABLED`, and
-`TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED` default to `false`. Deployment enables them
+`TYRION_FINANCE_INSIGHT_PROJECTION_REFRESH_ENABLED`,
+and `TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED` default to `false`. Deployment enables them
 in rollout order only after mounting or restoring the database and validating the
 metadata-only health state. No gate, private authority, or state path is exposed to
-browser code. The homelab environment example enables only the read gate because OWL's
-canonical `GET /api/connector/v1/document-expectation-signals` pull requires it; the
-route remains bearer-authenticated and rejects browser-originated requests.
+browser code. The homelab environment example enables the read gate and the narrowly
+scoped projection-refresh gate because OWL's canonical
+`GET /api/connector/v1/document-expectation-signals` pull requires both. The refresh
+gate permits only the collection route to persist normalized account/recurring
+generations; it does not enable the general source-generation ingestion API. The route
+remains bearer-authenticated and rejects browser-originated requests.
 
 Connector `GET /health` is composed inside the server-only gateway: it makes exactly
 one protected Bridge `/auth/status` verification with `BRIDGE_API_TOKEN`, validates
