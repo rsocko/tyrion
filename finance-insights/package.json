@@ -82,7 +82,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "nanoid": "3.3.16",
+    "nanoid": "3.3.18",
     "postcss": "8.5.25"
   }
 }

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 import json
 from pathlib import Path
 import shutil
@@ -11,10 +10,6 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT_NAMES = ("finance-insights", "kid-engine", "triage-app")
-ALLOWED_ADVISORY = "https://github.com/advisories/GHSA-2v37-7h3g-55p8"
-ALLOWED_NANOID_VERSION = "3.3.16"
-ALLOWED_POSTCSS_VERSION = "8.5.25"
-EXCEPTION_EXPIRES = date(2026, 9, 9)
 
 
 def _advisory_roots(
@@ -47,52 +42,10 @@ def _advisory_roots(
 
 def check_policy(
     report: dict[str, Any],
-    lock: dict[str, Any],
-    manifest: dict[str, Any],
-    postcss_input: str,
-    today: date,
 ) -> list[str]:
-    failures: list[str] = []
-    if today > EXCEPTION_EXPIRES:
-        failures.append(
-            f"temporary Nano ID exception expired on {EXCEPTION_EXPIRES.isoformat()}"
-        )
-
-    packages = lock.get("packages", {})
-    nanoid = packages.get("node_modules/nanoid", {})
-    postcss = packages.get("node_modules/postcss", {})
-    if "nanoid" in manifest.get("dependencies", {}) or "nanoid" in manifest.get(
-        "devDependencies", {}
-    ):
-        failures.append("Nano ID must remain an indirect PostCSS dependency")
-    if manifest.get("overrides", {}).get("nanoid") != ALLOWED_NANOID_VERSION:
-        failures.append("root Nano ID override is not the reviewed exception version")
-    if nanoid.get("version") != ALLOWED_NANOID_VERSION:
-        failures.append("locked Nano ID version is not the reviewed exception version")
-    if postcss.get("version") != ALLOWED_POSTCSS_VERSION:
-        failures.append("locked PostCSS version is not the reviewed exception version")
-    if postcss.get("dependencies", {}).get("nanoid") != "^3.3.16":
-        failures.append("PostCSS no longer has the reviewed Nano ID dependency range")
-    nanoid_consumers = sorted(
-        package_path
-        for package_path, metadata in packages.items()
-        if isinstance(metadata, dict)
-        and "nanoid" in metadata.get("dependencies", {})
-    )
-    if nanoid_consumers != ["node_modules/postcss"]:
-        failures.append(
-            f"Nano ID dependency consumers changed: {nanoid_consumers}"
-        )
-
-    required_source = "require('nanoid/non-secure')"
-    if required_source not in postcss_input or "nanoid(6)" not in postcss_input:
-        failures.append("installed PostCSS no longer uses the reviewed fixed-size call")
-    if "customAlphabet" in postcss_input or "customRandom" in postcss_input:
-        failures.append("installed PostCSS references a vulnerable Nano ID generator")
-
     vulnerabilities = report.get("vulnerabilities")
     if not isinstance(vulnerabilities, dict):
-        return failures + ["npm audit report lacks vulnerability metadata"]
+        return ["npm audit report lacks vulnerability metadata"]
 
     high_or_critical = {
         name: metadata
@@ -100,47 +53,20 @@ def check_policy(
         if isinstance(metadata, dict)
         and metadata.get("severity") in {"high", "critical"}
     }
-    if not high_or_critical:
-        return failures
 
-    observed_allowed_root = False
+    failures: list[str] = []
     for package_name in high_or_critical:
         roots, root_failures = _advisory_roots(package_name, vulnerabilities)
         failures.extend(root_failures)
-        if roots == {ALLOWED_ADVISORY}:
-            observed_allowed_root = True
-        else:
-            failures.append(
-                f"{package_name}: unapproved high-severity advisory roots "
-                f"{sorted(roots)}"
-            )
-
-    nanoid_causes = vulnerabilities.get("nanoid", {}).get("via", [])
-    matching_causes = [
-        cause
-        for cause in nanoid_causes
-        if isinstance(cause, dict) and cause.get("url") == ALLOWED_ADVISORY
-    ]
-    if len(matching_causes) != 1:
-        failures.append("Nano ID audit entry does not match the approved advisory")
-    elif (
-        matching_causes[0].get("range") != "<3.3.18"
-        or matching_causes[0].get("severity") != "high"
-    ):
-        failures.append("Nano ID advisory metadata changed")
-    if not observed_allowed_root:
-        failures.append("approved Nano ID advisory was not present in npm audit output")
+        failures.append(
+            f"{package_name}: high-severity advisory roots {sorted(roots)}"
+        )
 
     return failures
 
 
 def check_project(project_name: str, npm: str) -> list[str]:
     project_root = ROOT / project_name
-    lock = json.loads((project_root / "package-lock.json").read_text(encoding="utf-8"))
-    manifest = json.loads((project_root / "package.json").read_text(encoding="utf-8"))
-    postcss_input = (
-        project_root / "node_modules" / "postcss" / "lib" / "input.js"
-    ).read_text(encoding="utf-8")
     try:
         result = subprocess.run(
             [npm, "audit", "--json"],
@@ -159,7 +85,7 @@ def check_project(project_name: str, npm: str) -> list[str]:
 
     return [
         f"{project_name}: {failure}"
-        for failure in check_policy(report, lock, manifest, postcss_input, date.today())
+        for failure in check_policy(report)
     ]
 
 
@@ -182,10 +108,7 @@ def main() -> int:
         print("\n".join(failures), file=sys.stderr)
         return 1
 
-    print(
-        "npm advisory policy passed with the temporary fixed-size PostCSS "
-        f"exception through {EXCEPTION_EXPIRES.isoformat()}."
-    )
+    print("npm advisory policy passed with no high or critical vulnerabilities.")
     return 0
 
 
