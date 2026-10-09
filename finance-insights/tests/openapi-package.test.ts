@@ -11,7 +11,7 @@ describe('executable contract and internal package boundary', () => {
       )
     );
     expect(document).toEqual(createFinanceInsightsOpenApiV1());
-    expect(Object.keys(document.paths)).toHaveLength(10);
+    expect(Object.keys(document.paths)).toHaveLength(11);
     expect(JSON.stringify(document)).not.toContain('monarch-bridge/contract.py');
   });
 
@@ -49,6 +49,10 @@ describe('executable contract and internal package boundary', () => {
     ).toBe(false);
     expect(
       document.components.schemas.DocumentExpectationSignalsV1
+        ?.additionalProperties
+    ).toBe(false);
+    expect(
+      document.components.schemas.PayeePatternProjectionV1
         ?.additionalProperties
     ).toBe(false);
     const expectationSignal = (
@@ -188,6 +192,18 @@ describe('executable contract and internal package boundary', () => {
       ]!.get!;
     expect(
       expectationOperation.parameters?.find(
+        (parameter) => parameter.name === 'connectorRef'
+      )
+    ).toMatchObject({
+      required: true,
+      schema: { pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' },
+    });
+    const payeeOperation =
+      document.paths[
+        '/api/internal/v1/finance/insights/payee-patterns/{generationId}'
+      ]!.get!;
+    expect(
+      payeeOperation.parameters?.find(
         (parameter) => parameter.name === 'connectorRef'
       )
     ).toMatchObject({

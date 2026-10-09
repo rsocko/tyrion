@@ -75,6 +75,7 @@ Insights projection:
 | `POST` | `/sync?days=1..365` | One optional `days` value; no body; default 90 |
 | `GET` | `/document-expectation-signals` | No query or body; latest promoted snapshot across connector scope; read gate and 12 MiB projection bound |
 | `GET` | `/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; no body; read gate and 12 MiB projection bound |
+| `GET` | `/payee-patterns/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; immutable privacy-safe transaction/recurring evidence; no body; read gate and 12 MiB projection bound |
 
 Unknown routes, methods, parameters, duplicate singleton parameters, malformed values,
 and request bodies on bodyless operations fail before a bridge call. `/auth/*`,

@@ -13,7 +13,10 @@ import {
   MONARCH_CONTRACT_VERSION,
 } from "@/lib/connector-health.mjs";
 import { handleFinanceInsightError } from "@/lib/finance-insight-http";
-import { readDocumentExpectationSignalsV1 } from "@/lib/finance-insight-service";
+import {
+  readDocumentExpectationSignalsV1,
+  readPayeePatternsV1,
+} from "@/lib/finance-insight-service";
 
 const BRIDGE_TIMEOUT_MS = 30_000;
 const FORWARDED_RESPONSE_HEADERS = [
@@ -222,6 +225,12 @@ async function proxyConnectorRequest(
 
   if (policy.target === "finance-insight") {
     try {
+      if (path[0] === "payee-patterns") {
+        return await readPayeePatternsV1(
+          path[1],
+          request.nextUrl.searchParams
+        );
+      }
       return await readDocumentExpectationSignalsV1(
         path[1],
         request.nextUrl.searchParams

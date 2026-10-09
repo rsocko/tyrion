@@ -173,6 +173,168 @@
         }
       }
     },
+    "/api/internal/v1/finance/insights/payee-patterns/{generationId}": {
+      "get": {
+        "operationId": "getPayeePatternsV1",
+        "summary": "Pull one bounded privacy-safe payee financial-pattern projection for an immutable source generation",
+        "parameters": [
+          {
+            "name": "generationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            }
+          },
+          {
+            "name": "connectorRef",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded generation-addressed payee pattern evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayeePatternProjectionV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse400V1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse401V1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse403V1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Route or occurrence not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse404V1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Version, sequence, or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse409V1"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request or generation exceeds a safety bound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse413V1"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse415V1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Semantically invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse422V1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Evaluation is already in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse429V1"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "required": true,
+                "description": "Bounded retry delay in seconds.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 300
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized operation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse500V1"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service, source, or store unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightErrorResponse503V1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/internal/v1/finance/insights/source-generations": {
       "post": {
         "operationId": "createSourceGenerationV1",
@@ -10671,6 +10833,241 @@
           "sourceAsOf",
           "completeness",
           "signals"
+        ],
+        "additionalProperties": false
+      },
+      "PayeePatternProjectionV1": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "1"
+          },
+          "connectorRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "sourceGeneration": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "sourceAsOf": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 30,
+            "pattern": "^(?:\\d{4})-(?:\\d{2})-(?:\\d{2})T(?:\\d{2}):(?:\\d{2}):(?:\\d{2})(?:\\.\\d{1,3})?Z$",
+            "format": "date-time"
+          },
+          "completeness": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial"
+            ]
+          },
+          "payees": {
+            "maxItems": 10000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "payeeRef": {
+                  "type": "string",
+                  "pattern": "^payee-v1_[A-Za-z0-9_-]{43}$"
+                },
+                "displayName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                },
+                "activity": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "inactive",
+                    "unknown"
+                  ]
+                },
+                "classification": {
+                  "type": "string",
+                  "enum": [
+                    "recurring-fixed",
+                    "recurring-variable",
+                    "regular",
+                    "infrequent",
+                    "single-observation",
+                    "unknown"
+                  ]
+                },
+                "observationCount": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 50000
+                },
+                "observationWindow": {
+                  "type": "object",
+                  "properties": {
+                    "firstObservedOn": {
+                      "type": "string",
+                      "minLength": 10,
+                      "maxLength": 10,
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "lastObservedOn": {
+                      "type": "string",
+                      "minLength": 10,
+                      "maxLength": 10,
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    }
+                  },
+                  "required": [
+                    "firstObservedOn",
+                    "lastObservedOn"
+                  ],
+                  "additionalProperties": false
+                },
+                "intervalEvidence": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "sampleCount": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 49999
+                        },
+                        "medianDays": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 36600
+                        },
+                        "minimumDays": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 36600
+                        },
+                        "maximumDays": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 36600
+                        }
+                      },
+                      "required": [
+                        "sampleCount",
+                        "medianDays",
+                        "minimumDays",
+                        "maximumDays"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "basis": {
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-z0-9_]+$"
+                  }
+                },
+                "provenance": {
+                  "type": "object",
+                  "properties": {
+                    "transactionHistory": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "monarchRecurring": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "transactionHistory",
+                    "monarchRecurring"
+                  ],
+                  "additionalProperties": false
+                },
+                "monarchConfirmedRecurring": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "active": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "cadence": {
+                          "type": "string",
+                          "enum": [
+                            "weekly",
+                            "biweekly",
+                            "monthly",
+                            "quarterly",
+                            "semiannual",
+                            "annual",
+                            "unknown"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "active",
+                        "cadence"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "payeeRef",
+                "displayName",
+                "activity",
+                "classification",
+                "observationCount",
+                "observationWindow",
+                "intervalEvidence",
+                "confidence",
+                "basis",
+                "provenance",
+                "monarchConfirmedRecurring"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "contractVersion",
+          "connectorRef",
+          "sourceGeneration",
+          "sourceAsOf",
+          "completeness",
+          "payees"
         ],
         "additionalProperties": false
       },

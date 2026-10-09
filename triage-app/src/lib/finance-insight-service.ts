@@ -10,6 +10,7 @@ import {
   parseFinanceAutomationJobRequestV1,
   parseFinanceAutomationJobResultV1,
   parseDocumentExpectationSignalsV1,
+  parsePayeePatternProjectionV1,
   parseOccurrenceActionRequestV1,
   parseOccurrenceActionResultV1,
   parseOccurrenceListQueryV1,
@@ -20,6 +21,7 @@ import {
   parseSourceGenerationCreateRequestV1,
   parseSourceGenerationResultV1,
   projectDocumentExpectationSignalsV1,
+  projectPayeePatternsV1,
   sourceReferenceSchema,
   type SourceGenerationRecordV1,
 } from "@rsocko/tyrion-finance-insights";
@@ -64,6 +66,17 @@ export async function handleFinanceInsightRequest(
       segments[0] === "document-expectation-signals"
     ) {
       return await readDocumentExpectationSignalsV1(
+        segments[1],
+        request.nextUrl.searchParams,
+        Promise.resolve(runtime)
+      );
+    }
+    if (
+      request.method === "GET" &&
+      segments.length === 2 &&
+      segments[0] === "payee-patterns"
+    ) {
+      return await readPayeePatternsV1(
         segments[1],
         request.nextUrl.searchParams,
         Promise.resolve(runtime)
@@ -247,6 +260,51 @@ export async function handleFinanceInsightRequest(
   } catch (error) {
     return handleFinanceInsightError(error);
   }
+}
+
+export async function readPayeePatternsV1(
+  sourceGenerationValue: string | undefined,
+  searchParams: URLSearchParams,
+  runtimePromise = getFinanceInsightRuntime()
+) {
+  const runtime = await runtimePromise;
+  requireGate(runtime.gates.read);
+  const connectorRef = parseSingleRequiredQuery(searchParams, "connectorRef");
+  const sourceGeneration = parsePathValue(
+    sourceReferenceSchema,
+    sourceGenerationValue
+  );
+  const source = await runtime.store.sourceGenerations.find(
+    connectorRef,
+    sourceGeneration
+  );
+  if (!source) {
+    throw new FinanceInsightHttpError("source_generation_not_found");
+  }
+  const projection = await runtime.store.loadProjection(
+    connectorRef,
+    sourceGeneration
+  );
+  if (!projection) {
+    throw new FinanceInsightHttpError("source_generation_not_found");
+  }
+  return financeInsightJson(
+    parsePayeePatternProjectionV1(
+      projectPayeePatternsV1(
+        {
+          connectorRef,
+          sourceGeneration,
+          sourceAsOf: source.request.sourceAsOf,
+          completeness: "complete",
+          transactions: projection.transactions,
+          recurring: projection.recurring,
+        },
+        runtime.identityNamespace
+      )
+    ),
+    200,
+    MAX_DOCUMENT_EXPECTATION_RESPONSE_BYTES
+  );
 }
 
 export async function readDocumentExpectationSignalsV1(
