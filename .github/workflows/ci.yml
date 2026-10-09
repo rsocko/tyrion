@@ -92,6 +92,19 @@ jobs:
         working-directory: triage-app
         run: npm test
 
+      - name: Configure Docker Hub pull-through mirror
+        run: |
+          if sudo test -f /etc/docker/daemon.json; then
+            sudo cat /etc/docker/daemon.json \
+              | jq '.["registry-mirrors"] = ((.["registry-mirrors"] // []) + ["https://mirror.gcr.io"] | unique)' \
+              > /tmp/docker-daemon.json
+          else
+            printf '%s\n' '{"registry-mirrors": ["https://mirror.gcr.io"]}' \
+              > /tmp/docker-daemon.json
+          fi
+          sudo install -m 0644 /tmp/docker-daemon.json /etc/docker/daemon.json
+          sudo systemctl restart docker
+
       - name: Build production images without publishing
         run: |
           docker build --tag tyrion-bridge:ci .

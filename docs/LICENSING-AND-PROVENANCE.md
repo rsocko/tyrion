@@ -71,9 +71,11 @@ or BSD-3-Clause terms. Material transitives include Apache-2.0/MIT `aiohttp`, MI
 `certifi`. Re-run the review whenever an input or generated lock changes.
 
 The production Dockerfiles use digest-pinned official Node.js and Python
-images based on Debian Bookworm. Their package-level copyright files must
-remain in derived images. Both images copy the repository license and
-third-party notice into `/licenses`.
+images based on Debian Bookworm. Pull-request CI configures Google's Docker Hub
+pull-through mirror, with Docker Hub retained as the fallback, to avoid
+exhausting the shared runner's unauthenticated pull allowance. Their
+package-level copyright files must remain in derived images. Both images copy
+the repository license and third-party notice into `/licenses`.
 
 ## Monarch terms and affiliation
 
