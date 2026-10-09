@@ -895,6 +895,44 @@ def test_pinned_client_inquiry_signatures_are_supported():
     } <= set(inspect.signature(MonarchMoney.get_budgets).parameters)
 
 
+@pytest.mark.parametrize(
+    "business_entity",
+    [
+        {
+            "id": "entity-1",
+            "name": "Conflicting Entity",
+            "__typename": "BusinessEntity",
+        },
+        {"id": "entity-1", "name": "Invented Store"},
+        {"id": {"nested": "identifier"}, "name": ["not", "text"]},
+        "malformed",
+        None,
+    ],
+)
+def test_transaction_normalizer_ignores_untrusted_business_entity_metadata(
+    business_entity,
+):
+    baseline = {
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -12.5,
+        "merchant": {"name": "Invented Store"},
+        "category": {"id": "cat-1", "name": "Shopping"},
+        "account": {"id": "acc-1", "displayName": "Checking"},
+        "needsReview": False,
+    }
+    with_upstream_additions = {
+        **baseline,
+        "businessEntity": business_entity,
+    }
+
+    normalized = normalize_transaction(with_upstream_additions)
+    assert normalized == normalize_transaction(baseline)
+    assert normalized.merchant.name == "Invented Store"
+    assert "businessEntity" not in normalized.model_dump_json(by_alias=True)
+    assert "entity-1" not in normalized.model_dump_json(by_alias=True)
+
+
 def test_transaction_normalizer_does_not_expose_upstream_identity_additions():
     baseline = {
         "id": "tx-1",
@@ -907,7 +945,6 @@ def test_transaction_normalizer_does_not_expose_upstream_identity_additions():
     }
     with_upstream_additions = {
         **baseline,
-        "businessEntity": {"id": "entity-1", "name": "Invented Entity"},
         "ownedByUser": {"id": "member-1", "name": "Household Member"},
         "ownershipOverriddenAt": "2026-08-01T12:00:00Z",
     }
