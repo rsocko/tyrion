@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Literal, Mapping, Optional
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 CONTRACT_VERSION = "1.0"
 MAX_ACCOUNTS = 1_000
@@ -173,6 +173,44 @@ class TransactionTag(ApiModel):
 
 class TransactionTagsResponse(DataResponse):
     tags: list[TransactionTag] = Field(max_length=MAX_TRANSACTION_TAGS)
+
+
+class TransactionTagCreate(ApiModel):
+    name: str = Field(
+        min_length=1,
+        max_length=80,
+        pattern=r"^[^\x00-\x1f\x7f]+$",
+    )
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class TransactionTagCreateResponse(ContractResponse):
+    status: Literal["created"]
+    tag: TransactionTag
+
+
+class TransactionTagsUpdate(ApiModel):
+    tag_ids: list[str] = Field(min_length=0, max_length=100)
+    expected_tag_ids: list[str] = Field(min_length=0, max_length=100)
+
+    @field_validator("tag_ids", "expected_tag_ids")
+    @classmethod
+    def tag_ids_must_be_bounded(cls, values: list[str]) -> list[str]:
+        if any(
+            not value
+            or value != value.strip()
+            or len(value) > 512
+            or any(ord(character) < 32 or ord(character) == 127 for character in value)
+            for value in values
+        ):
+            raise ValueError("Transaction tag IDs are invalid")
+        return values
+
+
+class TransactionTagsUpdateResponse(ContractResponse):
+    status: Literal["updated"]
+    transaction_id: str
+    tag_references: list[TransactionTagRef] = Field(max_length=100)
 
 
 class Account(ApiModel):

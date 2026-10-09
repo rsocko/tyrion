@@ -8,6 +8,8 @@ import {
   parseCategoryMutation,
   parseMerchantMutation,
   parseReviewMutation,
+  parseTagCreateMutation,
+  parseTagMutation,
   resolveConnectorBridgeUrl,
 } from "@/lib/connector-gateway-policy.mjs";
 import {
@@ -199,11 +201,16 @@ async function proxyConnectorRequest(
     } catch {
       return jsonError(400, "invalid_request", "Request body is invalid JSON");
     }
-    const mutation = policy.upstreamPath.endsWith("/merchant")
-      ? parseMerchantMutation(parsed)
-      : policy.upstreamPath.endsWith("/review")
-        ? parseReviewMutation(parsed)
-        : parseCategoryMutation(parsed);
+    const mutation =
+      policy.upstreamPath === "/tags"
+        ? parseTagCreateMutation(parsed)
+        : policy.upstreamPath.endsWith("/tags")
+          ? parseTagMutation(parsed)
+          : policy.upstreamPath.endsWith("/merchant")
+            ? parseMerchantMutation(parsed)
+            : policy.upstreamPath.endsWith("/review")
+              ? parseReviewMutation(parsed)
+              : parseCategoryMutation(parsed);
     if (!mutation.allowed) {
       return jsonError(
         mutation.status,
