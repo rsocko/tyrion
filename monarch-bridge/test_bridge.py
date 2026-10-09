@@ -563,7 +563,7 @@ async def test_openapi_json(client):
     assert "/sync" in schema["paths"]
     assert "/transactions" in schema["paths"]
     assert "/contract" in schema["paths"]
-    for path in (
+    public_paths = {
         "/contract", "/health", "/auth/login", "/auth/login-with-cookies",
         "/auth/status", "/auth/logout", "/sync", "/transactions",
         "/transactions/{transaction_id}", "/transactions/{transaction_id}/splits",
@@ -572,8 +572,47 @@ async def test_openapi_json(client):
         "/transactions/{transaction_id}/review",
         "/categories", "/category-groups", "/tags", "/accounts", "/recurring",
         "/cashflow", "/budgets",
+    }
+    assert set(schema["paths"]) == public_paths
+    assert not any(
+        "TransactionRule" in model_name
+        for model_name in schema["components"]["schemas"]
+    )
+    serialized_schema = repr(schema)
+    for upstream_field in (
+        "merchantCriteriaUseOriginalStatement",
+        "merchantCriteria",
+        "originalStatementCriteria",
+        "merchantNameCriteria",
+        "amountCriteria",
+        "categoryIds",
+        "accountIds",
+        "criteriaOwnerIsJoint",
+        "criteriaOwnerUserIds",
+        "criteriaOwnerUsers",
+        "criteriaBusinessEntityIds",
+        "criteriaBusinessEntityIsUnassigned",
+        "criteriaBusinessEntities",
+        "setMerchantAction",
+        "setCategoryAction",
+        "addTagsAction",
+        "linkGoalAction",
+        "linkSavingsGoalAction",
+        "needsReviewByUserAction",
+        "unassignNeedsReviewByUserAction",
+        "sendNotificationAction",
+        "setHideFromReportsAction",
+        "setLinkToPaydownBudgetAction",
+        "reviewStatusAction",
+        "actionSetOwnerIsJoint",
+        "actionSetOwner",
+        "actionSetBusinessEntity",
+        "actionSetBusinessEntityIsUnassigned",
+        "recentApplicationCount",
+        "lastAppliedAt",
+        "splitTransactionsAction",
     ):
-        assert path in schema["paths"]
+        assert upstream_field not in serialized_schema
     response_bounds = {
         "AccountsResponse": ("accounts", MAX_ACCOUNTS),
         "CategoryGroupsResponse": ("categoryGroups", MAX_CATEGORY_GROUPS),

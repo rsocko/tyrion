@@ -177,7 +177,7 @@ No new upstream response field is added to the public Bridge contract.
 | Addition | Decision |
 | --- | --- |
 | `get_all_holdings` | Defer. Investments remain in Monarch under the product boundary; the Bridge does not need a holdings DTO or concurrent fan-out. |
-| `get_transaction_rules` | Defer from the Bridge contract. Read access may inform a future Tyrion policy-import workflow, but raw rule criteria and actions must not cross the DTO boundary. |
+| `get_transaction_rules` | Defer from the Bridge contract and from Tyrion policy import/comparison. The priority-ordered Monarch criteria/action model has no safe mapping to kid attribution, ownership/review state is not spender identity, and a partial projection would be misleading. The invented-fixture analysis and reconsideration gate are documented in [`MONARCH-TRANSACTION-RULE-EVALUATION.md`](MONARCH-TRANSACTION-RULE-EVALUATION.md). |
 | Transaction `businessEntity` | Ignore during normalization. It is additive upstream merchant metadata, not a verified Tyrion attribution fact. Deterministic coverage confirms it cannot expand the Transaction DTO. |
 | Household-member lookup and transaction ownership updates | Do not expose. Monarch ownership is distinct from review assignment and physical-spender attribution; exposing the mutation would add an unapproved, non-reversible write surface. |
 | Typed budgets | Keep the raw client plus Tyrion's strict `normalize_budgets` boundary. The typed helper is a convenience API, not a replacement for complete-or-error bounds and stable public DTOs. |
@@ -191,6 +191,9 @@ password and cookie auth, saved-session restart, expiry recovery, logout, transa
 accounts, categories, tags, recurring data, budgets, sync, reversible category
 mutation, and sanitized timeout/rate-limit/upstream failures. Do not exercise deferred
 holdings, rule, ownership, typed-client, or aggregate-snapshot capabilities.
+Transaction rules remain outside both deterministic live-contract claims and the
+controlled live matrix; no credentialed rule read is needed for the documented defer
+decision.
 
 For the issue #140 controlled read refresh, run the opt-in read contract against a
 dedicated connected bridge. Confirm bounded search parameters are accepted by the
