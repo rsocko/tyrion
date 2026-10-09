@@ -13,10 +13,11 @@ See [`../docs/LICENSING-AND-PROVENANCE.md`](../docs/LICENSING-AND-PROVENANCE.md)
 
 ## Supported client
 
-`monarchmoneycommunity==1.5.2` is pinned in `requirements-runtime.in` and the
+`monarchmoneycommunity==1.6.0` is pinned in `requirements-runtime.in` and the
 hash-locked runtime resolution. Authentication, transaction pagination, and category
-mutation signatures are covered by deterministic tests. Upgrade the pin only with a
-contract-test and controlled live-validation run.
+mutation signatures are covered by deterministic tests. Upgrade the pin only with
+refreshed deterministic contract coverage, then complete the controlled live matrix
+before claiming observed live compatibility for the new version.
 
 All direct dependencies are exact in `requirements-runtime.in` and
 `requirements-test.in`. The generated `requirements-runtime.txt` and

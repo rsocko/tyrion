@@ -390,9 +390,9 @@ idna==3.18 \
     #   anyio
     #   httpx
     #   yarl
-monarchmoneycommunity==1.5.2 \
-    --hash=sha256:1cce7e158546b69726a783371f71417d73802bd9104673312f251831f97b2301 \
-    --hash=sha256:bdd8e03e619c547dccb282f64865ece6202992cacd290013dd1ff061b0d6bb30
+monarchmoneycommunity==1.6.0 \
+    --hash=sha256:30348847a72378453a65dad0e504a77defec99812832d7bd4f693363915c29b3 \
+    --hash=sha256:86cf0abcda704b3182f8c0d1265897d92d3712da624e05a2eb5ff8b0ba1dac16
     # via -r requirements-runtime.in
 multidict==6.9.1 \
     --hash=sha256:006c4478de0a1876f4834e14255776286f09b9846b505fe63f67f9d173a9487c \

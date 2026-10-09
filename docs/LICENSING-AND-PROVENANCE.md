@@ -81,7 +81,7 @@ the repository license and third-party notice into `/licenses`.
 
 Verified facts:
 
-- `monarchmoneycommunity==1.5.2` is an unofficial MIT-licensed community fork
+- `monarchmoneycommunity==1.6.0` is an unofficial MIT-licensed community fork
   of `hammem/monarchmoney`; it is not a Monarch Money, Inc. SDK.
 - Monarch's public Terms of Use, reviewed at
   <https://www.monarch.com/terms> on 2026-08-09, limit use to personal,
