@@ -8,13 +8,15 @@ Run with --demo flag to use mock data (no Monarch credentials needed).
 import asyncio
 import base64
 import binascii
+import inspect
 import logging
 import os
+import re
 import sys
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Path as PathParam, Query, Request
@@ -48,10 +50,12 @@ from contract import (
     ErrorDetail,
     ErrorResponse,
     HealthResponse,
+    MerchantUpdateResponse,
     PageInfo,
     RecurringResponse,
     SyncResponse,
     TransactionResponse,
+    TransactionReviewResponse,
     TransactionTagsResponse,
     TransactionSplitsResponse,
     TransactionsResponse,
@@ -90,6 +94,17 @@ def create_monarch_client():
     from monarchmoney import MonarchMoney
 
     return MonarchMoney()
+
+
+def supports_keyword(callable_value, name: str) -> bool:
+    try:
+        parameters = inspect.signature(callable_value).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
 
 
 def upstream_error(resource: str, exc: Exception) -> HTTPException:
@@ -141,6 +156,7 @@ TRANSACTION_QUERY_PARAMETERS = {
     "max_amount",
     "is_pending",
     "is_recurring",
+    "needs_review",
     "limit",
     "cursor",
 }
@@ -233,6 +249,7 @@ class DemoProvider:
                     "account": {"id": account["id"], "displayName": account["displayName"]},
                     "isPending": False,
                     "isRecurring": cat_id == "cat-streaming",
+                    "needsReview": tx_id % 7 == 0,
                     "notes": None,
                     "tags": [
                         cls.TRANSACTION_TAGS[0],
@@ -258,7 +275,8 @@ class DemoProvider:
                          min_amount: Optional[Decimal] = None,
                          max_amount: Optional[Decimal] = None,
                          is_pending: Optional[bool] = None,
-                         is_recurring: Optional[bool] = None) -> dict:
+                         is_recurring: Optional[bool] = None,
+                         needs_review: Optional[bool] = None) -> dict:
         results = cls._generate_transactions(start_date, end_date, limit)
         if account_id:
             results = [t for t in results if t["account"]["id"] == account_id]
@@ -284,6 +302,8 @@ class DemoProvider:
             results = [t for t in results if t["isPending"] is is_pending]
         if is_recurring is not None:
             results = [t for t in results if t["isRecurring"] is is_recurring]
+        if needs_review is not None:
+            results = [t for t in results if t["needsReview"] is needs_review]
         return {"transactions": results, "total": len(results)}
 
     @classmethod
@@ -515,7 +535,7 @@ def validate_inquiry_query(request: Request) -> Optional[JSONResponse]:
         tag_values = request.query_params.getlist("tag_id")
         if len({value.strip() for value in tag_values}) > 20:
             return error_response(422, "invalid_request", "tag_id accepts at most 20 unique values")
-        for name in ("is_pending", "is_recurring"):
+        for name in ("is_pending", "is_recurring", "needs_review"):
             value = request.query_params.get(name)
             if value is not None and value not in {"true", "false"}:
                 return error_response(422, "invalid_request", f"{name} must be true or false")
@@ -566,6 +586,30 @@ class CategoryUpdate(BaseModel):
         if not value.strip():
             raise ValueError("categoryId must not be empty")
         return value.strip()
+
+
+class MerchantUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    merchantName: str = Field(min_length=1, max_length=120)
+
+    @field_validator("merchantName")
+    @classmethod
+    def merchant_name_must_be_safe(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if (
+            not normalized
+            or len(normalized) > 120
+            or re.search(r"[\x00-\x1f\x7f]", normalized)
+        ):
+            raise ValueError("merchantName must be a safe non-empty name")
+        return normalized
+
+
+class TransactionReviewUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reviewed: Literal[True]
 
 
 class LoginRequest(BaseModel):
@@ -978,6 +1022,7 @@ async def get_transactions(
     max_amount: Optional[Decimal] = Query(None, ge=-MAX_AMOUNT, le=MAX_AMOUNT),
     is_pending: Optional[bool] = Query(None),
     is_recurring: Optional[bool] = Query(None),
+    needs_review: Optional[bool] = Query(None),
     limit: int = Query(500, ge=1, le=500),
     cursor: Optional[str] = Query(None, description="Opaque cursor returned by the previous page"),
 ):
@@ -1030,6 +1075,7 @@ async def get_transactions(
             max_amount,
             is_pending,
             is_recurring,
+            needs_review,
         )
         provider = "demo"
         results = normalize_transactions(raw)
@@ -1047,6 +1093,16 @@ async def get_transactions(
                 "is_pending": is_pending,
                 "is_recurring": is_recurring,
             }
+            if needs_review is not None:
+                if not supports_keyword(client.get_transactions, "needs_review"):
+                    raise HTTPException(
+                        503,
+                        detail={
+                            "error": "review_capability_unavailable",
+                            "message": "Monarch transaction review is unavailable",
+                        },
+                    )
+                provider_kwargs["needs_review"] = needs_review
             requires_normalized_filtering = (
                 merchant_query is not None
                 or min_amount is not None
@@ -1204,6 +1260,26 @@ async def get_transaction(
                 },
             )
         raw = dict(raw)
+        assignee = raw.get("needsReviewByUser")
+        if isinstance(assignee, dict) and assignee.get("id"):
+            household = result.get("myHousehold") if isinstance(result, dict) else None
+            users = household.get("users") if isinstance(household, dict) else None
+            if not isinstance(users, list):
+                raise ValueError("Upstream review assignee directory was malformed")
+            matched_user = next(
+                (
+                    user
+                    for user in users
+                    if isinstance(user, dict) and user.get("id") == assignee["id"]
+                ),
+                None,
+            )
+            if not isinstance(matched_user, dict) or not matched_user.get("name"):
+                raise ValueError("Upstream review assignee was not resolvable")
+            raw["reviewAssignee"] = {
+                "id": matched_user["id"],
+                "name": matched_user["name"],
+            }
         category = raw.get("category")
         if isinstance(category, dict) and category.get("id") and not category.get("name"):
             categories = normalize_categories(await client.get_transaction_categories())
@@ -1229,7 +1305,6 @@ async def update_transaction_category(
 ):
     """Update a transaction's category in Monarch."""
     if DEMO_MODE:
-        logger.info("Demo: category update for %s -> %s", transaction_id, update.categoryId)
         return CategoryUpdateResponse(
             status="updated",
             transaction_id=transaction_id,
@@ -1255,6 +1330,91 @@ async def update_transaction_category(
         )
     except Exception as e:
         raise upstream_error("category update", e)
+
+
+@app.patch(
+    "/transactions/{transaction_id}/merchant",
+    response_model=MerchantUpdateResponse,
+)
+async def update_transaction_merchant(
+    update: MerchantUpdate,
+    transaction_id: str = PathParam(..., min_length=1, max_length=512),
+):
+    """Update and verify one transaction's normalized merchant/payee name."""
+    if DEMO_MODE:
+        return MerchantUpdateResponse(
+            status="updated",
+            transaction_id=transaction_id,
+            merchant_name=update.merchantName,
+        )
+
+    client = await get_client()
+    try:
+        result = await client.update_transaction(
+            transaction_id,
+            merchant_name=update.merchantName,
+        )
+        mutation = result.get("updateTransaction", {}) if isinstance(result, dict) else {}
+        errors = mutation.get("errors") or []
+        transaction = mutation.get("transaction") or {}
+        merchant = transaction.get("merchant") or {}
+        if errors or merchant.get("name") != update.merchantName:
+            raise RuntimeError("Monarch rejected the merchant update")
+        return MerchantUpdateResponse(
+            status="updated",
+            transaction_id=transaction_id,
+            merchant_name=update.merchantName,
+        )
+    except Exception as e:
+        raise upstream_error("merchant update", e)
+
+
+@app.patch(
+    "/transactions/{transaction_id}/review",
+    response_model=TransactionReviewResponse,
+)
+async def mark_transaction_reviewed(
+    update: TransactionReviewUpdate,
+    transaction_id: str = PathParam(..., min_length=1, max_length=512),
+):
+    """Mark one transaction reviewed in Monarch and verify the authoritative result."""
+    if DEMO_MODE:
+        return TransactionReviewResponse(
+            status="reviewed",
+            transaction_id=transaction_id,
+        )
+
+    client = await get_client()
+    try:
+        update_transaction = getattr(client, "update_transaction", None)
+        if not callable(update_transaction) or not supports_keyword(
+            update_transaction,
+            "reviewed",
+        ):
+            raise HTTPException(
+                503,
+                detail={
+                    "error": "review_capability_unavailable",
+                    "message": "Monarch transaction review is unavailable",
+                },
+            )
+        result = await update_transaction(
+            transaction_id,
+            reviewed=update.reviewed,
+        )
+        mutation = result.get("updateTransaction", {}) if isinstance(result, dict) else {}
+        errors = mutation.get("errors") or []
+        transaction = mutation.get("transaction") or {}
+        if errors or transaction.get("needsReview") is not False:
+            raise RuntimeError("Monarch did not verify the reviewed state")
+        return TransactionReviewResponse(
+            status="reviewed",
+            transaction_id=transaction_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise upstream_error("transaction review update", e)
 
 
 @app.get("/categories", response_model=CategoriesResponse)

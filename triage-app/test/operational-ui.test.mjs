@@ -18,6 +18,8 @@ import {
   evaluateConnectorRequest,
   MAX_CONNECTOR_RESPONSE_BYTES,
   parseCategoryMutation,
+  parseMerchantMutation,
+  parseReviewMutation,
   resolveConnectorBridgeUrl,
 } from "../src/lib/connector-gateway-policy.mjs";
 import {
@@ -2123,6 +2125,8 @@ test("connector policy exposes exactly the backend connector operations", () => 
     ["GET", "transactions/invented-transaction"],
     ["GET", "transactions/invented-transaction/splits"],
     ["PATCH", "transactions/invented-transaction/category"],
+    ["PATCH", "transactions/invented-transaction/merchant"],
+    ["PATCH", "transactions/invented-transaction/review"],
     ["GET", "accounts"],
     ["GET", "category-groups"],
     ["GET", "categories"],
@@ -2218,6 +2222,7 @@ test("connector policy strictly bounds and canonicalizes transaction queries", (
     ["max_amount", "999999999.99"],
     ["is_pending", "false"],
     ["is_recurring", "true"],
+    ["needs_review", "true"],
     ["limit", "500"],
     ["cursor", "NTAw"],
   ]);
@@ -2249,6 +2254,7 @@ test("connector policy strictly bounds and canonicalizes transaction queries", (
     "min_amount=2&max_amount=1",
     "is_pending=1",
     "is_recurring=True",
+    "needs_review=yes",
     `cursor=${"x".repeat(129)}`,
   ];
   for (const query of invalidQueries) {
@@ -2305,6 +2311,37 @@ test("connector policy bounds sync, identifiers, category bodies, and bridge URL
     { categoryId: "invented", extra: true },
   ]) {
     assert.equal(parseCategoryMutation(body).allowed, false);
+  }
+  assert.deepEqual(
+    parseMerchantMutation({ merchantName: " Invented   Market " }),
+    {
+      allowed: true,
+      body: '{"merchantName":"Invented Market"}',
+    }
+  );
+  for (const body of [
+    null,
+    [],
+    {},
+    { merchantName: "" },
+    { merchantName: "x".repeat(121) },
+    { merchantName: "unsafe\u0000name" },
+    { merchantName: "invented", extra: true },
+  ]) {
+    assert.equal(parseMerchantMutation(body).allowed, false);
+  }
+  assert.deepEqual(parseReviewMutation({ reviewed: true }), {
+    allowed: true,
+    body: '{"reviewed":true}',
+  });
+  for (const body of [
+    null,
+    {},
+    { reviewed: false },
+    { needsReview: false },
+    { reviewed: true, extra: true },
+  ]) {
+    assert.equal(parseReviewMutation(body).allowed, false);
   }
 
   assert.equal(resolveConnectorBridgeUrl("http://bridge:8100").configured, true);
@@ -2567,6 +2604,16 @@ test("public connector gateway forwards every allowlisted operation with caller 
       "/api/connector/v1/transactions/invented-transaction/category",
       { categoryId: "invented-category" },
     ],
+    [
+      "PATCH",
+      "/api/connector/v1/transactions/invented-transaction/merchant",
+      { merchantName: "Invented Market" },
+    ],
+    [
+      "PATCH",
+      "/api/connector/v1/transactions/invented-transaction/review",
+      { reviewed: true },
+    ],
   ];
 
   for (const [method, path, body] of requests) {
@@ -2584,8 +2631,19 @@ test("public connector gateway forwards every allowlisted operation with caller 
     assert.equal(receivedRequests.at(-1).authorized, true);
   }
   assert.equal(
-    receivedRequests.at(-1).body,
+    receivedRequests.findLast((request) => request.path?.endsWith("/category"))
+      ?.body,
     '{"categoryId":"invented-category"}'
+  );
+  assert.equal(
+    receivedRequests.findLast((request) => request.path?.endsWith("/merchant"))
+      ?.body,
+    '{"merchantName":"Invented Market"}'
+  );
+  assert.equal(
+    receivedRequests.findLast((request) => request.path?.endsWith("/review"))
+      ?.body,
+    '{"reviewed":true}'
   );
 });
 
@@ -3036,6 +3094,91 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
   });
   assert.equal(stale.status, 409);
   assert.equal((await stale.json()).error.code, "policy_version_conflict");
+});
+
+test("Quick Review support is private, bounded, and privacy-safe", async () => {
+  const rankPath = "/api/internal/v1/finance/quick-review/rank";
+  const unauthorized = await rawInternalAttributionFetch(
+    uiUrl,
+    rankPath,
+    JSON.stringify({})
+  );
+  assert.equal(unauthorized.status, 401);
+
+  const ranked = await rawInternalAttributionFetch(
+    uiUrl,
+    rankPath,
+    JSON.stringify({
+      contractVersion: "1.0",
+      items: [{
+        sourceRef: "opaque-source",
+        occurredOn: "2026-10-01",
+        merchantName: "Invented Market",
+        isPending: false,
+        monarchReviewStatus: "needs_review",
+        attribution: {
+          status: "unassigned",
+          confidence: "unknown",
+          reviewStatus: "needs-review",
+        },
+        signals: ["payee-ambiguous"],
+      }],
+    }),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  assert.equal(ranked.status, 200);
+  assert.deepEqual(await ranked.json(), {
+    contractVersion: "1.0",
+    rankedItems: [{
+      sourceRef: "opaque-source",
+      rank: 1,
+      score: 100,
+      reasons: [
+        "kid-attribution-ambiguous",
+        "monarch-needs-review",
+        "payee-ambiguous",
+      ],
+    }],
+  });
+
+  const undisclosed = await rawInternalAttributionFetch(
+    uiUrl,
+    "/api/internal/v1/finance/quick-review/research",
+    JSON.stringify({
+        contractVersion: "1.0",
+        vendorName: "Invented Market",
+        coarseLocation: null,
+        sensitiveContext: { amount: -12.34, occurredOn: "2026-10-01" },
+        disclosure: { shown: false, confirmedAt: null },
+    }),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  assert.equal(undisclosed.status, 422);
+  assert.equal(
+    (await undisclosed.json()).error.code,
+    "research_disclosure_required"
+  );
+
+  const unknown = await rawInternalAttributionFetch(
+    uiUrl,
+    "/api/internal/v1/finance/quick-review/unknown",
+    JSON.stringify({}),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  assert.equal(unknown.status, 404);
+  assert.equal(
+    (await unknown.json()).error.code,
+    "quick_review_route_not_available"
+  );
+
+  const oversized = await rawInternalAttributionFetch(
+    uiUrl,
+    rankPath,
+    JSON.stringify({ value: "x".repeat(70 * 1_024) }),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error.code, "payload_too_large");
 });
 
 test("batch attribution returns only strict normalized decisions", async () => {

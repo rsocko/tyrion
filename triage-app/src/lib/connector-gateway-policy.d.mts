@@ -42,6 +42,14 @@ export function parseCategoryMutation(
   value: unknown
 ): ConnectorPolicyError | { allowed: true; body: string };
 
+export function parseMerchantMutation(
+  value: unknown
+): ConnectorPolicyError | { allowed: true; body: string };
+
+export function parseReviewMutation(
+  value: unknown
+): ConnectorPolicyError | { allowed: true; body: string };
+
 export function resolveConnectorBridgeUrl(
   rawUrl: string | undefined
 ): { configured: false } | { configured: true; baseUrl: URL };

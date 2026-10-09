@@ -127,7 +127,8 @@ async def test_transactions(client):
         assert "account" in tx
         assert set(tx) == {
             "id", "date", "amount", "merchant", "category", "account",
-            "isPending", "isRecurring", "notes", "tags", "tagReferences",
+            "isPending", "isRecurring", "reviewStatus", "reviewAssignee",
+            "notes", "tags", "tagReferences",
         }
         assert set(tx["merchant"]) == {"name", "logoUrl"}
         assert set(tx["account"]) == {"id", "displayName", "mask"}
@@ -220,6 +221,18 @@ async def test_transactions_support_repeated_unique_tag_filters(client):
 
 
 @pytest.mark.anyio
+async def test_transactions_filter_by_authoritative_review_state(client):
+    response = await client.get("/transactions?needs_review=true&limit=500")
+
+    assert response.status_code == 200
+    assert response.json()["transactions"]
+    assert all(
+        transaction["reviewStatus"] == "needs_review"
+        for transaction in response.json()["transactions"]
+    )
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("query", "status", "code"),
     [
@@ -227,6 +240,7 @@ async def test_transactions_support_repeated_unique_tag_filters(client):
         ("limit=1&limit=2", 400, "invalid_request"),
         ("is_pending=1", 422, "invalid_request"),
         ("is_recurring=yes", 422, "invalid_request"),
+        ("needs_review=yes", 422, "invalid_request"),
         ("merchant_query=%20%20", 422, "invalid_request"),
         ("account_id=%20%20", 422, "invalid_request"),
         ("tag_id=%20%20", 422, "invalid_request"),
@@ -554,6 +568,8 @@ async def test_openapi_json(client):
         "/auth/status", "/auth/logout", "/sync", "/transactions",
         "/transactions/{transaction_id}", "/transactions/{transaction_id}/splits",
         "/transactions/{transaction_id}/category",
+        "/transactions/{transaction_id}/merchant",
+        "/transactions/{transaction_id}/review",
         "/categories", "/category-groups", "/tags", "/accounts", "/recurring",
         "/cashflow", "/budgets",
     ):
@@ -584,6 +600,7 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
             "merchant": {"name": "Store"},
             "category": {"id": "cat-1", "name": "Shopping"},
             "account": {"id": "acc-1", "displayName": "Checking"},
+            "needsReview": False,
         }],
     }
     live_transaction = {
@@ -595,6 +612,7 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
                 "merchant": {"name": "Store"},
                 "category": {"id": "cat-1", "name": "Shopping"},
                 "account": {"id": "acc-1", "displayName": "Checking"},
+                "needsReview": False,
             }],
         },
     }
@@ -636,6 +654,7 @@ def test_transaction_normalizer_matches_nullable_consumer_fields():
         "merchant": {"name": "Store", "logoUrl": "http://["},
         "category": None,
         "account": {"id": "acc-1", "displayName": "Checking", "last4": 1234},
+        "needsReview": False,
         "notes": None,
     })
 
@@ -645,6 +664,22 @@ def test_transaction_normalizer_matches_nullable_consumer_fields():
     assert transaction.notes is None
 
 
+@pytest.mark.parametrize("value", [None, "false", 0])
+def test_transaction_normalizer_requires_strict_review_state(value):
+    raw = {
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -12.5,
+        "merchant": {"name": "Store"},
+        "account": {"id": "acc-1", "displayName": "Checking"},
+    }
+    if value is not None:
+        raw["needsReview"] = value
+
+    with pytest.raises(ValueError, match="needsReview"):
+        normalize_transaction(raw)
+
+
 def test_transaction_normalizer_preserves_names_and_adds_stable_tag_references():
     transaction = normalize_transaction({
         "id": "tx-1",
@@ -652,6 +687,7 @@ def test_transaction_normalizer_preserves_names_and_adds_stable_tag_references()
         "amount": -12.5,
         "merchant": {"name": "Store"},
         "account": {"id": "acc-1", "displayName": "Checking"},
+        "needsReview": False,
         "tags": [
             {"id": "tag-1", "name": "Household"},
             {"id": "tag-2", "name": "Reimbursable"},
@@ -682,6 +718,7 @@ def test_transaction_normalizer_rejects_tags_without_stable_identity(tags):
             "amount": -12.5,
             "merchant": {"name": "Store"},
             "account": {"id": "acc-1", "displayName": "Checking"},
+            "needsReview": False,
             "tags": tags,
         })
 
@@ -776,6 +813,7 @@ def test_normalizes_real_live_recurring_shape():
             "amount": -16.99,
             "category": {"id": "cat-1", "name": "Subscriptions"},
             "account": {"id": "acc-1", "displayName": "Checking"},
+            "needsReview": False,
         }],
     }
     recurring = normalize_recurring(payload)
@@ -933,6 +971,7 @@ async def test_live_transactions_use_provider_pagination_and_defaults(client, mo
                 "merchant": {"name": "Store"},
                 "category": {"id": "cat-1", "name": "Shopping"},
                 "account": {"id": "acc-1", "displayName": "Checking"},
+                "needsReview": False,
             }],
         },
     }
@@ -973,6 +1012,7 @@ async def test_live_transactions_filter_merchant_and_amount_before_pagination(
                     "amount": -10,
                     "merchant": {"name": "Invented Market"},
                     "account": {"id": "acc-1", "displayName": "Checking"},
+                    "needsReview": False,
                 },
                 {
                     "id": "tx-2",
@@ -980,6 +1020,7 @@ async def test_live_transactions_filter_merchant_and_amount_before_pagination(
                     "amount": -30,
                     "merchant": {"name": "Other Shop"},
                     "account": {"id": "acc-1", "displayName": "Checking"},
+                    "needsReview": False,
                 },
             ],
         },
@@ -1022,17 +1063,56 @@ async def test_live_normalized_filter_rejects_unbounded_provider_result(
 
 
 @pytest.mark.anyio
-async def test_unknown_transaction_filter_fails_before_upstream_call(client, monkeypatch):
+async def test_live_review_filter_uses_pinned_provider_primitive(client, monkeypatch):
     provider = AsyncMock()
+    provider.get_transactions.return_value = {
+        "allTransactions": {"results": [], "totalCount": 0},
+    }
     monkeypatch.setattr(main_module, "DEMO_MODE", False)
     get_client = AsyncMock(return_value=provider)
     monkeypatch.setattr(main_module, "get_client", get_client)
 
     response = await client.get("/transactions?needs_review=true")
 
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "invalid_request"
-    get_client.assert_not_awaited()
+    assert response.status_code == 200
+    assert provider.get_transactions.await_args.kwargs["needs_review"] is True
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_review_filter_fails_closed_for_older_client_signature(
+    client,
+    monkeypatch,
+):
+    class LegacyProvider:
+        async def get_transactions(
+            self,
+            limit,
+            offset,
+            start_date,
+            end_date,
+            account_ids,
+            category_ids,
+            tag_ids,
+            is_pending,
+            is_recurring,
+        ):
+            return {"allTransactions": {"results": [], "totalCount": 0}}
+
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(
+        main_module,
+        "get_client",
+        AsyncMock(return_value=LegacyProvider()),
+    )
+
+    unfiltered = await client.get("/transactions")
+    filtered = await client.get("/transactions?needs_review=true")
+
+    assert unfiltered.status_code == 200
+    assert filtered.status_code == 503
+    assert filtered.json()["error"]["code"] == "review_capability_unavailable"
+    assert_contract(filtered)
 
 
 @pytest.mark.anyio
@@ -1178,6 +1258,7 @@ async def test_live_transaction_detail_enriches_category_name(client, monkeypatc
             "merchant": {"name": "Store"},
             "category": {"id": "cat-1"},
             "account": {"id": "acc-1", "displayName": "Checking"},
+            "needsReview": False,
         },
     }
     provider.get_transaction_categories.return_value = {
@@ -1192,6 +1273,39 @@ async def test_live_transaction_detail_enriches_category_name(client, monkeypatc
     assert resp.json()["transaction"]["category"] == {
         "id": "cat-1",
         "name": "Shopping",
+    }
+
+
+@pytest.mark.anyio
+async def test_live_transaction_detail_normalizes_review_assignee(client, monkeypatch):
+    provider = AsyncMock()
+    provider.get_transaction_details.return_value = {
+        "getTransaction": {
+            "id": "tx-1",
+            "date": "2026-08-01",
+            "amount": -10,
+            "merchant": {"name": "Store"},
+            "category": {"id": "cat-1", "name": "Shopping"},
+            "account": {"id": "acc-1", "displayName": "Checking"},
+            "needsReview": True,
+            "needsReviewByUser": {"id": "member-1"},
+        },
+        "myHousehold": {
+            "users": [
+                {"id": "member-1", "name": "Household Member"},
+            ],
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.get("/transactions/tx-1")
+
+    assert response.status_code == 200
+    assert response.json()["transaction"]["reviewStatus"] == "needs_review"
+    assert response.json()["transaction"]["reviewAssignee"] == {
+        "id": "member-1",
+        "name": "Household Member",
     }
 
 
@@ -1343,6 +1457,141 @@ async def test_category_update_rejects_empty_id(client):
 
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "invalid_request"
+
+
+@pytest.mark.anyio
+async def test_demo_merchant_update_is_normalized_and_verified(client):
+    response = await client.patch(
+        "/transactions/tx-1/merchant",
+        json={"merchantName": "  Invented   Market  "},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "contractVersion": CONTRACT_VERSION,
+        "status": "updated",
+        "transactionId": "tx-1",
+        "merchantName": "Invented Market",
+    }
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_live_merchant_update_requires_verified_response(client, monkeypatch):
+    provider = AsyncMock()
+    provider.update_transaction.return_value = {
+        "updateTransaction": {
+            "transaction": {"merchant": {"name": "Different Merchant"}},
+            "errors": [],
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.patch(
+        "/transactions/tx-1/merchant",
+        json={"merchantName": "Invented Market"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_error"
+    provider.update_transaction.assert_awaited_once_with(
+        "tx-1",
+        merchant_name="Invented Market",
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"merchantName": "  "},
+        {"merchantName": "x" * 121},
+        {"merchantName": "Unsafe\u0000Name"},
+        {"merchantName": "Invented", "extra": True},
+    ],
+)
+async def test_merchant_update_rejects_invalid_names(client, payload):
+    response = await client.patch("/transactions/tx-1/merchant", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_demo_transaction_review_uses_authoritative_contract(client):
+    response = await client.patch(
+        "/transactions/tx-1/review",
+        json={"reviewed": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "contractVersion": CONTRACT_VERSION,
+        "status": "reviewed",
+        "transactionId": "tx-1",
+        "reviewStatus": "reviewed",
+    }
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_live_transaction_review_requires_verified_response(client, monkeypatch):
+    provider = AsyncMock()
+    provider.update_transaction.return_value = {
+        "updateTransaction": {
+            "transaction": {"needsReview": True},
+            "errors": [],
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.patch(
+        "/transactions/tx-1/review",
+        json={"reviewed": True},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "upstream_error"
+    provider.update_transaction.assert_awaited_once_with("tx-1", reviewed=True)
+
+
+@pytest.mark.anyio
+async def test_live_transaction_review_fails_closed_without_client_capability(
+    client,
+    monkeypatch,
+):
+    class LegacyProvider:
+        async def update_transaction(self, transaction_id, category_id=None):
+            return {}
+
+    provider = LegacyProvider()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.patch(
+        "/transactions/tx-1/review",
+        json={"reviewed": True},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "review_capability_unavailable"
+    assert_contract(response)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "payload",
+    [{"reviewed": False}, {}, {"reviewed": True, "extra": True}],
+)
+async def test_transaction_review_rejects_unverified_expansion(client, payload):
+    response = await client.patch("/transactions/tx-1/review", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert_contract(response)
 
 
 @pytest.mark.anyio

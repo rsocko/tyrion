@@ -130,6 +130,42 @@ async def test_live_category_mutation_is_verified_and_restored(live_bridge):
 
 
 @pytest.mark.anyio
+async def test_live_merchant_mutation_is_verified_and_restored(live_bridge):
+    if os.getenv("TYRION_LIVE_MUTATION_CONFIRM") != MUTATION_CONFIRMATION:
+        pytest.skip("Explicit reversible mutation confirmation is required")
+    transaction_id = os.getenv("TYRION_TEST_TRANSACTION_ID")
+    replacement_merchant = os.getenv("TYRION_TEST_MERCHANT_NAME")
+    if not transaction_id or not replacement_merchant:
+        pytest.skip("Dedicated test transaction and merchant name are required")
+
+    before = await live_bridge.get(f"/transactions/{transaction_id}")
+    assert_success(before)
+    original = before.json()["transaction"].get("merchant", {}).get("name")
+    if not original:
+        pytest.skip("The test transaction must have a restorable original merchant")
+
+    try:
+        changed = await live_bridge.patch(
+            f"/transactions/{transaction_id}/merchant",
+            json={"merchantName": replacement_merchant},
+        )
+        assert_success(changed)
+        verified = await live_bridge.get(f"/transactions/{transaction_id}")
+        assert_success(verified)
+        assert verified.json()["transaction"]["merchant"]["name"] == replacement_merchant
+    finally:
+        restored = await live_bridge.patch(
+            f"/transactions/{transaction_id}/merchant",
+            json={"merchantName": original},
+        )
+        assert_success(restored)
+
+    final = await live_bridge.get(f"/transactions/{transaction_id}")
+    assert_success(final)
+    assert final.json()["transaction"]["merchant"]["name"] == original
+
+
+@pytest.mark.anyio
 async def test_z_live_authentication_flow_and_logout(live_bridge):
     method = os.getenv("TYRION_LIVE_AUTH_METHOD")
     if method not in {"password", "cookies"}:
