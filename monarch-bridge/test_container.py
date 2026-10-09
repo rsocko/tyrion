@@ -170,6 +170,8 @@ def test_workflows_keep_untrusted_validation_separate_from_trusted_publication()
     )
 
     assert "runs-on: ubuntu-latest" in ci
+    assert '"registry-mirrors": ["https://mirror.gcr.io"]' in ci
+    assert "systemctl restart docker" in ci
     assert "docker build --tag tyrion-bridge:ci ." in ci
     assert "docker build --file triage-app/Dockerfile --tag tyrion-ui:ci ." in ci
     assert "npm run build" in ci
