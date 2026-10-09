@@ -516,40 +516,6 @@ export default function ConfigurationPage() {
         title="Account defaults"
         description="Choose the fallback attribution for each Monarch account. Manual decisions and specific merchant rules always take precedence."
       >
-        {draft.legacyAccountRules.length > 0 && (
-          <div role="alert" className="mb-5 rounded-lg border border-warning bg-background p-4">
-            <h3 className="font-semibold text-warning">Legacy account rules need review</h3>
-            <p className="mt-1 text-sm leading-6 text-muted">
-              Opaque account references cannot be matched safely to the direct account catalog.
-              Choose defaults below, then remove each inactive legacy rule.
-            </p>
-            <ul className="mt-3 space-y-2">
-              {draft.legacyAccountRules.map((rule) => (
-                <li key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3 text-sm">
-                  <span>
-                    {kidName(draft, rule.kidId)} · legacy reference ending {rule.accountRef.slice(-8)}
-                  </span>
-                  <button
-                    className="button-danger"
-                    type="button"
-                    disabled={disabled}
-                    onClick={() =>
-                      replaceDraft({
-                        ...draft,
-                        legacyAccountRules: draft.legacyAccountRules.filter(
-                          (item) => item.id !== rule.id
-                        ),
-                      })
-                    }
-                  >
-                    Remove legacy rule
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {catalogState === "loading" && (
           <p aria-live="polite" className="text-sm text-muted">Loading Monarch accounts...</p>
         )}
@@ -1007,7 +973,6 @@ function snapshotDraft(policy: PolicySnapshotV1): PolicyDraftV1 {
     currency: policy.currency,
     kids: policy.kids,
     accountDefaults: policy.accountDefaults,
-    legacyAccountRules: policy.legacyAccountRules,
     merchantRules: policy.merchantRules,
     limits: policy.limits,
     exceptionPolicy: policy.exceptionPolicy,

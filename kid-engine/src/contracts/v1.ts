@@ -35,15 +35,6 @@ export interface AccountDefaultV1 {
   kidId: string | null;
 }
 
-export interface LegacyAccountRuleV1 {
-  id: string;
-  accountRef: string;
-  kidId: string;
-  confidence: Exclude<AttributionConfidenceV1, 'none'>;
-  enabled: false;
-  migrationStatus: 'review-required';
-}
-
 export interface MerchantAttributionRuleV1 {
   id: string;
   kidId: string;
@@ -70,7 +61,6 @@ export interface PolicyDraftV1 {
   currency: string;
   kids: KidProfileV1[];
   accountDefaults: AccountDefaultV1[];
-  legacyAccountRules: LegacyAccountRuleV1[];
   merchantRules: MerchantAttributionRuleV1[];
   limits: SpendingLimitV1[];
   exceptionPolicy: ExceptionPolicyV1;
@@ -90,7 +80,6 @@ export function createDefaultPolicyDraftV1(): PolicyDraftV1 {
     currency: 'USD',
     kids: [],
     accountDefaults: [],
-    legacyAccountRules: [],
     merchantRules: [],
     limits: [],
     exceptionPolicy: {
@@ -115,7 +104,6 @@ export function policyDraftFromSnapshotV1(
     currency: snapshot.currency,
     kids: snapshot.kids,
     accountDefaults: snapshot.accountDefaults,
-    legacyAccountRules: snapshot.legacyAccountRules,
     merchantRules: snapshot.merchantRules,
     limits: snapshot.limits,
     exceptionPolicy: snapshot.exceptionPolicy,
@@ -159,7 +147,6 @@ export interface AttributionInputV1 {
 
 export type AttributionMethodV1 =
   | 'manual'
-  | 'account-rule'
   | 'account-default'
   | 'merchant-rule'
   | 'historical-pattern'
@@ -169,7 +156,6 @@ export type AttributionMethodV1 =
 export type AttributionReviewReasonV1 =
   | 'no-match'
   | 'low-confidence'
-  | 'account-rule-conflict'
   | 'merchant-rule-conflict'
   | 'historical-attribution-tie'
   | 'engine-unavailable'
@@ -364,7 +350,6 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
       [
         'no-match',
         'low-confidence',
-        'account-rule-conflict',
         'merchant-rule-conflict',
         'historical-attribution-tie',
         'engine-unavailable',
@@ -412,7 +397,6 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
       result.method,
       [
         'manual',
-        'account-rule',
         'account-default',
         'merchant-rule',
         'historical-pattern',
@@ -586,7 +570,6 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
     'currency',
     'kids',
     'accountDefaults',
-    'legacyAccountRules',
     'merchantRules',
     'limits',
     'exceptionPolicy',
@@ -601,7 +584,6 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
     currency: snapshot.currency,
     kids: snapshot.kids,
     accountDefaults: snapshot.accountDefaults,
-    legacyAccountRules: snapshot.legacyAccountRules,
     merchantRules: snapshot.merchantRules,
     limits: snapshot.limits,
     exceptionPolicy: snapshot.exceptionPolicy,
@@ -623,7 +605,6 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     'currency',
     'kids',
     'accountDefaults',
-    'legacyAccountRules',
     'merchantRules',
     'limits',
     'exceptionPolicy',
@@ -683,39 +664,6 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     accountDefaults.map((accountDefault) => accountDefault.accountRef),
     'account default references'
   );
-  const legacyAccountRules = array(
-    draft.legacyAccountRules,
-    'legacyAccountRules'
-  ).map((item, index) => {
-    const rule = object(item, `legacyAccountRules[${index}]`);
-    exactKeys(rule, [
-      'id',
-      'accountRef',
-      'kidId',
-      'confidence',
-      'enabled',
-      'migrationStatus',
-    ]);
-    if (rule.enabled !== false || rule.migrationStatus !== 'review-required') {
-      invalid(`legacyAccountRules[${index}] must remain disabled and review-required`);
-    }
-    return {
-      id: identifier(rule.id, `legacyAccountRules[${index}].id`),
-      accountRef: boundedString(
-        rule.accountRef,
-        `legacyAccountRules[${index}].accountRef`,
-        1,
-        128
-      ),
-      kidId: identifier(rule.kidId, `legacyAccountRules[${index}].kidId`),
-      confidence: confidence(
-        rule.confidence,
-        `legacyAccountRules[${index}].confidence`
-      ),
-      enabled: false as const,
-      migrationStatus: 'review-required' as const,
-    };
-  });
   const merchantRules = array(draft.merchantRules, 'merchantRules').map(
     (item, index) => {
       const rule = object(item, `merchantRules[${index}]`);
@@ -740,7 +688,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     }
   );
   unique(
-    [...legacyAccountRules, ...merchantRules].map((rule) => rule.id),
+    merchantRules.map((rule) => rule.id),
     'attribution rule ids'
   );
   const limits = array(draft.limits, 'limits').map((item, index) => {
@@ -812,7 +760,6 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     currency,
     kids,
     accountDefaults,
-    legacyAccountRules,
     merchantRules,
     limits,
     exceptionPolicy,

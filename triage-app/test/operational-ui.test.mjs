@@ -4062,7 +4062,6 @@ function policyDraft(policy) {
     currency: policy.currency,
     kids: policy.kids,
     accountDefaults: policy.accountDefaults,
-    legacyAccountRules: policy.legacyAccountRules,
     merchantRules: policy.merchantRules,
     limits: policy.limits,
     exceptionPolicy: policy.exceptionPolicy,

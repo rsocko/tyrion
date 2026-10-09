@@ -361,7 +361,7 @@ function parseStoredPolicies(raw: string): StoredPolicies {
       candidate = value;
     } else {
       const legacy = value as Record<string, unknown>;
-      if (!Array.isArray(legacy.cardRules) || legacy.cardRules.length !== 0) {
+      if (!Array.isArray(legacy.cardRules)) {
         throw new PolicyStoreCorruptError();
       }
       const { cardRules: _discarded, ...snapshot } = legacy;
@@ -369,33 +369,40 @@ function parseStoredPolicies(raw: string): StoredPolicies {
         ...snapshot,
         contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
         engineVersion: '2.0.0',
-        accountRules: [],
+        accountDefaults: [],
       };
     }
 
     if (
       typeof candidate !== 'object' ||
       candidate === null ||
-      Array.isArray(candidate) ||
-      !Array.isArray((candidate as Record<string, unknown>).accountRules)
+      Array.isArray(candidate)
     ) {
       return candidate;
     }
 
     const legacy = candidate as Record<string, unknown>;
-    const accountRules = legacy.accountRules as Array<Record<string, unknown>>;
-    const { accountRules: _discarded, ...snapshot } = legacy;
+    const hasAccountRules = 'accountRules' in legacy;
+    const hasLegacyAccountRules = 'legacyAccountRules' in legacy;
+    if (!hasAccountRules && !hasLegacyAccountRules) {
+      return candidate;
+    }
+    if (
+      (hasAccountRules && !Array.isArray(legacy.accountRules)) ||
+      (hasLegacyAccountRules && !Array.isArray(legacy.legacyAccountRules))
+    ) {
+      throw new PolicyStoreCorruptError();
+    }
+
+    const {
+      accountRules: _discardedAccountRules,
+      legacyAccountRules: _discardedLegacyAccountRules,
+      ...snapshot
+    } = legacy;
     return {
       ...snapshot,
-      accountDefaults: [],
-      legacyAccountRules: accountRules.map((rule) => ({
-        id: rule.id,
-        accountRef: rule.accountRef,
-        kidId: rule.kidId,
-        confidence: rule.confidence,
-        enabled: false,
-        migrationStatus: 'review-required',
-      })),
+      accountDefaults:
+        'accountDefaults' in snapshot ? snapshot.accountDefaults : [],
     };
   }
 

@@ -21,7 +21,6 @@ export const policyDraftFixture: PolicyDraftV1 = {
       kidId: 'kid-alpha',
     },
   ],
-  legacyAccountRules: [],
   merchantRules: [
     {
       id: 'rule-merchant-beta',

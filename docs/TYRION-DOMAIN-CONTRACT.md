@@ -252,7 +252,6 @@ duplicate rule IDs or limit periods, and currency mismatches.
 - Kid profiles
 - One optional direct account default per Bridge account: `child`, `parent-shared`,
   or `rule-based`
-- Disabled review-required compatibility records for legacy opaque account rules
 - Enabled merchant rules
 - Daily, weekly, and monthly limits
 - Limit-warning threshold, likely-attribution review policy, and the bounded exception
@@ -285,13 +284,11 @@ The file adapter stores policy and audit data only. Its state path must be exter
 access-restricted, backed up, and mounted by only one application deployment. When
 the fixed homelab identity first opens a store containing exactly one policy under
 the superseded configurable household ID, the adapter atomically rewrites that
-policy and its audit household scope to `homelab-household`. The adapter upgrades a v1 policy only when its legacy `cardRules` array is empty. A
-non-empty legacy array fails closed because a card fingerprint cannot be converted
-into an account reference. Existing v2 `accountRules` are migrated into disabled
-`legacyAccountRules` with `migrationStatus: "review-required"`; they never silently
-map to direct Bridge IDs. Operators choose current account defaults from the catalog
-and explicitly remove compatibility records. No fingerprint sidecar or parity check
-is used.
+policy and its audit household scope to `homelab-household`. The adapter deletes obsolete v1 `cardRules` and v2 `accountRules` during migration
+because neither legacy reference can be safely converted to a direct Bridge account
+ID. Every migrated policy starts with an empty `accountDefaults` array; operators
+configure only the small set of defaults they still need from the current catalog.
+No fingerprint sidecar or parity check is used.
 
 ## Attribution result and precedence
 
@@ -311,10 +308,6 @@ returns a definite `account-default` attribution. A parent/shared default return
 continue to history and then `no-match`. Rules matching multiple kids produce a
 conflict reason rather than first-item wins. Likely matches and historical ties remain
 pending review.
-
-For rollout compatibility, result parsers continue to accept the retired
-`method: "account-rule"` and `account-rule-conflict` reason in previously persisted
-results. New evaluations never emit either value.
 
 Every `AttributionResultV1` includes:
 
