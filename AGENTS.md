@@ -71,9 +71,10 @@ Do not run credentialed live tests unless the user explicitly requests the contr
 run and supplies secrets outside the repository. Never perform a live category
 mutation without the separate confirmation required by `test_live_integration.py`.
 For auth, session, or upstream-contract changes, review and update
-`docs/MONARCH-INTEGRATION-VALIDATION.md`. Keep `monarchmoneycommunity==1.5.2` pinned
-unless signatures, synthetic normalizers, deterministic coverage, and the controlled
-live matrix are refreshed together.
+`docs/MONARCH-INTEGRATION-VALIDATION.md`. Keep `monarchmoneycommunity==1.6.0` pinned
+unless signatures, synthetic normalizers, and deterministic coverage are refreshed
+together. Complete the controlled live matrix before claiming observed live
+compatibility for a new client version.
 
 ### Debug UI
 

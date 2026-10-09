@@ -17,7 +17,7 @@ files and notices.
 | proper-lockfile and runtime dependencies | 4.1.2 | MIT | [package source and license](https://github.com/moxystudio/node-proper-lockfile/tree/v4.1.2) |
 | better-sqlite3 and runtime dependencies | 12.4.1 | MIT, ISC, and permissive alternatives | [package source and license](https://github.com/WiseLibs/better-sqlite3/tree/v12.4.1); installed package metadata and license files remain authoritative |
 | Zod | 4.1.12 | MIT | [package source and license](https://github.com/colinhacks/zod/tree/v4.1.12) |
-| monarchmoneycommunity | 1.5.2 | MIT | Copyright (c) 2026 bradleyseanf; [license](https://github.com/bradleyseanf/monarchmoneycommunity/blob/v1.5.2/LICENSE) |
+| monarchmoneycommunity | 1.6.0 | MIT | Copyright (c) 2026 bradleyseanf; [license](https://github.com/bradleyseanf/monarchmoneycommunity/blob/v1.6.0/LICENSE) |
 | monarchmoneycommunity upstream | hammem/monarchmoney | MIT | Copyright (c) 2023 hammem; [license](https://github.com/hammem/monarchmoney/blob/main/LICENSE) |
 | FastAPI 0.141.1, Pydantic 2.13.4 | 2026-08-09 resolution | MIT | Package license metadata and installed distributions |
 | Uvicorn 0.52.1, HTTPX 0.28.1, python-dotenv 1.2.2 | 2026-08-09 resolution | BSD-3-Clause | Package license metadata and installed distributions |

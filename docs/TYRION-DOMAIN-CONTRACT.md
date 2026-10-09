@@ -75,7 +75,7 @@ and already-reviewed states, rule-driven review state, dashboard surfacing, and
 household-member review assignment:
 <https://www.monarch.com/blog/transaction-review> and
 <https://www.monarch.com/blog/assign-transactions-to-a-household-member-for-review>.
-The pinned `monarchmoneycommunity==1.5.2` implementation independently confirms the
+The pinned `monarchmoneycommunity==1.6.0` implementation independently confirms the
 read/filter/mutation fields used above. Neither that client nor the reviewed official
 documentation establishes a cleared/reconciled transaction field or a native
 statement-reconciliation workflow, so Tyrion does not expose one.
@@ -83,12 +83,14 @@ statement-reconciliation workflow, so Tyrion does not expose one.
 Review assignment complements but cannot replace Tyrion Kids attribution. In the
 pinned client, transaction list/detail queries expose `ownedByUser` and
 `ownershipOverriddenAt` separately from detail-only `needsReviewByUser`; the detail
-query resolves the latter through `myHousehold.users`. The review mutation accepts
-only `needs_review` and `reviewed`; it has no assignee or ownership parameter.
+query resolves the latter through `myHousehold.users`. The client can list household
+members and set transaction ownership, but ownership is distinct from review
+assignment and is not evidence of the physical spender. The review mutation accepts
+`needs_review` and `reviewed`; it has no review-assignee parameter.
 Transaction tags are independent household labels managed by
 `get_transaction_tags()` and `set_transaction_tags(transaction_id, tag_ids)`.
-`get_transactions()` returns only transaction-rule IDs, and the pinned client has no
-transaction-rule read/write API that establishes spender identity.
+The client can read complete transaction rules but has no rule mutation API that
+establishes spender identity.
 
 Therefore no verified upstream field says which child made a purchase. Account
 ownership identifies a Monarch household owner, review assignment identifies who

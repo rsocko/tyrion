@@ -779,8 +779,11 @@ def test_split_normalizer_rejects_malformed_upstream(payload):
 
 
 def test_pinned_client_inquiry_signatures_are_supported():
+    from importlib.metadata import version
+
     from monarchmoney import MonarchMoney
 
+    assert version("monarchmoneycommunity") == "1.6.0"
     transaction_parameters = inspect.signature(
         MonarchMoney.get_transactions,
     ).parameters
@@ -798,6 +801,38 @@ def test_pinned_client_inquiry_signatures_are_supported():
     assert list(
         inspect.signature(MonarchMoney.get_transaction_splits).parameters,
     ) == ["self", "transaction_id"]
+    assert list(inspect.signature(MonarchMoney.get_all_holdings).parameters) == ["self"]
+    assert list(inspect.signature(MonarchMoney.get_transaction_rules).parameters) == ["self"]
+    assert list(inspect.signature(MonarchMoney.get_household_members).parameters) == ["self"]
+    assert "owner_user_id" in inspect.signature(
+        MonarchMoney.update_transaction,
+    ).parameters
+    assert {
+        "start_date",
+        "end_date",
+        "use_legacy_goals",
+        "use_v2_goals",
+    } <= set(inspect.signature(MonarchMoney.get_budgets).parameters)
+
+
+def test_transaction_normalizer_does_not_expose_upstream_identity_additions():
+    baseline = {
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -12.5,
+        "merchant": {"name": "Invented Store"},
+        "category": {"id": "cat-1", "name": "Shopping"},
+        "account": {"id": "acc-1", "displayName": "Checking"},
+        "needsReview": False,
+    }
+    with_upstream_additions = {
+        **baseline,
+        "businessEntity": {"id": "entity-1", "name": "Invented Entity"},
+        "ownedByUser": {"id": "member-1", "name": "Household Member"},
+        "ownershipOverriddenAt": "2026-08-01T12:00:00Z",
+    }
+
+    assert normalize_transaction(with_upstream_additions) == normalize_transaction(baseline)
 
 
 def test_normalizes_real_live_recurring_shape():
