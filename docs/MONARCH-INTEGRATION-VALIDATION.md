@@ -57,8 +57,8 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 `kid-engine` is private Tyrion-internal code. Mission Control calls
 `POST /api/internal/v2/attribution/batch` on the private Tyrion service network and
 never installs or executes the engine. Each bounded request contains only an opaque
-consumer source reference, normalized merchant name, calendar date,
-connector-generated opaque account reference, observation timestamp, fixed
+consumer source reference, normalized merchant name, calendar date, the exact direct
+normalized Bridge Account DTO `id`, observation timestamp, fixed
 provenance marker, and optional structured manual-decision context. It cannot carry
 Bridge pages, raw transaction/account identifiers, masks, amounts, notes, tags,
 categories, session material, or credentials.

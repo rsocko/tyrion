@@ -192,7 +192,11 @@ describe('durable file policy repository', () => {
   it('upgrades only empty v1 card-rule policy stores', async () => {
     const directory = await temporaryDirectory();
     const path = resolve(directory, 'policies.json');
-    const { accountRules: _discarded, ...draft } = policyDraftFixture;
+    const {
+      accountDefaults: _discardedDefaults,
+      legacyAccountRules: _discardedLegacy,
+      ...draft
+    } = policyDraftFixture;
     let legacyCardRules: unknown[] = [];
     const legacySnapshot = {
       ...policyFixture,
@@ -224,8 +228,10 @@ describe('durable file policy repository', () => {
     await expect(repository.load(policyFixture.householdId)).resolves.toMatchObject({
       contractVersion: '2.0',
       engineVersion: '2.0.0',
-      accountRules: [],
+      accountDefaults: [],
+      legacyAccountRules: [],
     });
+
     await expect(repository.listAudit(policyFixture.householdId)).resolves.toMatchObject([
       { contractVersion: '2.0', eventId: 'audit-event-v1' },
     ]);
@@ -252,6 +258,52 @@ describe('durable file policy repository', () => {
     await expect(repository.load(policyFixture.householdId)).rejects.toBeInstanceOf(
       PolicyStoreCorruptError
     );
+  });
+
+  it('migrates opaque v2 account rules into inactive review-required compatibility data', async () => {
+    const directory = await temporaryDirectory();
+    const path = resolve(directory, 'policies.json');
+    const {
+      accountDefaults: _discardedDefaults,
+      legacyAccountRules: _discardedLegacy,
+      ...draft
+    } = policyDraftFixture;
+    const legacySnapshot = {
+      ...policyFixture,
+      ...draft,
+      accountRules: [
+        {
+          id: 'legacy-account-rule',
+          kidId: 'kid-alpha',
+          accountRef: 'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          confidence: 'definite',
+          enabled: true,
+        },
+      ],
+    };
+    await writeFile(
+      path,
+      JSON.stringify({
+        storageVersion: 2,
+        policies: { [policyFixture.householdId]: legacySnapshot },
+        audit: [],
+      })
+    );
+
+    const migrated = await new FilePolicyRepository(path).load(
+      policyFixture.householdId
+    );
+    expect(migrated?.accountDefaults).toEqual([]);
+    expect(migrated?.legacyAccountRules).toEqual([
+      {
+        id: 'legacy-account-rule',
+        accountRef: 'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        kidId: 'kid-alpha',
+        confidence: 'definite',
+        enabled: false,
+        migrationStatus: 'review-required',
+      },
+    ]);
   });
 
   it('enforces compare-and-swap when a writer uses a stale version', async () => {

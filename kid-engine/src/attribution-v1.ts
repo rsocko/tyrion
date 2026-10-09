@@ -43,24 +43,6 @@ export function attributeTransactionV1(
   const activeKidIds = new Set(
     policy.kids.filter((kid) => kid.active).map((kid) => kid.id)
   );
-  const accountCandidates = policy.accountRules
-    .filter(
-      (rule) =>
-        rule.enabled &&
-        activeKidIds.has(rule.kidId) &&
-        rule.accountRef === input.transaction.accountRef
-    )
-    .map(toCandidate);
-  const accountResult = evaluateCandidates(
-    input,
-    policy,
-    evaluatedAt,
-    accountCandidates,
-    'account-rule',
-    'account-rule-conflict'
-  );
-  if (accountResult) return accountResult;
-
   const normalizedMerchant = normalizeMerchant(input.transaction.merchantName);
   const merchantCandidates = policy.merchantRules
     .filter(
@@ -79,6 +61,36 @@ export function attributeTransactionV1(
     'merchant-rule-conflict'
   );
   if (merchantResult) return merchantResult;
+
+  const accountDefault = policy.accountDefaults.find(
+    (candidate) => candidate.accountRef === input.transaction.accountRef
+  );
+  if (accountDefault?.mode === 'child') {
+    return automatedResult(
+      input,
+      policy,
+      evaluatedAt,
+      accountDefault.kidId!,
+      'definite',
+      'account-default',
+      [],
+      'The account default attributes this transaction to the configured child.',
+      []
+    );
+  }
+  if (accountDefault?.mode === 'parent-shared') {
+    return {
+      contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
+      sourceRef: input.source.recordRef,
+      status: 'unassigned',
+      kidId: null,
+      confidence: 'definite',
+      method: 'account-default',
+      explanation: 'The account default classifies this transaction as parent/shared.',
+      review: { status: 'not-required', reasons: [] },
+      provenance: provenance(policy.policyVersion, evaluatedAt, 'automated', []),
+    };
+  }
 
   const minimum = options.minimumHistoricalAssignments ?? 3;
   if (!Number.isSafeInteger(minimum) || minimum < 1) {
@@ -216,8 +228,8 @@ function evaluateCandidates(
   policy: PolicySnapshotV1,
   evaluatedAt: string,
   candidates: RuleCandidate[],
-  method: 'account-rule' | 'merchant-rule',
-  conflictReason: 'account-rule-conflict' | 'merchant-rule-conflict'
+  method: 'merchant-rule',
+  conflictReason: 'merchant-rule-conflict'
 ): AttributionResultV1 | null {
   if (candidates.length === 0) return null;
   const ordered = [...candidates].sort(
@@ -253,9 +265,7 @@ function evaluateCandidates(
     confidence,
     method,
     ordered.map((candidate) => candidate.ruleId),
-    method === 'account-rule'
-      ? 'A configured Monarch account rule matched.'
-      : 'A configured merchant rule matched.',
+    'A configured merchant rule matched.',
     reviewReasons
   );
 }
@@ -266,7 +276,7 @@ function automatedResult(
   evaluatedAt: string,
   kidId: string,
   confidence: Exclude<AttributionConfidenceV1, 'none'>,
-  method: 'account-rule' | 'merchant-rule' | 'historical-pattern',
+  method: 'account-default' | 'merchant-rule' | 'historical-pattern',
   ruleIds: string[],
   explanation: string,
   reasons: AttributionReviewReasonV1[]
@@ -323,9 +333,7 @@ function provenance(
   };
 }
 
-function toCandidate(
-  rule: PolicySnapshotV1['accountRules'][number] | PolicySnapshotV1['merchantRules'][number]
-): RuleCandidate {
+function toCandidate(rule: PolicySnapshotV1['merchantRules'][number]): RuleCandidate {
   return {
     kidId: rule.kidId,
     confidence: rule.confidence,

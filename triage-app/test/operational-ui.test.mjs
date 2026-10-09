@@ -3559,21 +3559,18 @@ test("policy mutations reject cross-site requests and ignore client identity hea
   assert.equal(activePolicy.householdId, policyActor.householdId);
 });
 
-test("account rules persist only connector-generated opaque account references", async () => {
-  const accountRef =
-    "account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+test("account defaults persist exact direct Bridge account references", async () => {
+  const accountRef = "invented-card";
   const previousPolicyVersion = activePolicy.policyVersion;
   const bypass = await policyFetch("/api/policy", "PUT", {
     expectedPolicyVersion: activePolicy.policyVersion,
     policy: {
       ...policyDraft(activePolicy),
-      accountRules: [
+      accountDefaults: [
         {
-          id: "rule-account-bypass",
+          accountRef: "invalid account id",
+          mode: "child",
           kidId: "kid-synthetic",
-          accountRef: "raw-monarch-account-id",
-          confidence: "definite",
-          enabled: true,
         },
       ],
     },
@@ -3581,14 +3578,28 @@ test("account rules persist only connector-generated opaque account references",
   assert.equal(bypass.status, 422);
   assert.equal((await bypass.json()).error.code, "invalid_domain_contract");
 
+  const fabricated = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: {
+      ...policyDraft(activePolicy),
+      accountDefaults: [
+        {
+          accountRef: "fabricated-valid-reference",
+          mode: "child",
+          kidId: "kid-synthetic",
+        },
+      ],
+    },
+  });
+  assert.equal(fabricated.status, 422);
+  assert.equal((await fabricated.json()).error.code, "account_reference_not_found");
+
   const updatedDraft = policyDraft(activePolicy);
-  updatedDraft.accountRules = [
+  updatedDraft.accountDefaults = [
     {
-      id: "rule-account-synthetic",
-      kidId: "kid-synthetic",
       accountRef,
-      confidence: "definite",
-      enabled: true,
+      mode: "child",
+      kidId: "kid-synthetic",
     },
   ];
   const updated = await policyFetch("/api/policy", "PUT", {
@@ -3602,6 +3613,100 @@ test("account rules persist only connector-generated opaque account references",
   assert.match(stored, new RegExp(accountRef));
   await assert.rejects(readFile(`${policyStorePath}.fingerprint-key`, "utf8"));
   assert.doesNotMatch(stored, /password|cookie|authorization|sessionPath/i);
+
+  bridgeAccounts = bridgeAccounts.filter((account) => account.id !== accountRef);
+  const preserved = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: {
+      ...policyDraft(activePolicy),
+      exceptionPolicy: {
+        ...activePolicy.exceptionPolicy,
+        limitWarningPercent: 79,
+      },
+    },
+  });
+  assert.equal(preserved.status, 200);
+  activePolicy = (await preserved.json()).policy;
+  assert.equal(activePolicy.accountDefaults[0].accountRef, accountRef);
+
+  const changedStale = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: {
+      ...policyDraft(activePolicy),
+      accountDefaults: [
+        {
+          accountRef,
+          mode: "parent-shared",
+          kidId: null,
+        },
+      ],
+    },
+  });
+  assert.equal(changedStale.status, 422);
+  assert.equal((await changedStale.json()).error.code, "account_reference_not_found");
+
+  const removed = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: { ...policyDraft(activePolicy), accountDefaults: [] },
+  });
+  assert.equal(removed.status, 200);
+  activePolicy = (await removed.json()).policy;
+});
+
+test("account catalog is same-origin, authenticated upstream, and privacy-bounded", async () => {
+  const beforeCount = receivedRequests.length;
+  const crossSite = await fetch(`${uiUrl}/api/account-catalog`, {
+    headers: { "sec-fetch-site": "cross-site", Origin: "https://untrusted.example" },
+  });
+  assert.equal(crossSite.status, 403);
+  assert.equal(receivedRequests.length, beforeCount);
+
+  const response = await fetch(`${uiUrl}/api/account-catalog`, {
+    headers: { "sec-fetch-site": "same-origin", Origin: uiUrl },
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload, {
+    accounts: [
+      {
+        accountRef: "invented-card",
+        displayName: "Invented Card",
+        type: "credit",
+        maskHint: null,
+        isActive: true,
+      },
+      {
+        accountRef: "invented-cash",
+        displayName: "Invented Cash",
+        type: "cash",
+        maskHint: null,
+        isActive: true,
+      },
+    ],
+  });
+  assert.deepEqual(
+    receivedRequests.slice(-1).map(({ path, authorized }) => ({ path, authorized })),
+    [{ path: "/accounts", authorized: true }]
+  );
+  assert.doesNotMatch(
+    JSON.stringify(payload),
+    /currentBalance|institution|authorization|token/i
+  );
+
+  bridgeAccounts = Array.from({ length: 1_001 }, (_, index) => ({
+    id: `invented-account-${index}`,
+    displayName: `Invented Account ${index}`,
+    type: "checking",
+    mask: null,
+    institution: null,
+    currentBalance: 0,
+    isActive: true,
+  }));
+  const oversized = await fetch(`${uiUrl}/api/account-catalog`, {
+    headers: { "sec-fetch-site": "same-origin", Origin: uiUrl },
+  });
+  assert.equal(oversized.status, 502);
+  assert.equal((await oversized.json()).error.code, "account_catalog_invalid");
 });
 
 test("container and homelab contracts separate public connector and private attribution", async () => {
@@ -3934,7 +4039,7 @@ function attributionItem(sourceRef) {
     sourceRef,
     occurredOn: "2026-08-08",
     merchantName: "Synthetic Store",
-    accountRef: "account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    accountRef: "invented-card",
     observedAt: "2026-08-08T12:58:00Z",
     existingManualDecision: null,
   };
@@ -3956,7 +4061,8 @@ function policyDraft(policy) {
     timezone: policy.timezone,
     currency: policy.currency,
     kids: policy.kids,
-    accountRules: policy.accountRules,
+    accountDefaults: policy.accountDefaults,
+    legacyAccountRules: policy.legacyAccountRules,
     merchantRules: policy.merchantRules,
     limits: policy.limits,
     exceptionPolicy: policy.exceptionPolicy,
@@ -3977,7 +4083,7 @@ function reattributionRecord(householdId, sourceRef) {
       },
       transaction: {
         merchantName: "Synthetic Store",
-        accountRef: "account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        accountRef: "invented-card",
         occurredOn: "2026-01-01",
       },
       historicalAttributions: [],
@@ -4029,7 +4135,7 @@ function attributionActionRecord(householdId, sourceRef) {
       },
       transaction: {
         merchantName: "Synthetic Store",
-        accountRef: "account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        accountRef: "invented-card",
         occurredOn: "2026-08-08",
       },
       historicalAttributions: [],

@@ -124,9 +124,9 @@ application checkout. The file adapter provides atomic replacement, a cross-proc
 lease, metadata-only audit events, and compare-and-swap policy versions. On first
 access it atomically adopts a sole policy and its audit events from the superseded
 configurable household ID into `homelab-household`.
-Account rules store only `account-v1:` opaque references generated and retained by the
-Mission Control connector. Tyrion compares those values exactly and never accepts or
-persists raw Monarch account IDs or masks. `BRIDGE_API_TOKEN` authenticates protected
+Account defaults store the exact normalized Monarch Bridge Account DTO `id`, selected
+from the same-origin bounded account catalog. Mission Control passes that direct
+reference verbatim without hashing or namespacing it. `BRIDGE_API_TOKEN` authenticates protected
 calls only; it is not identity or fingerprint material. A v1 policy is upgraded only
 when its legacy card-rule array is empty; non-empty legacy rules fail closed.
 

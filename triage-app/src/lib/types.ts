@@ -8,7 +8,7 @@ export interface KidProfile {
 
 export type TriageStatus = 'uncategorized' | 'suggested-kid' | 'flagged' | 'category-mismatch';
 
-export type AttributionMethod = 'account-rule' | 'merchant-rule' | 'historical-pattern' | 'unassigned';
+export type AttributionMethod = 'account-default' | 'merchant-rule' | 'historical-pattern' | 'unassigned';
 
 export interface TriageTransaction {
   id: string;

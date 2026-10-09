@@ -14,16 +14,14 @@ export const policyDraftFixture: PolicyDraftV1 = {
     { id: 'kid-alpha', displayName: 'Alpha', color: 'blue', active: true },
     { id: 'kid-beta', displayName: 'Beta', color: null, active: true },
   ],
-  accountRules: [
+  accountDefaults: [
     {
-      id: 'rule-account-alpha',
+      accountRef: 'bridge-account-alpha',
+      mode: 'child',
       kidId: 'kid-alpha',
-      accountRef:
-        'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-      confidence: 'definite',
-      enabled: true,
     },
   ],
+  legacyAccountRules: [],
   merchantRules: [
     {
       id: 'rule-merchant-beta',
@@ -67,7 +65,7 @@ export const inputFixture: AttributionInputV1 = {
   },
   transaction: {
     merchantName: 'Synthetic Shop',
-    accountRef: 'account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+    accountRef: 'bridge-account-shared',
     occurredOn: '2026-08-08',
   },
   historicalAttributions: [],

@@ -932,6 +932,19 @@ def test_dataset_normalizers_accept_authoritative_empty_collections(normalizer, 
     assert normalizer(payload) == []
 
 
+@pytest.mark.parametrize("account_id", [" account-1", "account id", "x" * 129])
+def test_account_normalizer_rejects_ids_outside_direct_reference_contract(account_id):
+    with pytest.raises(ValueError):
+        normalize_accounts({
+            "accounts": [{
+                "id": account_id,
+                "name": "Synthetic Checking",
+                "type": "checking",
+                "balance": "0",
+            }],
+        })
+
+
 def test_normalizes_real_live_cashflow_shape():
     payload = {
         "summary": {"summary": {"sumIncome": 7200, "sumExpense": 4832}},

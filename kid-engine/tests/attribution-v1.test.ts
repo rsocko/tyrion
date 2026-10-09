@@ -11,8 +11,7 @@ import type {
 import { inputFixture, policyFixture } from './fixtures.js';
 
 const evaluatedAt = '2026-08-08T12:03:00Z';
-const accountRef =
-  'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const accountRef = 'bridge-account-alpha';
 
 describe('v1 deterministic attribution', () => {
   it('preserves a manual correction ahead of every automated rule', () => {
@@ -21,6 +20,7 @@ describe('v1 deterministic attribution', () => {
       transaction: {
         ...inputFixture.transaction,
         accountRef,
+        merchantName: 'No explicit rule',
       },
       existingManualDecision: {
         action: 'assign-kid',
@@ -41,7 +41,29 @@ describe('v1 deterministic attribution', () => {
     });
   });
 
-  it('auto-assigns a definite account rule with rule provenance', () => {
+  it('uses a child account default after explicit rules', () => {
+    const result = attributeTransactionV1(
+      {
+        ...inputFixture,
+        transaction: {
+          ...inputFixture.transaction,
+          accountRef,
+          merchantName: 'No explicit rule',
+        },
+      },
+      policyFixture,
+      { evaluatedAt }
+    );
+    expect(result).toMatchObject({
+      status: 'attributed',
+      kidId: 'kid-alpha',
+      method: 'account-default',
+      review: { status: 'not-required', reasons: [] },
+      provenance: { ruleIds: [], policyVersion: 1 },
+    });
+  });
+
+  it('lets a specific merchant rule override a child account default', () => {
     const result = attributeTransactionV1(
       {
         ...inputFixture,
@@ -54,26 +76,18 @@ describe('v1 deterministic attribution', () => {
       { evaluatedAt }
     );
     expect(result).toMatchObject({
-      status: 'attributed',
-      kidId: 'kid-alpha',
-      method: 'account-rule',
-      review: { status: 'not-required', reasons: [] },
-      provenance: { ruleIds: ['rule-account-alpha'], policyVersion: 1 },
+      status: 'pending',
+      kidId: 'kid-beta',
+      method: 'merchant-rule',
+      review: { reasons: ['low-confidence'] },
     });
   });
 
-  it('returns a pending conflict independent of rule order', () => {
-    const conflictingPolicy: PolicySnapshotV1 = {
+  it('resolves a parent/shared default without creating review work', () => {
+    const policy: PolicySnapshotV1 = {
       ...policyFixture,
-      accountRules: [
-        {
-          id: 'rule-account-beta',
-          kidId: 'kid-beta',
-          accountRef,
-          confidence: 'definite',
-          enabled: true,
-        },
-        policyFixture.accountRules[0],
+      accountDefaults: [
+        { accountRef: 'bridge-account-shared', mode: 'parent-shared', kidId: null },
       ],
     };
     const result = attributeTransactionV1(
@@ -81,19 +95,63 @@ describe('v1 deterministic attribution', () => {
         ...inputFixture,
         transaction: {
           ...inputFixture.transaction,
-          accountRef,
+          merchantName: 'No explicit rule',
         },
       },
-      conflictingPolicy,
+      policy,
       { evaluatedAt }
     );
     expect(result).toMatchObject({
-      status: 'pending',
+      status: 'unassigned',
       kidId: null,
-      review: { reasons: ['account-rule-conflict'] },
-      provenance: {
-        ruleIds: ['rule-account-alpha', 'rule-account-beta'],
+      confidence: 'definite',
+      method: 'account-default',
+      review: { status: 'not-required', reasons: [] },
+    });
+  });
+
+  it('lets a specific merchant rule override a parent/shared default', () => {
+    const policy: PolicySnapshotV1 = {
+      ...policyFixture,
+      accountDefaults: [
+        { accountRef: 'bridge-account-shared', mode: 'parent-shared', kidId: null },
+      ],
+    };
+    const result = attributeTransactionV1(inputFixture, policy, { evaluatedAt });
+    expect(result).toMatchObject({
+      status: 'pending',
+      kidId: 'kid-beta',
+      method: 'merchant-rule',
+    });
+  });
+
+  it('uses history then no-match for a rule-based account', () => {
+    const policy: PolicySnapshotV1 = {
+      ...policyFixture,
+      merchantRules: [],
+      accountDefaults: [
+        { accountRef: 'bridge-account-shared', mode: 'rule-based', kidId: null },
+      ],
+    };
+    const historical = attributeTransactionV1(
+      {
+        ...inputFixture,
+        historicalAttributions: [
+          {
+            normalizedMerchant: 'SYNTHETIC SHOP',
+            kidId: 'kid-alpha',
+            assignmentCount: 4,
+          },
+        ],
       },
+      policy,
+      { evaluatedAt }
+    );
+    expect(historical.method).toBe('historical-pattern');
+    const unmatched = attributeTransactionV1(inputFixture, policy, { evaluatedAt });
+    expect(unmatched).toMatchObject({
+      status: 'unassigned',
+      review: { status: 'pending', reasons: ['no-match'] },
     });
   });
 

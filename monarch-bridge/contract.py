@@ -85,7 +85,11 @@ class TransactionTagRef(ApiModel):
 
 
 class AccountRef(ApiModel):
-    id: str
+    id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
     display_name: str
     mask: Optional[str] = None
 
@@ -172,7 +176,11 @@ class TransactionTagsResponse(DataResponse):
 
 
 class Account(ApiModel):
-    id: str
+    id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
     display_name: str
     type: str
     mask: Optional[str] = None
@@ -319,6 +327,21 @@ def _identifier(value: Any) -> str:
     return identifier
 
 
+def _account_identifier(value: Any) -> str:
+    identifier = str(value) if value is not None else ""
+    if (
+        not identifier
+        or len(identifier) > 128
+        or not identifier[0].isalnum()
+        or any(
+            not (character.isascii() and (character.isalnum() or character in "._:-"))
+            for character in identifier
+        )
+    ):
+        raise ValueError("Required upstream account identifier is invalid")
+    return identifier
+
+
 def _optional_text(value: Any) -> Optional[str]:
     if value is None or isinstance(value, (Mapping, list, tuple, set)):
         return None
@@ -403,7 +426,7 @@ def normalize_transaction_tag_ref(raw: Any) -> TransactionTagRef:
 def normalize_account_ref(raw: Any) -> AccountRef:
     value = _mapping(raw)
     return AccountRef(
-        id=_identifier(_pick(value, "id")),
+        id=_account_identifier(_pick(value, "id")),
         display_name=_text(_pick(value, "displayName", "display_name", "name"), "Unknown account"),
         mask=_optional_text(_pick(value, "mask", "last4")),
     )
@@ -556,7 +579,7 @@ def normalize_transaction_tags(payload: Any) -> list[TransactionTag]:
 def normalize_accounts(payload: Any) -> list[Account]:
     return [
         Account(
-            id=_identifier(_pick(item, "id")),
+            id=_account_identifier(_pick(item, "id")),
             display_name=_required_text(_pick(item, "displayName", "name")),
             type=_text(_pick(item, "type.name", "type"), "unknown"),
             mask=_pick(item, "mask", "last4"),
