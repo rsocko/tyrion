@@ -22,7 +22,7 @@ import {
   type PolicyRepository,
 } from './service.js';
 
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 const MAX_STORE_BYTES = 5 * 1024 * 1024;
 
 interface StoredPolicies {
@@ -324,7 +324,7 @@ function parseStoredPolicies(raw: string): StoredPolicies {
     }
     const record = value as Record<string, unknown>;
     if (
-      ![1, STORAGE_VERSION].includes(record.storageVersion as number) ||
+      ![1, 2, STORAGE_VERSION].includes(record.storageVersion as number) ||
       typeof record.policies !== 'object' ||
       record.policies === null ||
       Array.isArray(record.policies) ||
@@ -350,6 +350,7 @@ function parseStoredPolicies(raw: string): StoredPolicies {
   }
 
   function migratePolicySnapshot(value: unknown): unknown {
+    let candidate = value;
     if (
       typeof value !== 'object' ||
       value === null ||
@@ -357,18 +358,51 @@ function parseStoredPolicies(raw: string): StoredPolicies {
       !('contractVersion' in value) ||
       value.contractVersion !== '1.0'
     ) {
-      return value;
+      candidate = value;
+    } else {
+      const legacy = value as Record<string, unknown>;
+      if (!Array.isArray(legacy.cardRules)) {
+        throw new PolicyStoreCorruptError();
+      }
+      const { cardRules: _discarded, ...snapshot } = legacy;
+      candidate = {
+        ...snapshot,
+        contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
+        engineVersion: '2.0.0',
+        accountDefaults: [],
+      };
     }
-    const legacy = value as Record<string, unknown>;
-    if (!Array.isArray(legacy.cardRules) || legacy.cardRules.length !== 0) {
+
+    if (
+      typeof candidate !== 'object' ||
+      candidate === null ||
+      Array.isArray(candidate)
+    ) {
+      return candidate;
+    }
+
+    const legacy = candidate as Record<string, unknown>;
+    const hasAccountRules = 'accountRules' in legacy;
+    const hasLegacyAccountRules = 'legacyAccountRules' in legacy;
+    if (!hasAccountRules && !hasLegacyAccountRules) {
+      return candidate;
+    }
+    if (
+      (hasAccountRules && !Array.isArray(legacy.accountRules)) ||
+      (hasLegacyAccountRules && !Array.isArray(legacy.legacyAccountRules))
+    ) {
       throw new PolicyStoreCorruptError();
     }
-    const { cardRules: _discarded, ...snapshot } = legacy;
+
+    const {
+      accountRules: _discardedAccountRules,
+      legacyAccountRules: _discardedLegacyAccountRules,
+      ...snapshot
+    } = legacy;
     return {
       ...snapshot,
-      contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
-      engineVersion: '2.0.0',
-      accountRules: [],
+      accountDefaults:
+        'accountDefaults' in snapshot ? snapshot.accountDefaults : [],
     };
   }
 

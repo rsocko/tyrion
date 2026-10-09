@@ -26,7 +26,7 @@ const bridgeTransaction: NormalizedBridgeTransactionV1 = {
 const mappingContext = {
   sourceRef: 'consumer-safe-ref',
   accountRef:
-    'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    'bridge-account-alpha',
   historicalAttributions: [],
   existingManualDecision: null,
 };
@@ -52,7 +52,7 @@ describe('normalized bridge v1 attribution adapter', () => {
       transaction: {
         merchantName: 'Synthetic Shop',
         accountRef:
-          'account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          'bridge-account-alpha',
         occurredOn: '2026-08-08',
       },
       historicalAttributions: [],

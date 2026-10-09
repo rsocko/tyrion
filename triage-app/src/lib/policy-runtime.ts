@@ -496,7 +496,7 @@ function demoRecord(
     },
     transaction: {
       merchantName: "Synthetic Store",
-      accountRef: "account-v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      accountRef: "bridge-account-demo",
       occurredOn: "2026-01-01",
     },
     historicalAttributions: [],

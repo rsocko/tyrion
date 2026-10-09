@@ -108,7 +108,10 @@
     },
     "AccountRef": {
       "type": "string",
-      "pattern": "^account-v1:[A-Za-z0-9_-]{43}$"
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "description": "The exact case-sensitive id from the normalized Tyrion Bridge Account DTO. Consumers must not hash, namespace, or privately derive it."
     },
     "ManualDecisionV1": {
       "oneOf": [
@@ -233,7 +236,7 @@
         "method": {
           "enum": [
             "manual",
-            "account-rule",
+            "account-default",
             "merchant-rule",
             "historical-pattern",
             "unassigned",
@@ -254,7 +257,6 @@
             "enum": [
               "no-match",
               "low-confidence",
-              "account-rule-conflict",
               "merchant-rule-conflict",
               "historical-attribution-tie",
               "engine-unavailable",
@@ -370,7 +372,7 @@
           ]
         },
         "confidence": { "enum": ["definite", "likely", "none"] },
-        "method": { "enum": ["manual", "account-rule", "merchant-rule", "historical-pattern", "unassigned", "unavailable"] },
+        "method": { "enum": ["manual", "account-default", "merchant-rule", "historical-pattern", "unassigned", "unavailable"] },
         "explanation": { "type": "string", "minLength": 1, "maxLength": 300 },
         "review": {
           "type": "object",
@@ -412,7 +414,6 @@
       "enum": [
         "no-match",
         "low-confidence",
-        "account-rule-conflict",
         "merchant-rule-conflict",
         "historical-attribution-tie",
         "engine-unavailable",

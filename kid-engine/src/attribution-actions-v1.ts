@@ -780,7 +780,6 @@ function reviewReason(value: unknown, field: string): AttributionReviewReasonV1 
     [
       'no-match',
       'low-confidence',
-      'account-rule-conflict',
       'merchant-rule-conflict',
       'historical-attribution-tie',
       'engine-unavailable',

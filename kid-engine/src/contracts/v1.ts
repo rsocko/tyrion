@@ -27,12 +27,12 @@ export interface KidProfileV1 {
   active: boolean;
 }
 
-export interface AccountAttributionRuleV1 {
-  id: string;
-  kidId: string;
+export type AccountDefaultModeV1 = 'rule-based' | 'parent-shared' | 'child';
+
+export interface AccountDefaultV1 {
   accountRef: string;
-  confidence: Exclude<AttributionConfidenceV1, 'none'>;
-  enabled: boolean;
+  mode: AccountDefaultModeV1;
+  kidId: string | null;
 }
 
 export interface MerchantAttributionRuleV1 {
@@ -60,7 +60,7 @@ export interface PolicyDraftV1 {
   timezone: string;
   currency: string;
   kids: KidProfileV1[];
-  accountRules: AccountAttributionRuleV1[];
+  accountDefaults: AccountDefaultV1[];
   merchantRules: MerchantAttributionRuleV1[];
   limits: SpendingLimitV1[];
   exceptionPolicy: ExceptionPolicyV1;
@@ -79,7 +79,7 @@ export function createDefaultPolicyDraftV1(): PolicyDraftV1 {
     timezone: 'UTC',
     currency: 'USD',
     kids: [],
-    accountRules: [],
+    accountDefaults: [],
     merchantRules: [],
     limits: [],
     exceptionPolicy: {
@@ -103,7 +103,7 @@ export function policyDraftFromSnapshotV1(
     timezone: snapshot.timezone,
     currency: snapshot.currency,
     kids: snapshot.kids,
-    accountRules: snapshot.accountRules,
+    accountDefaults: snapshot.accountDefaults,
     merchantRules: snapshot.merchantRules,
     limits: snapshot.limits,
     exceptionPolicy: snapshot.exceptionPolicy,
@@ -147,7 +147,7 @@ export interface AttributionInputV1 {
 
 export type AttributionMethodV1 =
   | 'manual'
-  | 'account-rule'
+  | 'account-default'
   | 'merchant-rule'
   | 'historical-pattern'
   | 'unassigned'
@@ -156,7 +156,6 @@ export type AttributionMethodV1 =
 export type AttributionReviewReasonV1 =
   | 'no-match'
   | 'low-confidence'
-  | 'account-rule-conflict'
   | 'merchant-rule-conflict'
   | 'historical-attribution-tie'
   | 'engine-unavailable'
@@ -351,7 +350,6 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
       [
         'no-match',
         'low-confidence',
-        'account-rule-conflict',
         'merchant-rule-conflict',
         'historical-attribution-tie',
         'engine-unavailable',
@@ -399,7 +397,7 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
       result.method,
       [
         'manual',
-        'account-rule',
+        'account-default',
         'merchant-rule',
         'historical-pattern',
         'unassigned',
@@ -571,7 +569,7 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
     'timezone',
     'currency',
     'kids',
-    'accountRules',
+    'accountDefaults',
     'merchantRules',
     'limits',
     'exceptionPolicy',
@@ -585,7 +583,7 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
     timezone: snapshot.timezone,
     currency: snapshot.currency,
     kids: snapshot.kids,
-    accountRules: snapshot.accountRules,
+    accountDefaults: snapshot.accountDefaults,
     merchantRules: snapshot.merchantRules,
     limits: snapshot.limits,
     exceptionPolicy: snapshot.exceptionPolicy,
@@ -606,7 +604,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     'timezone',
     'currency',
     'kids',
-    'accountRules',
+    'accountDefaults',
     'merchantRules',
     'limits',
     'exceptionPolicy',
@@ -628,25 +626,44 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
   });
   unique(kids.map((kid) => kid.id), 'kid ids');
   const kidIds = new Set(kids.map((kid) => kid.id));
-  const accountRules = array(draft.accountRules, 'accountRules').map((item, index) => {
-    const rule = object(item, `accountRules[${index}]`);
-    exactKeys(rule, [
-      'id',
-      'kidId',
-      'accountRef',
-      'confidence',
-      'enabled',
-    ]);
-    const kidId = identifier(rule.kidId, `accountRules[${index}].kidId`);
-    referencedKid(kidIds, kidId, `accountRules[${index}].kidId`);
-    return {
-      id: identifier(rule.id, `accountRules[${index}].id`),
-      kidId,
-      accountRef: accountRef(rule.accountRef, `accountRules[${index}].accountRef`),
-      confidence: confidence(rule.confidence, `accountRules[${index}].confidence`),
-      enabled: boolean(rule.enabled, `accountRules[${index}].enabled`),
-    };
-  });
+  const accountDefaults = array(draft.accountDefaults, 'accountDefaults').map(
+    (item, index) => {
+      const accountDefault = object(item, `accountDefaults[${index}]`);
+      exactKeys(accountDefault, ['accountRef', 'mode', 'kidId']);
+      const mode = enumeration(
+        accountDefault.mode,
+        ['rule-based', 'parent-shared', 'child'] as const,
+        `accountDefaults[${index}].mode`
+      );
+      const kidId =
+        accountDefault.kidId === null
+          ? null
+          : identifier(accountDefault.kidId, `accountDefaults[${index}].kidId`);
+      if (mode === 'child') {
+        if (kidId === null) {
+          invalid(`accountDefaults[${index}].kidId is required for child mode`);
+        }
+        referencedKid(kidIds, kidId, `accountDefaults[${index}].kidId`);
+        if (!kids.find((kid) => kid.id === kidId)?.active) {
+          invalid(`accountDefaults[${index}].kidId must reference an active kid`);
+        }
+      } else if (kidId !== null) {
+        invalid(`accountDefaults[${index}].kidId must be null unless mode is child`);
+      }
+      return {
+        accountRef: accountRef(
+          accountDefault.accountRef,
+          `accountDefaults[${index}].accountRef`
+        ),
+        mode,
+        kidId,
+      };
+    }
+  );
+  unique(
+    accountDefaults.map((accountDefault) => accountDefault.accountRef),
+    'account default references'
+  );
   const merchantRules = array(draft.merchantRules, 'merchantRules').map(
     (item, index) => {
       const rule = object(item, `merchantRules[${index}]`);
@@ -671,7 +688,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     }
   );
   unique(
-    [...accountRules, ...merchantRules].map((rule) => rule.id),
+    merchantRules.map((rule) => rule.id),
     'attribution rule ids'
   );
   const limits = array(draft.limits, 'limits').map((item, index) => {
@@ -742,7 +759,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     timezone,
     currency,
     kids,
-    accountRules,
+    accountDefaults,
     merchantRules,
     limits,
     exceptionPolicy,
@@ -915,11 +932,11 @@ function identifier(value: unknown, field: string): string {
 
 function accountRef(value: unknown, field: string): string {
   if (typeof value !== 'string' || value !== value.trim()) {
-    invalid(`${field} must be a stable opaque connector-generated account reference`);
+    invalid(`${field} must be the exact stable Bridge account id`);
   }
-  const result = boundedString(value, field, 54, 54);
-  if (!/^account-v1:[A-Za-z0-9_-]{43}$/.test(result)) {
-    invalid(`${field} must be a stable opaque connector-generated account reference`);
+  const result = boundedString(value, field, 1, 128);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(result)) {
+    invalid(`${field} must be the exact stable Bridge account id`);
   }
   return result;
 }

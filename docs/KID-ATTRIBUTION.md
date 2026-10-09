@@ -8,20 +8,24 @@ Monarch account A is used, attribute the transaction to household member X.
 
 ## Attribution Methods (Priority Order)
 
-### 1. Account Rules (Highest Confidence)
+### 1. Manual Decisions and Specific Rules
 
-Mission Control generates a stable opaque `account-v1:` reference for each Monarch
-account without sending Tyrion the raw Monarch account ID or account mask:
+Per-transaction manual decisions always win. Specific merchant rules are evaluated
+next and can override every account default, including child and Parent/shared.
 
-```
-account-v1:<opaque Jake account reference> → Jake (confidence: definite)
-account-v1:<opaque Emma account reference> → Emma (confidence: definite)
-```
+### 2. Account Defaults
 
-Transactions associated with those accounts are **automatically assigned** with no
-triage needed. This does not prove which physical card or person initiated a charge.
+Tyrion lists normalized Bridge accounts and stores each selected account's exact
+Bridge Account DTO `id`. Operators choose one fallback:
 
-### 2. Shared Account + Merchant Rules
+- **Child** — definite attribution to one active child.
+- **Parent/shared** — resolved parent/shared result with no attribution review.
+- **Rule-based** — no account fallback; continue to history, then no-match review.
+
+Account defaults are not ownership and do not prove which physical card or person
+initiated a charge.
+
+### 3. Shared Account + Merchant Rules
 
 For charges on shared family accounts, merchant patterns identify the likely kid:
 
@@ -35,7 +39,7 @@ Merchant contains "SCHOOL LUNCH - WESTVIEW" → Sophie (confidence: definite)
 - `definite` = auto-assigned, no triage needed
 - `likely` = auto-assigned but queued for quick confirmation in triage
 
-### 3. Historical Pattern Matching (ML-Lite)
+### 4. Historical Pattern Matching (ML-Lite)
 
 After 30+ transactions, the system learns patterns:
 
@@ -47,7 +51,7 @@ If merchant "CHICK-FIL-A" has been assigned to Jake 8/10 times:
 
 This kicks in only after enough data and never auto-assigns with "definite" confidence.
 
-### 4. Unassigned (Triage Required)
+### 5. Unassigned (Triage Required)
 
 Any transaction that doesn't match rules or patterns:
 - Shows up in the triage inbox

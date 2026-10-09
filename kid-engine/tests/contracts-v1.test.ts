@@ -35,41 +35,68 @@ describe('v1 domain contract validation', () => {
     ).toThrowError(ContractValidationError);
   });
 
-  it('rejects rules that reference another or missing household kid', () => {
+  it('rejects child defaults that reference a missing or inactive kid', () => {
     expect(() =>
       parsePolicySnapshotV1({
         ...policyFixture,
-        accountRules: [
-          { ...policyFixture.accountRules[0], kidId: 'kid-not-configured' },
+        accountDefaults: [
+          { ...policyFixture.accountDefaults[0], kidId: 'kid-not-configured' },
         ],
       })
     ).toThrow('references an unknown kid');
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        kids: policyFixture.kids.map((kid) =>
+          kid.id === 'kid-alpha' ? { ...kid, active: false } : kid
+        ),
+      })
+    ).toThrow('must reference an active kid');
   });
 
-  it('rejects account values that are not connector-generated opaque references', () => {
+  it('validates exact direct Bridge account ids and rejects duplicates', () => {
     expect(() =>
       parsePolicySnapshotV1({
         ...policyFixture,
-        accountRules: [
+        accountDefaults: [
           {
-            ...policyFixture.accountRules[0],
-            accountRef:
-              'account-v1:!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
+            ...policyFixture.accountDefaults[0],
+            accountRef: 'invalid account id',
           },
         ],
       })
-    ).toThrow('stable opaque connector-generated account reference');
+    ).toThrow('exact stable Bridge account id');
     expect(() =>
       parsePolicySnapshotV1({
         ...policyFixture,
-        accountRules: [
+        accountDefaults: [
           {
-            ...policyFixture.accountRules[0],
-            accountRef: ` ${policyFixture.accountRules[0].accountRef}`,
+            ...policyFixture.accountDefaults[0],
+            accountRef: ` ${policyFixture.accountDefaults[0].accountRef}`,
           },
         ],
       })
-    ).toThrow('stable opaque connector-generated account reference');
+    ).toThrow('exact stable Bridge account id');
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        accountDefaults: [
+          policyFixture.accountDefaults[0],
+          { ...policyFixture.accountDefaults[0], mode: 'rule-based', kidId: null },
+        ],
+      })
+    ).toThrow('account default references must be unique');
+  });
+
+  it('requires kidId only for child defaults', () => {
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        accountDefaults: [
+          { accountRef: 'bridge-parent', mode: 'parent-shared', kidId: 'kid-alpha' },
+        ],
+      })
+    ).toThrow('must be null unless mode is child');
   });
 
   it('rejects duplicate limit periods and mismatched currencies', () => {

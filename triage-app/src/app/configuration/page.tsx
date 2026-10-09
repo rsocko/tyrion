@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type {
+  AccountDefaultModeV1,
   AttributionConfidenceV1,
   ExceptionSignalV1,
   KidProfileV1,
@@ -16,6 +17,11 @@ import type {
   PolicyDraftV1,
   PolicySnapshotV1,
 } from "@rsocko/tyrion-kid-engine/contracts/v2";
+import {
+  AccountCatalogError,
+  loadAccountCatalog,
+  type AccountCatalogItem,
+} from "@/lib/account-catalog-client";
 import {
   PolicyApiError,
   applyReattribution,
@@ -31,6 +37,7 @@ import {
 } from "@/lib/policy-ui-state.mjs";
 
 type LoadState = "loading" | "ready" | "unauthorized" | "unavailable";
+type CatalogState = "loading" | "ready" | "error";
 type BusyState = "saving" | "previewing" | "applying" | null;
 type RuleConfidence = Exclude<AttributionConfidenceV1, "none">;
 
@@ -54,6 +61,9 @@ export default function ConfigurationPage() {
   const [mode, setMode] = useState<"demo" | "production">("production");
   const [policy, setPolicy] = useState<PolicySnapshotV1 | null>(null);
   const [draft, setDraft] = useState<PolicyDraftV1 | null>(null);
+  const [accounts, setAccounts] = useState<AccountCatalogItem[]>([]);
+  const [catalogState, setCatalogState] = useState<CatalogState>("loading");
+  const [catalogError, setCatalogError] = useState("");
   const [capabilities, setCapabilities] = useState<PolicyCapabilities>({
     write: false,
     previewReattribution: false,
@@ -64,10 +74,6 @@ export default function ConfigurationPage() {
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
   const [newKidName, setNewKidName] = useState("");
-  const [newAccountKid, setNewAccountKid] = useState("");
-  const [accountRef, setAccountRef] = useState("");
-  const [newAccountConfidence, setNewAccountConfidence] =
-    useState<RuleConfidence>("definite");
   const [newMerchantKid, setNewMerchantKid] = useState("");
   const [newMerchantPattern, setNewMerchantPattern] = useState("");
   const [newMerchantConfidence, setNewMerchantConfidence] =
@@ -77,18 +83,36 @@ export default function ConfigurationPage() {
   const [applyConfirmed, setApplyConfirmed] = useState(false);
   const alertRef = useRef<HTMLDivElement>(null);
 
+  const refreshCatalog = useCallback(async () => {
+    setCatalogState("loading");
+    setCatalogError("");
+    try {
+      setAccounts(await loadAccountCatalog());
+      setCatalogState("ready");
+    } catch (caught) {
+      const message =
+        caught instanceof AccountCatalogError
+          ? caught.message
+          : "Accounts could not be loaded";
+      setCatalogError(message);
+      setCatalogState("error");
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     await Promise.resolve();
     setLoadState("loading");
     setError("");
     setConflict(false);
     try {
-      const result = await loadPolicy();
+      const [result] = await Promise.all([
+        loadPolicy(),
+        refreshCatalog(),
+      ]);
       setMode(result.mode);
       setPolicy(result.policy);
       setDraft(result.draft);
       setCapabilities(result.capabilities);
-      setNewAccountKid(result.draft.kids[0]?.id ?? "");
       setNewMerchantKid(result.draft.kids[0]?.id ?? "");
       setPreview(null);
       setApplyConfirmed(false);
@@ -98,7 +122,7 @@ export default function ConfigurationPage() {
       setError(apiError.message);
       setLoadState(apiError.status === 401 ? "unauthorized" : "unavailable");
     }
-  }, []);
+  }, [refreshCatalog]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void refresh(), 0);
@@ -147,7 +171,6 @@ export default function ConfigurationPage() {
     };
     replaceDraft({ ...draft, kids: [...draft.kids, kid] });
     setNewKidName("");
-    setNewAccountKid((current) => current || kid.id);
     setNewMerchantKid((current) => current || kid.id);
   };
 
@@ -156,31 +179,37 @@ export default function ConfigurationPage() {
     replaceDraft({
       ...draft,
       kids: draft.kids.filter((kid) => kid.id !== kidId),
-      accountRules: draft.accountRules.filter((rule) => rule.kidId !== kidId),
+      accountDefaults: draft.accountDefaults.map((accountDefault) =>
+        accountDefault.kidId === kidId
+          ? { ...accountDefault, mode: "rule-based", kidId: null }
+          : accountDefault
+      ),
       merchantRules: draft.merchantRules.filter((rule) => rule.kidId !== kidId),
       limits: draft.limits.filter((limit) => limit.kidId !== kidId),
     });
   };
 
-  const addAccountRule = (event: FormEvent) => {
-    event.preventDefault();
-    const normalizedAccountRef = accountRef.trim();
-    if (!draft || !newAccountKid || normalizedAccountRef.length < 8) return;
+  const setAccountDefault = (
+    accountRef: string,
+    value: string
+  ) => {
+    if (!draft) return;
+    const mode: AccountDefaultModeV1 =
+      value === "parent-shared"
+        ? "parent-shared"
+        : value.startsWith("child:")
+          ? "child"
+          : "rule-based";
+    const kidId = mode === "child" ? value.slice("child:".length) : null;
     replaceDraft({
       ...draft,
-      accountRules: [
-        ...draft.accountRules,
-        {
-          id: `rule-account-${crypto.randomUUID()}`,
-          kidId: newAccountKid,
-          accountRef: normalizedAccountRef,
-          confidence: newAccountConfidence,
-          enabled: true,
-        },
+      accountDefaults: [
+        ...draft.accountDefaults.filter(
+          (accountDefault) => accountDefault.accountRef !== accountRef
+        ),
+        { accountRef, mode, kidId },
       ],
     });
-    setAccountRef("");
-    setNotice("Account attribution rule added to the draft.");
   };
 
   const addMerchantRule = (event: FormEvent) => {
@@ -318,6 +347,20 @@ export default function ConfigurationPage() {
                 ? "ready"
                 : "empty";
   const workflowPresentation = policyStatePresentation(workflowState);
+  const catalogAccountRefs = new Set(accounts.map((account) => account.accountRef));
+  const accountRows = [
+    ...accounts.map((account) => ({ ...account, missing: false })),
+    ...draft.accountDefaults
+      .filter((accountDefault) => !catalogAccountRefs.has(accountDefault.accountRef))
+      .map((accountDefault) => ({
+        accountRef: accountDefault.accountRef,
+        displayName: "Account no longer in catalog",
+        type: "Unavailable",
+        maskHint: null,
+        isActive: false,
+        missing: true,
+      })),
+  ];
 
   return (
     <ConfigurationShell>
@@ -433,6 +476,17 @@ export default function ConfigurationPage() {
                           ? { ...item, active: event.target.checked }
                           : item
                       ),
+                      accountDefaults: event.target.checked
+                        ? draft.accountDefaults
+                        : draft.accountDefaults.map((accountDefault) =>
+                            accountDefault.kidId === kid.id
+                              ? {
+                                  ...accountDefault,
+                                  mode: "rule-based",
+                                  kidId: null,
+                                }
+                              : accountDefault
+                          ),
                     })
                   }
                 />
@@ -458,41 +512,105 @@ export default function ConfigurationPage() {
         </form>
       </Section>
 
-      <Section title="Account attribution" description="When a Monarch account is used, attribute the transaction to the selected profile. Store only the stable opaque account reference generated by the connector.">
-        <div className="space-y-3">
-          {draft.accountRules.length === 0 && <EmptyText>No account rules configured.</EmptyText>}
-          {draft.accountRules.map((rule) => (
-            <RuleRow
-              key={rule.id}
-              title={kidName(draft, rule.kidId)}
-              detail={`Account reference ...${rule.accountRef.slice(-10)} · ${rule.confidence}`}
-              enabled={rule.enabled}
-              disabled={disabled}
-              onToggle={(enabled) =>
-                replaceDraft({
-                  ...draft,
-                  accountRules: draft.accountRules.map((item) =>
-                    item.id === rule.id ? { ...item, enabled } : item
-                  ),
-                })
-              }
-              onRemove={() =>
-                replaceDraft({
-                  ...draft,
-                  accountRules: draft.accountRules.filter((item) => item.id !== rule.id),
-                })
-              }
-            />
-          ))}
-        </div>
-        <form onSubmit={addAccountRule} className="mt-4 grid gap-3 sm:grid-cols-2">
-          <SelectField id="account-kid" label="Profile" value={newAccountKid} disabled={disabled} onChange={setNewAccountKid} options={draft.kids.map((kid) => ({ value: kid.id, label: kid.displayName }))} />
-          <SelectField id="account-confidence" label="Confidence" value={newAccountConfidence} disabled={disabled} onChange={(value) => setNewAccountConfidence(readConfidence(value))} options={[{ value: "definite", label: "Definite" }, { value: "likely", label: "Likely" }]} />
-          <TextField id="account-reference" label="Opaque connector account reference" value={accountRef} disabled={disabled} autoComplete="off" onChange={setAccountRef} />
-          <button className="button-secondary self-end" type="submit" disabled={disabled || !newAccountKid || accountRef.trim().length < 8}>
-            Add account rule
-          </button>
-        </form>
+      <Section
+        title="Account defaults"
+        description="Choose the fallback attribution for each Monarch account. Manual decisions and specific merchant rules always take precedence."
+      >
+        {catalogState === "loading" && (
+          <p aria-live="polite" className="text-sm text-muted">Loading Monarch accounts...</p>
+        )}
+        {catalogState === "error" && (
+          <div role="alert" className="rounded-lg border border-error bg-background p-4">
+            <p className="text-sm text-error">{catalogError}</p>
+            <button className="button-secondary mt-3" type="button" onClick={() => void refreshCatalog()}>
+              Retry account catalog
+            </button>
+          </div>
+        )}
+        {catalogState === "ready" && accountRows.length === 0 && (
+          <EmptyText>No Monarch accounts are available. Recheck the connector, then retry.</EmptyText>
+        )}
+        {catalogState === "ready" && accountRows.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full min-w-[42rem] border-collapse text-left text-sm">
+              <thead className="bg-elevated text-muted">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Account</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Default attribution</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {accountRows.map((account) => {
+                  const accountDefault = draft.accountDefaults.find(
+                    (item) => item.accountRef === account.accountRef
+                  );
+                  const value =
+                    accountDefault?.mode === "child"
+                      ? `child:${accountDefault.kidId}`
+                      : accountDefault?.mode ?? "rule-based";
+                  return (
+                    <tr key={account.accountRef} className="bg-background align-top">
+                      <td className="px-4 py-4">
+                        <p className="font-medium text-parchment">{account.displayName}</p>
+                        <p className="mt-1 text-xs text-muted">
+                          {account.missing
+                            ? "Configured default is preserved but no current catalog account matches it"
+                            : `${account.maskHint ?? "No account hint"} · ${account.isActive ? "Active" : "Inactive"}`}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4 text-muted">{account.type}</td>
+                      <td className="px-4 py-4">
+                        <label className="sr-only" htmlFor={`account-default-${account.accountRef}`}>
+                          Default attribution for {account.displayName}
+                        </label>
+                        <select
+                          id={`account-default-${account.accountRef}`}
+                          className="input w-full"
+                          value={value}
+                          disabled={disabled || account.missing}
+                          onChange={(event) =>
+                            setAccountDefault(account.accountRef, event.target.value)
+                          }
+                        >
+                          <option value="rule-based">Rule-based</option>
+                          <option value="parent-shared">Parent/shared</option>
+                          {draft.kids
+                            .filter((kid) => kid.active)
+                            .map((kid) => (
+                              <option key={kid.id} value={`child:${kid.id}`}>
+                                {kid.displayName}
+                              </option>
+                            ))}
+                        </select>
+                        <p className="mt-2 max-w-md text-xs leading-5 text-muted">
+                          {accountDefaultDescription(value, draft)}
+                        </p>
+                        {account.missing && (
+                          <button
+                            className="button-danger mt-3"
+                            type="button"
+                            disabled={disabled}
+                            onClick={() =>
+                              replaceDraft({
+                                ...draft,
+                                accountDefaults: draft.accountDefaults.filter(
+                                  (item) => item.accountRef !== account.accountRef
+                                ),
+                              })
+                            }
+                          >
+                            Remove stale default
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Section>
 
       <Section title="Merchant attribution" description="Merchant patterns are deterministic household rules; likely matches remain reviewable.">
@@ -854,7 +972,7 @@ function snapshotDraft(policy: PolicySnapshotV1): PolicyDraftV1 {
     timezone: policy.timezone,
     currency: policy.currency,
     kids: policy.kids,
-    accountRules: policy.accountRules,
+    accountDefaults: policy.accountDefaults,
     merchantRules: policy.merchantRules,
     limits: policy.limits,
     exceptionPolicy: policy.exceptionPolicy,
@@ -863,6 +981,20 @@ function snapshotDraft(policy: PolicySnapshotV1): PolicyDraftV1 {
 
 function kidName(draft: PolicyDraftV1, kidId: string): string {
   return draft.kids.find((kid) => kid.id === kidId)?.displayName ?? "Unknown profile";
+}
+
+function accountDefaultDescription(
+  value: string,
+  draft: PolicyDraftV1
+): string {
+  if (value === "parent-shared") {
+    return "Falls back to parent/shared with no attribution review.";
+  }
+  if (value.startsWith("child:")) {
+    const kidId = value.slice("child:".length);
+    return `Falls back to ${kidName(draft, kidId)} with definite confidence.`;
+  }
+  return "No account fallback. Unmatched transactions continue to history, then review.";
 }
 
 function capitalize(value: string): string {

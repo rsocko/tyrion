@@ -148,7 +148,7 @@ function item(sourceRef: string) {
     sourceRef,
     occurredOn: '2026-08-08',
     merchantName: 'Synthetic Shop',
-    accountRef: 'account-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+    accountRef: 'bridge-account-shared',
     observedAt: '2026-08-08T12:58:00Z',
     existingManualDecision: null,
   };
