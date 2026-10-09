@@ -56,7 +56,11 @@ from contract import (
     SyncResponse,
     TransactionResponse,
     TransactionReviewResponse,
+    TransactionTagCreate,
+    TransactionTagCreateResponse,
     TransactionTagsResponse,
+    TransactionTagsUpdate,
+    TransactionTagsUpdateResponse,
     TransactionSplitsResponse,
     TransactionsResponse,
     normalize_accounts,
@@ -88,6 +92,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("monarch_bridge")
 logger.addFilter(RedactingFilter())
+TRANSACTION_TAG_UPDATE_LOCKS = tuple(asyncio.Lock() for _ in range(64))
 
 
 def create_monarch_client():
@@ -204,6 +209,7 @@ class DemoProvider:
         {"id": "tag-reimbursable", "name": "Reimbursable"},
         {"id": "tag-subscription", "name": "Subscription"},
     ]
+    TRANSACTION_TAG_OVERRIDES: dict[str, list[dict]] = {}
 
     @classmethod
     def _generate_transactions(cls, start_date: str, end_date: Optional[str], limit: int) -> list:
@@ -311,6 +317,11 @@ class DemoProvider:
         all_tx = cls._generate_transactions("2024-01-01", None, 5000)
         for tx in all_tx:
             if tx["id"] == transaction_id:
+                if transaction_id in cls.TRANSACTION_TAG_OVERRIDES:
+                    tx["tags"] = [
+                        dict(tag)
+                        for tag in cls.TRANSACTION_TAG_OVERRIDES[transaction_id]
+                    ]
                 return tx
         return None
 
@@ -356,6 +367,26 @@ class DemoProvider:
     @classmethod
     def get_transaction_tags(cls) -> dict:
         return {"householdTransactionTags": cls.TRANSACTION_TAGS}
+
+    @classmethod
+    def create_transaction_tag(cls, name: str) -> dict:
+        if any(tag["name"].casefold() == name.casefold() for tag in cls.TRANSACTION_TAGS):
+            raise ValueError("Tag name already exists")
+        tag = {"id": f"tag-demo-{len(cls.TRANSACTION_TAGS) + 1}", "name": name}
+        cls.TRANSACTION_TAGS.append(tag)
+        return tag
+
+    @classmethod
+    def set_transaction_tags(cls, transaction_id: str, tag_ids: list[str]) -> list[dict]:
+        transaction = cls.get_transaction_detail(transaction_id)
+        if transaction is None:
+            raise KeyError("Transaction not found")
+        tags_by_id = {tag["id"]: tag for tag in cls.TRANSACTION_TAGS}
+        if any(tag_id not in tags_by_id for tag_id in tag_ids):
+            raise ValueError("Tag not found")
+        tags = [dict(tags_by_id[tag_id]) for tag_id in tag_ids]
+        cls.TRANSACTION_TAG_OVERRIDES[transaction_id] = tags
+        return tags
 
     @classmethod
     def get_recurring(cls) -> dict:
@@ -1487,6 +1518,207 @@ async def get_transaction_tags():
         )
     except Exception as e:
         raise upstream_error("transaction tag", e)
+
+
+@app.post("/tags", response_model=TransactionTagCreateResponse)
+async def create_transaction_tag(create: TransactionTagCreate):
+    """Create and verify one bounded transaction tag."""
+    normalized_name = " ".join(create.name.split())
+    if normalized_name != create.name:
+        raise HTTPException(
+            422,
+            detail={
+                "error": "invalid_request",
+                "message": "Transaction tag name must use normalized whitespace",
+            },
+        )
+    if DEMO_MODE:
+        try:
+            tag = DemoProvider.create_transaction_tag(normalized_name)
+            normalized = normalize_transaction_tags({"tags": [tag]})[0]
+            return TransactionTagCreateResponse(status="created", tag=normalized)
+        except ValueError:
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "transaction_tag_collision",
+                    "message": "A transaction tag with this name already exists",
+                },
+            )
+
+    client = await get_client()
+    try:
+        create_tag = getattr(client, "create_transaction_tag", None)
+        if not callable(create_tag):
+            raise HTTPException(
+                503,
+                detail={
+                    "error": "tag_create_capability_unavailable",
+                    "message": "Monarch transaction tag creation is unavailable",
+                },
+            )
+        result = await create_tag(normalized_name, create.color)
+        mutation = result.get("createTransactionTag", {}) if isinstance(result, dict) else {}
+        errors = mutation.get("errors") or []
+        created = mutation.get("tag") or {}
+        tag_id = created.get("id")
+        if errors or not tag_id or created.get("name") != normalized_name:
+            raise RuntimeError("Monarch rejected the transaction tag creation")
+        tags = normalize_transaction_tags(await client.get_transaction_tags())
+        verified = next(
+            (tag for tag in tags if tag.id == tag_id and tag.name == normalized_name),
+            None,
+        )
+        if verified is None:
+            raise RuntimeError("Monarch did not verify the created transaction tag")
+        return TransactionTagCreateResponse(status="created", tag=verified)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise upstream_error("transaction tag creation", e)
+
+
+@app.patch(
+    "/transactions/{transaction_id}/tags",
+    response_model=TransactionTagsUpdateResponse,
+)
+async def update_transaction_tags(
+    update: TransactionTagsUpdate,
+    transaction_id: str = PathParam(..., min_length=1, max_length=512),
+):
+    """Replace transaction tags only when the caller's complete read state is current."""
+    lock = TRANSACTION_TAG_UPDATE_LOCKS[
+        hash(transaction_id) % len(TRANSACTION_TAG_UPDATE_LOCKS)
+    ]
+    async with lock:
+        return await _update_transaction_tags_locked(update, transaction_id)
+
+
+async def _update_transaction_tags_locked(
+    update: TransactionTagsUpdate,
+    transaction_id: str,
+):
+    if (
+        len(set(update.tag_ids)) != len(update.tag_ids)
+        or len(set(update.expected_tag_ids)) != len(update.expected_tag_ids)
+    ):
+        raise HTTPException(
+            422,
+            detail={
+                "error": "invalid_request",
+                "message": "Transaction tag IDs must be unique",
+            },
+        )
+
+    if DEMO_MODE:
+        transaction = DemoProvider.get_transaction_detail(transaction_id)
+        if transaction is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "transaction_not_found",
+                    "message": "Transaction was not found",
+                },
+            )
+        current_ids = sorted(tag["id"] for tag in transaction["tags"])
+        if current_ids != sorted(update.expected_tag_ids):
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "transaction_tag_drift",
+                    "message": "Transaction tags changed; reconcile before retrying",
+                },
+            )
+        try:
+            DemoProvider.set_transaction_tags(transaction_id, update.tag_ids)
+            verified = normalize_transaction(
+                DemoProvider.get_transaction_detail(transaction_id)
+            ).tag_references
+        except Exception as e:
+            raise upstream_error("transaction tag update", e)
+        if sorted(tag.id for tag in verified) != sorted(update.tag_ids):
+            raise HTTPException(
+                502,
+                detail={
+                    "error": "transaction_tag_verification_failed",
+                    "message": "Monarch did not verify the transaction tag update",
+                },
+            )
+        return TransactionTagsUpdateResponse(
+            status="updated",
+            transaction_id=transaction_id,
+            tag_references=verified,
+        )
+
+    client = await get_client()
+    try:
+        set_tags = getattr(client, "set_transaction_tags", None)
+        if not callable(set_tags):
+            raise HTTPException(
+                503,
+                detail={
+                    "error": "tag_update_capability_unavailable",
+                    "message": "Monarch transaction tag updates are unavailable",
+                },
+            )
+        before_result = await client.get_transaction_details(transaction_id)
+        before_raw = (
+            before_result.get("getTransaction")
+            if isinstance(before_result, dict)
+            else None
+        )
+        if before_raw is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "transaction_not_found",
+                    "message": "Transaction was not found",
+                },
+            )
+        before = normalize_transaction(before_raw)
+        if sorted(tag.id for tag in before.tag_references) != sorted(update.expected_tag_ids):
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "transaction_tag_drift",
+                    "message": "Transaction tags changed; reconcile before retrying",
+                },
+            )
+        result = await set_tags(transaction_id, update.tag_ids)
+        mutation = result.get("setTransactionTags", {}) if isinstance(result, dict) else {}
+        errors = mutation.get("errors") or []
+        transaction = mutation.get("transaction") or {}
+        mutation_ids = sorted(
+            tag.get("id") for tag in transaction.get("tags", []) if isinstance(tag, dict)
+        )
+        if errors or mutation_ids != sorted(update.tag_ids):
+            raise RuntimeError("Monarch rejected the transaction tag update")
+        verified_result = await client.get_transaction_details(transaction_id)
+        verified_raw = (
+            verified_result.get("getTransaction")
+            if isinstance(verified_result, dict)
+            else None
+        )
+        if verified_raw is None:
+            raise RuntimeError("Monarch did not return the updated transaction")
+        verified = normalize_transaction(verified_raw).tag_references
+        if sorted(tag.id for tag in verified) != sorted(update.tag_ids):
+            raise HTTPException(
+                502,
+                detail={
+                    "error": "transaction_tag_verification_failed",
+                    "message": "Monarch did not verify the transaction tag update",
+                },
+            )
+        return TransactionTagsUpdateResponse(
+            status="updated",
+            transaction_id=transaction_id,
+            tag_references=verified,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise upstream_error("transaction tag update", e)
 
 
 @app.get("/accounts", response_model=AccountsResponse)

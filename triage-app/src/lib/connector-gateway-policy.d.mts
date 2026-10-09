@@ -50,6 +50,14 @@ export function parseReviewMutation(
   value: unknown
 ): ConnectorPolicyError | { allowed: true; body: string };
 
+export function parseTagCreateMutation(
+  value: unknown
+): ConnectorPolicyError | { allowed: true; body: string };
+
+export function parseTagMutation(
+  value: unknown
+): ConnectorPolicyError | { allowed: true; body: string };
+
 export function resolveConnectorBridgeUrl(
   rawUrl: string | undefined
 ): { configured: false } | { configured: true; baseUrl: URL };
