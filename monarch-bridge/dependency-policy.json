@@ -7,7 +7,7 @@
     "resolverVersion": "0.12.2",
     "universal": true
   },
-  "reviewedAt": "2026-08-09",
+  "reviewedAt": "2026-10-09",
   "directRuntime": [
     "fastapi",
     "httpx",
@@ -48,7 +48,7 @@
     "idna": {"version": "3.18", "license": "BSD-3-Clause", "scope": "runtime"},
     "iniconfig": {"version": "2.3.0", "license": "MIT", "scope": "test"},
     "monarchmoneycommunity": {"version": "1.5.2", "license": "MIT", "scope": "runtime"},
-    "multidict": {"version": "6.7.1", "license": "Apache-2.0", "scope": "runtime"},
+    "multidict": {"version": "6.9.1", "license": "Apache-2.0", "scope": "runtime"},
     "oathtool": {"version": "2.4.0", "license": "MIT", "scope": "runtime"},
     "packaging": {"version": "26.3", "license": "Apache-2.0 OR BSD-2-Clause", "scope": "test"},
     "path": {"version": "17.1.1", "license": "MIT", "scope": "runtime"},
@@ -138,7 +138,7 @@
     "idna": "76787c5f616b16b094cf2f7c16cd6f537a1f12b12200576dd93f36b781640bf2",
     "iniconfig": "8cc5f021c7ed03a463f812dd6e805cbb3805354d3ae9f955c2ca8ca6f798c2f2",
     "monarchmoneycommunity": "d7f2a47026e625f938cfdc6807cfeb8882e1d586d4e05f73d28e0c2d7ff783c5",
-    "multidict": "023d110033d8f926a525859bd85d663b14a2b2eee76b17e15be999e0e7d95d75",
+    "multidict": "a89e341266b2788b5a361bec602a044d56441ea05cfb5dcf7eb347474fbbac6e",
     "oathtool": "3ac328fe5f856a130f9adc86114acdd3fe326df9bb98affd50277a910b9021f0",
     "packaging": "38e8db65fdcf2954a70a1ae81fca6c82f9384e498924da648defd45a7a51ba19",
     "path": "27a4df776eccd88169be238ea89bca78df23621f93b770e171193c47773b8275",
@@ -160,6 +160,10 @@
     "yarl": "566055bf41dd3b8d590ad7896ee39bf8e078eb34f885a75cdd8ac9fa008602fa"
   },
   "securityFloors": {
+    "multidict": {
+      "advisories": ["GHSA-54p9-h82j-f925"],
+      "minimum": "6.9.1"
+    },
     "pydantic": {
       "advisories": ["GHSA-mr82-8j83-vxmv"],
       "minimum": "2.4.0"
