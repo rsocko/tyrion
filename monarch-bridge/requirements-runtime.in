@@ -1,5 +1,5 @@
 # Direct production dependencies. Regenerate requirements-runtime.txt on Python 3.12.
-monarchmoneycommunity==1.5.2
+monarchmoneycommunity==1.6.0
 fastapi==0.141.1
 starlette==1.4.1
 uvicorn[standard]==0.52.1

@@ -24,7 +24,7 @@ Tyrion-to-Monarch leg remains the versioned bridge HTTP contract.
 
 ## Current implementation
 
-Tyrion pins `monarchmoneycommunity==1.5.2`. It is an unofficial client for
+Tyrion pins `monarchmoneycommunity==1.6.0`. It is an unofficial client for
 Monarch's private upstream interface, not a supported Monarch SDK. Public methods on
 the pinned client are broader than the contract Tyrion currently supports.
 
