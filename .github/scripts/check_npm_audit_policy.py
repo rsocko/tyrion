@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import json
 from pathlib import Path
 import shutil
@@ -10,6 +11,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT_NAMES = ("finance-insights", "kid-engine", "triage-app")
+ALLOWED_ADVISORY = "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm"
+ALLOWED_BRACES_VERSION = "3.0.3"
+EXCEPTION_EXPIRES = date(2026, 11, 9)
 
 
 def _advisory_roots(
@@ -42,10 +46,43 @@ def _advisory_roots(
 
 def check_policy(
     report: dict[str, Any],
+    lock: dict[str, Any],
+    manifest: dict[str, Any],
+    today: date,
+    allow_braces_exception: bool = False,
 ) -> list[str]:
+    failures: list[str] = []
+    if allow_braces_exception and today > EXCEPTION_EXPIRES:
+        failures.append(
+            f"temporary braces exception expired on {EXCEPTION_EXPIRES.isoformat()}"
+        )
+
+    if allow_braces_exception:
+        if "braces" in manifest.get("dependencies", {}) or "braces" in manifest.get(
+            "devDependencies", {}
+        ):
+            failures.append("braces must remain an indirect development dependency")
+
+        braces_entries = [
+            (package_path, metadata)
+            for package_path, metadata in lock.get("packages", {}).items()
+            if package_path.endswith("node_modules/braces")
+        ]
+        if not braces_entries:
+            failures.append("reviewed braces dependency is missing from the lock")
+        for package_path, metadata in braces_entries:
+            if metadata.get("version") != ALLOWED_BRACES_VERSION:
+                failures.append(
+                    f"{package_path}: braces version is not the reviewed exception version"
+                )
+            if metadata.get("dev") is not True:
+                failures.append(
+                    f"{package_path}: braces must remain development-only"
+                )
+
     vulnerabilities = report.get("vulnerabilities")
     if not isinstance(vulnerabilities, dict):
-        return ["npm audit report lacks vulnerability metadata"]
+        return failures + ["npm audit report lacks vulnerability metadata"]
 
     high_or_critical = {
         name: metadata
@@ -54,19 +91,42 @@ def check_policy(
         and metadata.get("severity") in {"high", "critical"}
     }
 
-    failures: list[str] = []
+    observed_allowed_root = False
     for package_name in high_or_critical:
         roots, root_failures = _advisory_roots(package_name, vulnerabilities)
         failures.extend(root_failures)
-        failures.append(
-            f"{package_name}: high-severity advisory roots {sorted(roots)}"
-        )
+        if allow_braces_exception and roots == {ALLOWED_ADVISORY}:
+            observed_allowed_root = True
+        else:
+            failures.append(
+                f"{package_name}: unapproved high-severity advisory roots "
+                f"{sorted(roots)}"
+            )
+
+    if allow_braces_exception:
+        braces_causes = vulnerabilities.get("braces", {}).get("via", [])
+        matching_causes = [
+            cause
+            for cause in braces_causes
+            if isinstance(cause, dict) and cause.get("url") == ALLOWED_ADVISORY
+        ]
+        if len(matching_causes) != 1:
+            failures.append("braces audit entry does not match the approved advisory")
+        elif (
+            matching_causes[0].get("range") != "<=3.0.3"
+            or matching_causes[0].get("severity") != "high"
+        ):
+            failures.append("braces advisory metadata changed")
+        if not observed_allowed_root:
+            failures.append("approved braces advisory was not present in npm audit output")
 
     return failures
 
 
 def check_project(project_name: str, npm: str) -> list[str]:
     project_root = ROOT / project_name
+    lock = json.loads((project_root / "package-lock.json").read_text(encoding="utf-8"))
+    manifest = json.loads((project_root / "package.json").read_text(encoding="utf-8"))
     try:
         result = subprocess.run(
             [npm, "audit", "--json"],
@@ -85,7 +145,13 @@ def check_project(project_name: str, npm: str) -> list[str]:
 
     return [
         f"{project_name}: {failure}"
-        for failure in check_policy(report)
+        for failure in check_policy(
+            report,
+            lock,
+            manifest,
+            date.today(),
+            allow_braces_exception=project_name == "triage-app",
+        )
     ]
 
 
@@ -108,7 +174,10 @@ def main() -> int:
         print("\n".join(failures), file=sys.stderr)
         return 1
 
-    print("npm advisory policy passed with no high or critical vulnerabilities.")
+    print(
+        "npm advisory policy passed with the temporary development-only braces "
+        f"exception through {EXCEPTION_EXPIRES.isoformat()}."
+    )
     return 0
 
 
