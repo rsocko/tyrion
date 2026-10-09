@@ -63,8 +63,39 @@ export interface AttributionBatchResponseV1 {
   results: AttributionBatchResultV1[];
 }
 
+export interface AttributionPolicyResponseV1 {
+  contractVersion: typeof TYRION_DOMAIN_CONTRACT_VERSION;
+  engineVersion: typeof KID_ATTRIBUTION_ENGINE_VERSION;
+  policyVersion: number;
+  policyUpdatedAt: string;
+}
+
 export interface AttributionBatchServiceOptions {
   now?: () => Date;
+}
+
+export class AttributionPolicyService {
+  constructor(private readonly repository: PolicyRepository) {}
+
+  async discover(
+    actorValue: PolicyActorV1
+  ): Promise<AttributionPolicyResponseV1> {
+    const actor = parsePolicyActorV1(actorValue);
+    authorizeAttributionBatch(actor, actor.householdId);
+    const policy = await this.repository.load(actor.householdId);
+    if (!policy) {
+      throw new AttributionBatchError(
+        'policy_unavailable',
+        'Household attribution policy is unavailable'
+      );
+    }
+    return {
+      contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
+      engineVersion: KID_ATTRIBUTION_ENGINE_VERSION,
+      policyVersion: policy.policyVersion,
+      policyUpdatedAt: policy.updatedAt,
+    };
+  }
 }
 
 export class AttributionBatchService {

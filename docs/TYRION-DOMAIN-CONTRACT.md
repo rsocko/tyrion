@@ -2,7 +2,8 @@
 
 **Contract version:** `2.0`
 **Engine version:** `2.0.0`
-**Services:** `POST /api/internal/v2/attribution/batch` and
+**Services:** `GET /api/internal/v2/attribution/policy`,
+`POST /api/internal/v2/attribution/batch`, and
 `POST /api/internal/v2/attribution/actions`, plus the private Quick Review support
 operations under `POST /api/internal/v1/finance/quick-review/*`
 
@@ -144,6 +145,18 @@ the policy version fence; changed policy returns `policy_conflict`, while change
 consumer state returns `attribution_state_conflict`.
 
 ## Protected batch service
+
+Mission Control discovers the active policy metadata through
+`GET /api/internal/v2/attribution/policy` once at the start of an attribution
+operation. The route uses the same private authority, bearer credential, and fixed
+service actor as batch attribution. A successful response is non-cacheable and
+contains exactly `contractVersion`, `engineVersion`, the positive `policyVersion`,
+and `policyUpdatedAt`. It never exposes rules, kids, account defaults, merchant
+rules, household identity, or other policy contents. Missing or unreadable policy
+state returns the existing `policy_unavailable` error rather than a default version.
+Mission Control sends the discovered version as `expectedPolicyVersion` on every
+batch in that operation; a later policy change therefore fails the operation's next
+batch with `policy_conflict`.
 
 Mission Control sends pages in bounded groups to
 `POST /api/internal/v2/attribution/batch`; it must not call Tyrion once per

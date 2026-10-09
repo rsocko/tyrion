@@ -55,6 +55,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 ## Tyrion domain integration boundary
 
 `kid-engine` is private Tyrion-internal code. Mission Control calls
+`GET /api/internal/v2/attribution/policy` once at operation start, then calls
 `POST /api/internal/v2/attribution/batch` on the private Tyrion service network and
 never installs or executes the engine. Each bounded request contains only an opaque
 consumer source reference, normalized merchant name, calendar date, the exact direct
@@ -67,7 +68,11 @@ Mission Control authenticates with the existing server-only
 `BRIDGE_API_TOKEN`/finance-manager bearer credential on the private Docker network.
 Tyrion derives the fixed `mission-control-finance-manager` actor and
 `homelab-household` scope internally, loads the current policy snapshot server-side,
-and evaluates the whole batch under one policy-version fence. Attribution failure
+and returns only contract, engine, policy version, and policy update timestamp from
+discovery. Mission Control sends that exact positive version on every batch in the
+operation, and Tyrion evaluates each whole batch under one policy-version fence.
+Discovery never returns policy contents and fails closed when no policy is available.
+Attribution failure
 does not change bridge sync success: Mission Control persists the transaction with
 pending attribution review and retries later. No controlled live Monarch validation
 is required for attribution service changes; deterministic tests use invented

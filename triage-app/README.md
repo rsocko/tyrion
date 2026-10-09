@@ -162,7 +162,8 @@ policy CRUD and connector operations remain available.
 
 ## Internal attribution services
 
-Mission Control calls `POST /api/internal/v2/attribution/batch` and
+Mission Control calls `GET /api/internal/v2/attribution/policy`,
+`POST /api/internal/v2/attribution/batch`, and
 `POST /api/internal/v2/attribution/actions` by private backend DNS. These are Tyrion
 domain endpoints, not Bridge proxies or browser routes. The
 public `tyrion.socko.us` Traefik routers must exclude `/api/internal/`; the service
@@ -177,7 +178,11 @@ existing server-only
 `BRIDGE_API_TOKEN`/finance-manager token as a standard bearer credential. Tyrion
 derives the fixed `mission-control-finance-manager` actor, `homelab-household` scope,
 and least-privilege `attribution:batch` and `attribution:actions` permissions
-internally; request headers and bodies cannot override them. Mission Control must
+internally; request headers and bodies cannot override them. Policy discovery
+returns only contract, engine, positive policy version, and update timestamp with
+`Cache-Control: no-store`; absent policy fails closed with `policy_unavailable`.
+Mission Control fetches it once per operation and sends that exact version as
+`expectedPolicyVersion` on each batch. Mission Control must
 treat any non-200 response as an
 attribution-only failure: persist the transaction with pending review, do not
 tombstone transaction generation, and retry according to the stable error code.
