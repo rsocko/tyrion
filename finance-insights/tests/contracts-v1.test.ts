@@ -463,6 +463,20 @@ describe('finance insight v1 contract fixtures', () => {
     expect(parseSourceFactBatchV1(maximumMerchant).facts[0]!.merchantName).toHaveLength(
       160
     );
+    const businessContext = cloneFixture(batch);
+    (
+      businessContext.facts as Record<string, unknown>[]
+    )[0]!.businessContext = 'Invented Parent Company';
+    expect(parseSourceFactBatchV1(businessContext).facts[0]!.businessContext).toBe(
+      'Invented Parent Company'
+    );
+    const controlBusinessContext = cloneFixture(batch);
+    (
+      controlBusinessContext.facts as Record<string, unknown>[]
+    )[0]!.businessContext = 'Invented\u0000Parent';
+    expect(() => parseSourceFactBatchV1(controlBusinessContext)).toThrow(
+      'control characters'
+    );
     const controlMerchant = cloneFixture(batch);
     (
       controlMerchant.facts as Record<string, unknown>[]

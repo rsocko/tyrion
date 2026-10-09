@@ -2289,6 +2289,19 @@
                       "maxLength": 160,
                       "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
                     },
+                    "businessContext": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "categoryRef": {
                       "anyOf": [
                         {
@@ -8649,6 +8662,19 @@
                       "minLength": 1,
                       "maxLength": 160,
                       "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "businessContext": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "categoryRef": {
                       "anyOf": [
