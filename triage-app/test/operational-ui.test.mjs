@@ -3008,6 +3008,14 @@ test("policy remains independent while attribution fails closed without its bear
       (await attribution.json()).error.code,
       "attribution_auth_not_configured"
     );
+    const policyDiscovery = await rawAttributionPolicyFetch(url, {
+      Authorization: ["Bearer", serviceToken].join(" "),
+    });
+    assert.equal(policyDiscovery.status, 503);
+    assert.equal(
+      (await policyDiscovery.json()).error.code,
+      "attribution_auth_not_configured"
+    );
     const connector = await fetch(`${url}/api/connector/v1/health`, {
       headers: { Authorization: `Bearer ${serviceToken}` },
     });
@@ -3024,6 +3032,34 @@ test("policy remains independent while attribution fails closed without its bear
       processWithoutBackendCredential.kill();
     }
   }
+});
+
+test("attribution policy discovery fails closed for auth and a missing policy", async () => {
+  const missingAuth = await rawAttributionPolicyFetch(uiUrl);
+  assert.equal(missingAuth.status, 401);
+  assert.equal(
+    (await missingAuth.json()).error.code,
+    "attribution_auth_required"
+  );
+
+  const invalidAuth = await rawAttributionPolicyFetch(uiUrl, {
+    Authorization: "Bearer invalid-attribution-auth-token-value-123456",
+  });
+  assert.equal(invalidAuth.status, 401);
+  assert.equal(
+    (await invalidAuth.json()).error.code,
+    "attribution_auth_invalid"
+  );
+
+  const missingPolicy = await rawAttributionPolicyFetch(uiUrl, {
+    Authorization: ["Bearer", serviceToken].join(" "),
+  });
+  assert.equal(missingPolicy.status, 503);
+  assert.equal(
+    (await missingPolicy.json()).error.code,
+    "policy_unavailable"
+  );
+  assert.equal(missingPolicy.headers.get("cache-control"), "no-store");
 });
 
 test("policy API creates a strict household-scoped policy and rejects stale writes", async () => {
@@ -3094,6 +3130,28 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
   });
   assert.equal(stale.status, 409);
   assert.equal((await stale.json()).error.code, "policy_version_conflict");
+});
+
+test("attribution policy discovery returns only active version metadata", async () => {
+  const response = await rawAttributionPolicyFetch(uiUrl, {
+    Authorization: ["Bearer", serviceToken].join(" "),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const payload = await response.json();
+  assert.deepEqual(payload, {
+    contractVersion: "2.0",
+    engineVersion: "2.0.0",
+    policyVersion: activePolicy.policyVersion,
+    policyUpdatedAt: activePolicy.updatedAt,
+  });
+  assert.equal(Number.isSafeInteger(payload.policyVersion), true);
+  assert.ok(payload.policyVersion > 0);
+  assert.match(
+    payload.policyUpdatedAt,
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
+  );
+  assert.equal(Number.isNaN(Date.parse(payload.policyUpdatedAt)), false);
 });
 
 test("Quick Review support is private, bounded, and privacy-safe", async () => {
@@ -3958,6 +4016,18 @@ function rawAttributionFetch(baseUrl, body, requestHeaders = {}) {
   );
 }
 
+function rawAttributionPolicyFetch(baseUrl, requestHeaders = {}) {
+  return rawHttpFetch(
+    "/api/internal/v2/attribution/policy",
+    "GET",
+    {
+      Host: internalAttributionHost,
+      ...requestHeaders,
+    },
+    baseUrl
+  );
+}
+
 function rawInternalAttributionFetch(
   baseUrl,
   path,
@@ -3996,8 +4066,13 @@ function rawInternalAttributionFetch(
   });
 }
 
-function rawHttpFetch(path, method = "GET", requestHeaders = {}) {
-  const target = new URL(uiUrl);
+function rawHttpFetch(
+  path,
+  method = "GET",
+  requestHeaders = {},
+  baseUrl = uiUrl
+) {
+  const target = new URL(baseUrl);
   return new Promise((resolvePromise, reject) => {
     const request = httpRequest(
       {
@@ -4016,6 +4091,9 @@ function rawHttpFetch(path, method = "GET", requestHeaders = {}) {
             status: response.statusCode,
             text: async () => text,
             json: async () => JSON.parse(text),
+            headers: {
+              get: (name) => response.headers[name.toLowerCase()] ?? null,
+            },
           });
         });
       }

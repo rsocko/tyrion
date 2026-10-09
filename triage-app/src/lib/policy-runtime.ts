@@ -2,6 +2,7 @@ import {
   FilePolicyRepository,
   AttributionActionService,
   AttributionBatchService,
+  AttributionPolicyService,
   PolicyService,
   PolicyVersionConflictError,
   ReattributionService,
@@ -29,6 +30,7 @@ const INTEGRATION_TIMEOUT_MS = 10_000;
 export interface PolicyRuntime {
   mode: "demo" | "production";
   policyService: PolicyService;
+  attributionPolicyService: AttributionPolicyService;
   attributionBatchService: AttributionBatchService;
   getAttributionActionService(): AttributionActionService;
   getReattributionService(): ReattributionService;
@@ -77,6 +79,7 @@ export function getPolicyRuntime(
   cachedRuntime = {
     mode: demo ? "demo" : "production",
     policyService: new PolicyService(policyRepository),
+    attributionPolicyService: new AttributionPolicyService(policyRepository),
     attributionBatchService: new AttributionBatchService(policyRepository),
     getAttributionActionService() {
       if (!attributionActionService) {
