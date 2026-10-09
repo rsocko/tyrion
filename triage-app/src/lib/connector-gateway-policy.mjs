@@ -25,6 +25,7 @@ const transactionQueryParameters = new Set([
   "max_amount",
   "is_pending",
   "is_recurring",
+  "needs_review",
   "limit",
   "cursor",
 ]);
@@ -136,17 +137,22 @@ export function evaluateConnectorRequest(method, segments, searchParams) {
   const transactionRoute = matchTransactionRoute(segments);
   if (transactionRoute) {
     const { transactionId, operation } = transactionRoute;
-    if (operation === "category") {
+    if (
+      operation === "category" ||
+      operation === "merchant" ||
+      operation === "review"
+    ) {
       if (method !== "PATCH") return methodNotAllowed();
     } else if (method !== "GET") {
       return methodNotAllowed();
     }
     if ([...searchParams.keys()].length > 0) return queryNotAccepted();
-    const suffix =
-      operation === "detail" ? "" : operation === "splits" ? "/splits" : "/category";
+    const suffix = operation === "detail" ? "" : `/${operation}`;
     return allowed(
       `/transactions/${encodeURIComponent(transactionId)}${suffix}`,
-      operation === "category"
+      operation === "category" ||
+        operation === "merchant" ||
+        operation === "review"
     );
   }
 
@@ -177,6 +183,53 @@ export function parseCategoryMutation(value) {
   return {
     allowed: true,
     body: JSON.stringify({ categoryId }),
+  };
+}
+
+export function parseMerchantMutation(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    return reject(400, "invalid_request", "Merchant update body is invalid");
+  }
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || keys[0] !== "merchantName") {
+    return reject(400, "invalid_request", "Merchant update body is invalid");
+  }
+  if (typeof value.merchantName !== "string") {
+    return reject(400, "invalid_request", "merchantName is invalid");
+  }
+  const merchantName = value.merchantName.trim().replace(/\s+/g, " ");
+  if (
+    !merchantName ||
+    merchantName.length > 120 ||
+    hasControlCharacter(merchantName)
+  ) {
+    return reject(400, "invalid_request", "merchantName is invalid");
+  }
+  return {
+    allowed: true,
+    body: JSON.stringify({ merchantName }),
+  };
+}
+
+export function parseReviewMutation(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype ||
+    Object.keys(value).length !== 1 ||
+    value.reviewed !== true
+  ) {
+    return reject(400, "invalid_request", "Review update body is invalid");
+  }
+  return {
+    allowed: true,
+    body: '{"reviewed":true}',
   };
 }
 
@@ -267,7 +320,7 @@ function evaluateTransactionQuery(searchParams) {
   appendIfPresent(output, "min_amount", searchParams.get("min_amount"));
   appendIfPresent(output, "max_amount", searchParams.get("max_amount"));
 
-  for (const name of ["is_pending", "is_recurring"]) {
+  for (const name of ["is_pending", "is_recurring", "needs_review"]) {
     const value = searchParams.get(name);
     if (value !== null) {
       if (value !== "true" && value !== "false") return invalidQuery();
@@ -308,7 +361,12 @@ function matchTransactionRoute(segments) {
   if (segments.length === 2) {
     return { transactionId, operation: "detail" };
   }
-  if (segments[2] === "splits" || segments[2] === "category") {
+  if (
+    segments[2] === "splits" ||
+    segments[2] === "category" ||
+    segments[2] === "merchant" ||
+    segments[2] === "review"
+  ) {
     return { transactionId, operation: segments[2] };
   }
   return null;

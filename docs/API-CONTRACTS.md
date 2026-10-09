@@ -66,6 +66,8 @@ Insights projection:
 | `GET` | `/transactions/{id}` | ID 1-512 normalized characters; no query or body |
 | `GET` | `/transactions/{id}/splits` | ID 1-512 normalized characters; no query or body |
 | `PATCH` | `/transactions/{id}/category` | JSON `{ "categoryId": "..." }` only; 1 KiB maximum |
+| `PATCH` | `/transactions/{id}/merchant` | JSON `{ "merchantName": "..." }` only; normalized 1-120 characters; 1 KiB maximum |
+| `PATCH` | `/transactions/{id}/review` | Exact JSON `{ "reviewed": true }`; 1 KiB maximum |
 | `GET` | `/accounts` | No query or body |
 | `GET` | `/category-groups` | No query or body |
 | `GET` | `/categories` | No query or body |
@@ -82,7 +84,8 @@ login/cookie/logout/session operations, `/cashflow`, `/openapi.json`, docs, raw
 upstream routes, `/api/policy/*`, and `/api/internal/*` are not gateway operations.
 Transaction query validation additionally limits the request to 32 parameter pairs,
 20 tag values, 512-character IDs, a 120-normalized-character merchant query, a
-128-character cursor, 1-500 items, signed two-decimal values within
+128-character cursor, exact lowercase `needs_review`, `is_pending`, and
+`is_recurring` booleans, 1-500 items, signed two-decimal values within
 `999999999.99`, exact lowercase booleans, valid ISO calendar dates, and at most 366
 inclusive days.
 
@@ -410,6 +413,8 @@ filters.
       "account": { "id": "acc-1", "displayName": "Checking", "mask": "1234" },
       "isPending": false,
       "isRecurring": false,
+      "reviewStatus": "needs_review",
+      "reviewAssignee": { "id": "member-1", "name": "Household Member" },
       "notes": null,
       "tags": ["Household"],
       "tagReferences": [
@@ -466,6 +471,56 @@ Request: `{ "categoryId": "cat-shopping" }`
   "categoryId": "cat-shopping"
 }
 ```
+
+The bridge returns success only when the mutation response contains the requested
+category identity. Rejected or unverifiable upstream writes return sanitized
+`502 upstream_error`; they are never success-shaped.
+
+`PATCH /transactions/{transaction_id}/merchant`
+
+Request: `{ "merchantName": "Invented Market" }`
+
+```json
+{
+  "contractVersion": "1.0",
+  "status": "updated",
+  "transactionId": "tx-123",
+  "merchantName": "Invented Market"
+}
+```
+
+`merchantName` is trimmed, internal whitespace is collapsed, control characters are
+rejected, and the normalized value is limited to 120 characters. No merchant ID or
+raw upstream merchant object crosses the DTO boundary. The bridge returns success
+only when the upstream mutation response contains the exact normalized name;
+rejected, malformed, or unverifiable writes return a sanitized stable error.
+
+`PATCH /transactions/{transaction_id}/review`
+
+Request: `{ "reviewed": true }`
+
+```json
+{
+  "contractVersion": "1.0",
+  "status": "reviewed",
+  "transactionId": "tx-123",
+  "reviewStatus": "reviewed"
+}
+```
+
+Monarch is authoritative for transaction review state. Transaction DTOs normalize
+the upstream `needsReview` boolean as `reviewStatus: "needs_review" | "reviewed"` and
+expose a nullable `reviewAssignee` with only the upstream household-member ID and
+name. `GET /transactions?needs_review=true|false` passes the pinned client's native
+filter. Detail reads resolve the pinned client's `needsReviewByUser.id` against its
+same-response household directory and fail closed if a non-null assignee cannot be
+resolved.
+
+The write contract deliberately accepts only `reviewed: true`; it cannot invent a
+third cleared/reconciled state or reassign review. Success requires the pinned
+client's mutation response to contain `needsReview: false`. Missing client capability
+returns `503 review_capability_unavailable`; rejection or unverifiable responses
+return sanitized `502 upstream_error`.
 
 ### Accounts
 

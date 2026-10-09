@@ -45,6 +45,8 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Accounts/category groups/categories/transaction tags/recurring/cashflow/budgets | Normalized synthetic current-upstream structures; stable reference IDs; additive transaction tag references; explicit budget period; authoritative-empty, malformed, and dataset-bound behavior | Accounts/categories/recurring/cashflow/budgets completed 2026-08-08; category groups, transaction tags, additive category/tag identity, and explicit budget periods require the next controlled read-only validation |
 | Sync | Pagination and auth-error preservation | Controlled sync completed 2026-08-08 |
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
+| Merchant/payee write-back | Normalized 1-120 character input, unknown-field/control-character rejection, exact mutation-response verification, deterministic demo response, connector body allowlisting, and sanitized failures | Controlled live validation required with explicit confirmation, read-back, and restoration |
+| Transaction review | Pinned-client `needsReview`, `reviewStatus`, `needsReviewByUser`, household directory, `needs_review` filter, and `reviewed=True` mutation inspected; normalized status/assignee, strict mark-reviewed body, exact mutation verification, missing-capability failure, deterministic demo response, and connector allowlisting | Controlled live validation required on a dedicated needs-review transaction; do not run without accepting that the authoritative review action is not safely reversible |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB general response bounds; composed health with one 4 KiB `/auth/status` verification, explicit v1 shape/version validation, derived status/reachability, no auth-field leakage, and sanitized non-success failures; status/body/safe-header preservation for passthrough operations; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
 | Production images | Separate non-root bridge/UI runtimes, route allowlist, loopback health checks, external session mount, no auth state in build contexts | Pull immutable images, mount restricted state, and smoke test private bridge plus TLS UI ingress |
@@ -97,7 +99,8 @@ and resumes its projections after return.
    files, shell transcripts, CI variables with broad access, or command arguments.
 4. Run `test_live_integration.py` without output capture or fixture-generation tools.
 5. Enable mutation only after reviewing the dedicated transaction and confirmation
-   phrase. Verify the test restores the original category.
+   phrase. Category and merchant/payee tests must verify and restore the original
+   value.
 6. Inspect logs for event codes only. Stop if any upstream body, filesystem path,
    account identifier, email, cookie, authorization value, or credential appears.
 7. Revoke the controlled session after testing when it is not needed.
@@ -124,8 +127,20 @@ and resumes its projections after return.
   `upstream_rate_limited` response.
 - Network timeouts and unknown upstream failures produce `degraded`; explicit
   authentication rejection produces `expired` and removes persisted state.
-- Category updates are non-transactional upstream. Live validation always reads back
-  the change and restores the original category.
+- Category and merchant/payee updates are non-transactional upstream. Live validation
+  always reads back the change and restores the original value.
+- The pinned client exposes Monarch's native transaction `needsReview`,
+  `reviewStatus`, `needsReviewByUser`, and `reviewedAt` response fields, a
+  `needs_review` list filter, and `update_transaction(..., reviewed=True)`. Tyrion
+  exposes only the verified normalized state and assignee plus mark-reviewed; it does
+  not expose `reviewedByUser`, raw household objects, an unverified reassignment
+  mutation, or a fabricated cleared/reconciled state.
+- Pinned-client source inspection distinguishes `ownedByUser` and
+  `ownershipOverriddenAt` from detail-only `needsReviewByUser`, exposes household
+  members only as the directory needed to resolve that assignee, implements tags as
+  generic set membership, returns only transaction-rule IDs, and supplies no
+  review-assignee, ownership, or rule mutation signature. None of these fields safely
+  identifies the physical spender or replaces Tyrion Kids attribution.
 - Reference and current-snapshot reads are complete-or-error. The bridge accepts an
   authoritative empty collection, rejects missing/non-array/invalid/oversized
   collections as sanitized `502 upstream_error`, and never publishes a truncated
@@ -153,6 +168,14 @@ correct, then request split detail for one transaction through
 `get_transaction_splits(transaction_id)`. Record only pass/fail and the validation
 date. Do not record the query values, source identifiers, merchant names, amounts,
 split contents, response bodies, or upstream exception text.
+
+For merchant/payee mutation validation, use the same explicit
+`I_ACCEPT_REVERSIBLE_MONARCH_MUTATION` gate, one dedicated transaction, and an
+invented temporary merchant name supplied only through the operator process. Verify
+the mutation response, read the transaction back, restore the original merchant name
+in `finally`, and verify restoration. Record only pass/fail plus date; never record
+the transaction identifier, original or temporary merchant name, response body, or
+upstream exception text.
 
 ## Container deployment validation
 
