@@ -90,6 +90,11 @@ class AccountRef(ApiModel):
     mask: Optional[str] = None
 
 
+class ReviewAssigneeRef(ApiModel):
+    id: str
+    name: str
+
+
 class Transaction(ApiModel):
     id: str
     date: date
@@ -99,6 +104,8 @@ class Transaction(ApiModel):
     account: AccountRef
     is_pending: bool = False
     is_recurring: bool = False
+    review_status: Literal["needs_review", "reviewed"]
+    review_assignee: Optional[ReviewAssigneeRef] = None
     notes: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     tag_references: list[TransactionTagRef] = Field(default_factory=list)
@@ -241,6 +248,18 @@ class CategoryUpdateResponse(ContractResponse):
     category_id: str
 
 
+class MerchantUpdateResponse(ContractResponse):
+    status: Literal["updated"]
+    transaction_id: str
+    merchant_name: str
+
+
+class TransactionReviewResponse(ContractResponse):
+    status: Literal["reviewed"]
+    transaction_id: str
+    review_status: Literal["reviewed"] = "reviewed"
+
+
 class ErrorDetail(ApiModel):
     code: str
     message: str
@@ -285,6 +304,12 @@ def _required_text(value: Any) -> str:
 
 def _money(value: Any) -> float:
     return round(float(value or 0), 2)
+
+
+def _required_bool(value: Any, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"Required upstream {name} boolean is missing or invalid")
+    return value
 
 
 def _identifier(value: Any) -> str:
@@ -391,6 +416,11 @@ def normalize_transaction(raw: Any) -> Transaction:
     if not isinstance(tags, list):
         raise ValueError("Upstream transaction tags must be an array")
     tag_references = [normalize_transaction_tag_ref(tag) for tag in tags]
+    review_assignee = _mapping(
+        _pick(value, "reviewAssignee", "needsReviewByUser", default={})
+    )
+    review_assignee_id = _pick(review_assignee, "id")
+    review_assignee_name = _pick(review_assignee, "name")
     return Transaction(
         id=_identifier(_pick(value, "id")),
         date=_date(_pick(value, "date", "postedDate", "createdAt")),
@@ -403,6 +433,22 @@ def normalize_transaction(raw: Any) -> Transaction:
         account=normalize_account_ref(_pick(value, "account", default={})),
         is_pending=bool(_pick(value, "isPending", "pending", default=False)),
         is_recurring=bool(_pick(value, "isRecurring", "recurring", default=False)),
+        review_status=(
+            "needs_review"
+            if _required_bool(
+                _pick(value, "needsReview", "needs_review"),
+                "needsReview",
+            )
+            else "reviewed"
+        ),
+        review_assignee=(
+            ReviewAssigneeRef(
+                id=_identifier(review_assignee_id),
+                name=_required_text(review_assignee_name),
+            )
+            if review_assignee_id is not None and review_assignee_name is not None
+            else None
+        ),
         notes=_optional_text(_pick(value, "notes")),
         tags=[tag.name for tag in tag_references],
         tag_references=tag_references,

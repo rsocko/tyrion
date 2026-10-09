@@ -3,7 +3,8 @@
 **Contract version:** `2.0`
 **Engine version:** `2.0.0`
 **Services:** `POST /api/internal/v2/attribution/batch` and
-`POST /api/internal/v2/attribution/actions`
+`POST /api/internal/v2/attribution/actions`, plus the private Quick Review support
+operations under `POST /api/internal/v1/finance/quick-review/*`
 
 ## Boundary
 
@@ -21,6 +22,80 @@ repository or PR content.
 The machine-readable service contract is
 [`attribution-service-v2.openapi.json`](./attribution-service-v2.openapi.json).
 Removing a field or changing its type or meaning requires a new major API version.
+
+## Mission Control Quick Review support
+
+Mission Control owns the responsive Quick Review UI, session progress, confirm,
+correct, and skip interaction state. Tyrion exposes only three deterministic private
+support operations on the same fixed private authority and bearer credential as
+attribution:
+
+- `POST /api/internal/v1/finance/quick-review/rank` accepts 1-100 unique opaque
+  `sourceRef` values with normalized merchant/date, pending state, bounded attribution
+  state, authoritative normalized Monarch review status, and an allowlisted signal
+  set. It returns only references, rank, a 0-100 priority score, and reason codes. It
+  does not return a transaction, amount,
+  account, household identity, or upstream shape.
+- `POST /api/internal/v1/finance/quick-review/research` prepares the external lookup
+  envelope. The default contains only normalized `vendorName` and optional coarse
+  locality/region/two-letter country. Amount and date are included only when both are
+  supplied and `disclosure.shown: true` carries a valid `confirmedAt` timestamp.
+  Unknown fields are rejected, so account/card details, transaction identifiers,
+  household/Kids identities, history, raw responses, and session material cannot be
+  smuggled into the envelope. The response requires sources for facts, explicit
+  labeling of inference, and forbids fraud assertions.
+- `POST /api/internal/v1/finance/quick-review/rule-suggestion` accepts only normalized
+  merchant name, opaque Tyrion kid reference, and the user's explicit
+  `suggestReusableRule` choice. It returns either `null` or a likely-confidence
+  merchant-rule suggestion with `requiresConfirmation: true`; it never mutates policy.
+
+All three requests require `application/json`, share the existing 64 KiB body bound,
+reject unknown fields, return `Cache-Control: no-store`, and use sanitized error
+envelopes. Stable operation errors are `invalid_request` (400),
+`attribution_auth_required` or `attribution_auth_invalid` (401),
+`attribution_route_not_available` or `quick_review_route_not_available` (404),
+`batch_too_large` or `payload_too_large` (413),
+`unsupported_media_type` (415), `research_disclosure_required` (422),
+`attribution_auth_not_configured` (503), and
+`quick_review_operation_failed` (500). These private operations never contact
+Monarch, load connector sessions, perform external research, or execute a write.
+
+Category and merchant/payee corrections write through the separately protected
+Bridge connector operations. Kids corrections continue through attribution actions.
+After a successful confirmed correction, Mission Control calls the verified Bridge
+mark-reviewed operation; a failed correction must not mark reviewed. Confirm without
+correction also uses that operation. Skip leaves Monarch unchanged. Mission Control
+may keep only opaque ephemeral progress/resume state; it must not create a competing
+durable reviewed flag. A confirmed rule suggestion uses Tyrion's policy mutation
+contract and version fence rather than this advisory endpoint.
+
+Monarch's official transaction-review documentation describes native needs-review
+and already-reviewed states, rule-driven review state, dashboard surfacing, and
+household-member review assignment:
+<https://www.monarch.com/blog/transaction-review> and
+<https://www.monarch.com/blog/assign-transactions-to-a-household-member-for-review>.
+The pinned `monarchmoneycommunity==1.5.2` implementation independently confirms the
+read/filter/mutation fields used above. Neither that client nor the reviewed official
+documentation establishes a cleared/reconciled transaction field or a native
+statement-reconciliation workflow, so Tyrion does not expose one.
+
+Review assignment complements but cannot replace Tyrion Kids attribution. In the
+pinned client, transaction list/detail queries expose `ownedByUser` and
+`ownershipOverriddenAt` separately from detail-only `needsReviewByUser`; the detail
+query resolves the latter through `myHousehold.users`. The review mutation accepts
+only `needs_review` and `reviewed`; it has no assignee or ownership parameter.
+Transaction tags are independent household labels managed by
+`get_transaction_tags()` and `set_transaction_tags(transaction_id, tag_ids)`.
+`get_transactions()` returns only transaction-rule IDs, and the pinned client has no
+transaction-rule read/write API that establishes spender identity.
+
+Therefore no verified upstream field says which child made a purchase. Account
+ownership identifies a Monarch household owner, review assignment identifies who
+must perform workflow review, and tags/rules are generic user configuration. Tyrion
+continues to derive Kids attribution from its own account/merchant policy and manual
+decisions. The normalized Monarch `reviewAssignee` may help Mission Control route the
+review task, but it must never be converted to a Tyrion `kidId`, treated as spending
+ownership, or used as attribution evidence.
 
 Attribution v1 is retired rather than reinterpreted. Authenticated calls to the old
 batch and actions paths return `410 contract_version_retired`. Roll out Tyrion v2
