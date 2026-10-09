@@ -4,4 +4,5 @@ export * from './attribution-batch-v1.js';
 export * from './attribution-actions-v1.js';
 export * from './bridge-adapter-v1.js';
 export * from './reattribution-v1.js';
+export * from './quick-review-v1.js';
 export * from './policy/index.js';

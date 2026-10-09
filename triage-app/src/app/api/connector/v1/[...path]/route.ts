@@ -6,6 +6,8 @@ import {
   MAX_CONNECTOR_REQUEST_BODY_BYTES,
   MAX_CONNECTOR_RESPONSE_BYTES,
   parseCategoryMutation,
+  parseMerchantMutation,
+  parseReviewMutation,
   resolveConnectorBridgeUrl,
 } from "@/lib/connector-gateway-policy.mjs";
 import {
@@ -175,7 +177,7 @@ async function proxyConnectorRequest(
       return jsonError(
         415,
         "unsupported_media_type",
-        "Category updates require application/json"
+        "Transaction updates require application/json"
       );
     }
     let boundedBody: Awaited<ReturnType<typeof readBoundedBody>>;
@@ -194,7 +196,11 @@ async function proxyConnectorRequest(
     } catch {
       return jsonError(400, "invalid_request", "Request body is invalid JSON");
     }
-    const mutation = parseCategoryMutation(parsed);
+    const mutation = policy.upstreamPath.endsWith("/merchant")
+      ? parseMerchantMutation(parsed)
+      : policy.upstreamPath.endsWith("/review")
+        ? parseReviewMutation(parsed)
+        : parseCategoryMutation(parsed);
     if (!mutation.allowed) {
       return jsonError(
         mutation.status,

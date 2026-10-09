@@ -165,9 +165,9 @@ gateway accepts only its documented route/method/query/body allowlist and reject
 browser-origin metadata and missing/invalid credentials. Bridge operations forward to
 private `BRIDGE_URL`; the exact document-expectation route delegates locally to the
 Finance Insights read projection. `/auth/*`, raw bridge routes, policy routes, and
-attribution routes are unavailable through it. `/api/internal/` remains excluded from
-every public router and the attribution handler independently enforces its private
-Docker authority.
+attribution and Quick Review support routes are unavailable through it.
+`/api/internal/` remains excluded from every public router, and both handlers
+independently enforce the fixed private Docker authority.
 
 The finance insight service shares that private-authority posture under
 `/api/internal/v1/finance/insights`. It rejects browser fetch metadata and is not
