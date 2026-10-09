@@ -18,6 +18,7 @@ import {
 import {
   documentExpectationSignalsSchema,
 } from './contracts/document-expectations-v1.js';
+import { payeePatternProjectionSchema } from './contracts/payee-patterns-v1.js';
 import {
   evaluationRequestSchema,
   evaluationResultSchema,
@@ -57,6 +58,7 @@ const schemas = {
   FinanceAutomationDeliveryAckResultV1:
     financeAutomationDeliveryAckResultSchema,
   DocumentExpectationSignalsV1: documentExpectationSignalsSchema,
+  PayeePatternProjectionV1: payeePatternProjectionSchema,
 } as const;
 
 const errorResponses = {
@@ -121,6 +123,34 @@ export function createFinanceInsightsOpenApiV1(): Record<string, unknown> {
               ...errorResponses,
             },
           },
+        },
+      '/api/internal/v1/finance/insights/payee-patterns/{generationId}': {
+          get: {
+            operationId: 'getPayeePatternsV1',
+            summary:
+              'Pull one bounded privacy-safe payee financial-pattern projection for an immutable source generation',
+            parameters: [
+              pathParameter('generationId', 160),
+              {
+                name: 'connectorRef',
+                in: 'query',
+                required: true,
+                schema: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 160,
+                  pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$',
+                },
+              },
+            ],
+            responses: {
+              '200': jsonResponse(
+                'Bounded generation-addressed payee pattern evidence',
+                'PayeePatternProjectionV1'
+              ),
+              ...errorResponses,
+            },
+      },
         },
       '/api/internal/v1/finance/insights/source-generations': {
         post: operation(

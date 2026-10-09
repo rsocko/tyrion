@@ -111,6 +111,25 @@ export function evaluateConnectorRequest(method, segments, searchParams) {
     return financeInsightAllowed();
   }
 
+  if (
+    Array.isArray(segments) &&
+    segments.length === 2 &&
+    segments[0] === "payee-patterns"
+  ) {
+    if (method !== "GET") return methodNotAllowed();
+    if (
+      [...searchParams.keys()].some((key) => key !== "connectorRef") ||
+      searchParams.getAll("connectorRef").length !== 1
+    ) {
+      return reject(
+        422,
+        "invalid_query",
+        "Replay requires exactly one connectorRef parameter"
+      );
+    }
+    return financeInsightAllowed();
+  }
+
   if (path === "sync") {
     if (method !== "POST") return methodNotAllowed();
     const keys = [...searchParams.keys()];

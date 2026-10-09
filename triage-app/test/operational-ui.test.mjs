@@ -1358,7 +1358,22 @@ test("finance insight analysis filters can return nonqualified occurrences", asy
 });
 
 test("finance insight service publishes current and generation-addressed OWL projections", async () => {
-  const publication = financePublication(6, [], {
+  const payeeTransactions = [
+    ["2026-05-01", -12000],
+    ["2026-06-01", -12100],
+    ["2026-07-01", -11950],
+  ].map(([occurredOn, amountMinor], index) => ({
+    sourceRef: `payee-utility-${index}`,
+    occurredOn,
+    amountMinor,
+    merchantName: "Invented Utility",
+    categoryRef: null,
+    accountRef: "card-a",
+    isPending: false,
+    recurringRef: "utility-a",
+    tagRefs: [],
+  }));
+  const publication = financePublication(6, payeeTransactions, {
     account: [
       { sourceRef: "card-a", accountType: "credit", active: true },
       { sourceRef: "card-b", accountType: "credit", active: true },
@@ -1429,6 +1444,37 @@ test("finance insight service publishes current and generation-addressed OWL pro
     "Recurring expense"
   );
 
+  const payeeResponse = await insightRequest(
+    `/payee-patterns/${publication.request.sourceGeneration}?connectorRef=${publication.request.connectorRef}`
+  );
+  assert.equal(payeeResponse.status, 200);
+  const payeeProjection = financeContract.parsePayeePatternProjectionV1(
+    await payeeResponse.json()
+  );
+  assert.equal(payeeProjection.payees.length, 1);
+  assert.deepEqual(payeeProjection.payees[0], {
+    payeeRef: payeeProjection.payees[0].payeeRef,
+    displayName: "Invented Utility",
+    activity: "active",
+    classification: "recurring-fixed",
+    observationCount: 3,
+    observationWindow: {
+      firstObservedOn: "2026-05-01",
+      lastObservedOn: "2026-07-01",
+    },
+    intervalEvidence: {
+      sampleCount: 2,
+      medianDays: 31,
+      minimumDays: 30,
+      maximumDays: 31,
+    },
+    confidence: 0.95,
+    basis: ["monarch_confirmed_recurring", "bounded_amount_variation"],
+    provenance: { transactionHistory: true, monarchRecurring: true },
+    monarchConfirmedRecurring: { active: true, cadence: "monthly" },
+  });
+  assert.doesNotMatch(JSON.stringify(payeeProjection), /payee-utility|amountMinor/);
+
   const connectorPath =
     `/api/connector/v1/document-expectation-signals/${publication.request.sourceGeneration}` +
     `?connectorRef=${publication.request.connectorRef}`;
@@ -1440,6 +1486,13 @@ test("finance insight service publishes current and generation-addressed OWL pro
   assert.equal(publicResponse.headers.get("cache-control"), "no-store");
   assert.deepEqual(await publicResponse.json(), projection);
   assert.equal(receivedRequests.length, beforeConnectorRead);
+  const publicPayeeResponse = await fetch(
+    `${uiUrl}/api/connector/v1/payee-patterns/${publication.request.sourceGeneration}` +
+      `?connectorRef=${publication.request.connectorRef}`,
+    { headers: insightHeaders({ Host: undefined }) }
+  );
+  assert.equal(publicPayeeResponse.status, 200);
+  assert.deepEqual(await publicPayeeResponse.json(), payeeProjection);
 
   const currentConnectorPath =
     "/api/connector/v1/document-expectation-signals";
@@ -2095,6 +2148,14 @@ test("connector policy exposes exactly the backend connector operations", () => 
     evaluateConnectorRequest(
       "GET",
       ["document-expectation-signals", "invented-generation"],
+      new URLSearchParams("connectorRef=invented-connector")
+    ).target,
+    "finance-insight"
+  );
+  assert.equal(
+    evaluateConnectorRequest(
+      "GET",
+      ["payee-patterns", "invented-generation"],
       new URLSearchParams("connectorRef=invented-connector")
     ).target,
     "finance-insight"
