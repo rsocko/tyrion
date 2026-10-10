@@ -35,6 +35,13 @@ runtime parsers in `finance-insights/src/reconciliation/`. It consumes only norm
 bill-derived inputs and normalized Bridge transactions; OWL retains document-extraction
 ownership.
 
+The phased receipt design is defined by
+[`RECEIPT-RECONCILIATION-ARCHITECTURE.md`](./RECEIPT-RECONCILIATION-ARCHITECTURE.md).
+It reuses Bill Matching v1 identities and candidate semantics. Receipt list, upload,
+polling, attachment retrieval, and match mutations are not Bridge v1 or connector
+gateway operations until their private Monarch contracts complete controlled live
+validation and a separate versioned DTO is approved.
+
 ## Mission Control connector gateway
 
 Mission Control may consume a strict subset of this contract through:
