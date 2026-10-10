@@ -71,10 +71,17 @@ Tyrion currently normalizes and tests this smaller contract:
 | `GET` | `/cashflow` | Reads a normalized cash-flow summary for a date range |
 | `GET` | `/budgets` | Reads normalized current-month category budgets with explicit period boundaries |
 
-The bridge transaction DTO includes date, amount, merchant, category, account,
-pending and recurring state, notes, compatible tag display names, and additive stable
-tag references. Categories retain their compatible group display name and add a
-stable group ID. It intentionally does not expose raw Monarch payloads.
+The bridge transaction DTO includes date, amount, merchant, optional bounded
+`businessContext`, category, account, pending and recurring state, notes, compatible
+tag display names, and additive stable tag references. `businessContext` contains
+only Monarch's business-entity display name; raw objects and identifiers remain
+private. It is available as secondary user context and a low-trust Houston lookup
+hint, never as attribution, canonical payee identity, matching, recurrence, or
+reconciliation evidence. Categories retain their compatible group display name and
+add a stable group ID. The DTO intentionally does not expose raw Monarch payloads.
+Mission Control transaction search/detail consumers should render a non-duplicate
+value beneath the merchant as **Business context**. Tyrion's bounded operations UI
+does not add a transaction surface for this metadata.
 
 Mission Control's connector synchronizes normalized transaction pages into its
 finance projection. Tyrion's `finance-insights/inquiry` entry point provides the
@@ -211,8 +218,8 @@ bridge contract.
 | Tool | Backing source | Required behavior |
 | --- | --- | --- |
 | `finance_get_status` | Connector and per-dataset sync state | Report connection, coverage, and freshness without exposing secrets |
-| `finance_search_transactions` | Local projection, with explicit bounded historical fallback | Filter by date, merchant text, category, account reference, kid, amount range, pending, recurring, and review state |
-| `finance_get_transaction` | Local record plus optional bridge freshness check | Return one charge with Monarch/Tyrion provenance and any attribution explanation |
+| `finance_search_transactions` | Local projection, with explicit bounded historical fallback | Filter by date, merchant text, category, account reference, kid, amount range, pending, recurring, and review state; return optional business context as a low-trust lookup hint |
+| `finance_get_transaction` | Local record plus optional bridge freshness check | Return one charge with Monarch/Tyrion provenance, optional business context, and any attribution explanation |
 | `finance_analyze_spending` | Local projection | Perform deterministic grouped totals, comparisons, and contributor lists before the model explains them |
 | `finance_get_recurring_obligations` | Recurring snapshot | Return bounded recurring items and material changes |
 | `finance_get_budget_status` | Current budget snapshot | Return compact status and warnings; deep-link to Monarch for management |

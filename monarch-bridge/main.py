@@ -221,18 +221,18 @@ class DemoProvider:
         end = datetime.strptime(end_date, "%Y-%m-%d") if end_date else datetime.now()
 
         merchants = [
-            ("Whole Foods", "cat-groceries", -87.43),
-            ("Costco", "cat-groceries", -156.22),
-            ("Chipotle", "cat-restaurants", -14.50),
-            ("Shell Gas", "cat-gas", -52.00),
-            ("Netflix", "cat-streaming", -15.99),
-            ("Spotify", "cat-streaming", -10.99),
-            ("Electric Company", "cat-utilities", -124.50),
-            ("Landlord LLC", "cat-rent", -2100.00),
-            ("ACME Corp Payroll", "cat-income", 4500.00),
-            ("Target", "cat-groceries", -67.88),
-            ("Uber Eats", "cat-restaurants", -32.40),
-            ("BP Gas Station", "cat-gas", -45.00),
+            ("Whole Foods", "Whole Foods Market", "cat-groceries", -87.43),
+            ("Costco", "Costco Wholesale", "cat-groceries", -156.22),
+            ("Chipotle", "Chipotle Mexican Grill", "cat-restaurants", -14.50),
+            ("Shell Gas", "Shell", "cat-gas", -52.00),
+            ("Netflix", None, "cat-streaming", -15.99),
+            ("Spotify", None, "cat-streaming", -10.99),
+            ("Electric Company", "Invented Regional Energy", "cat-utilities", -124.50),
+            ("Landlord LLC", None, "cat-rent", -2100.00),
+            ("ACME Corp Payroll", "ACME Corporation", "cat-income", 4500.00),
+            ("Target", "Target Corporation", "cat-groceries", -67.88),
+            ("Uber Eats", "Uber Technologies", "cat-restaurants", -32.40),
+            ("BP Gas Station", "BP", "cat-gas", -45.00),
         ]
 
         transactions = []
@@ -241,7 +241,7 @@ class DemoProvider:
         while current <= end and len(transactions) < limit:
             num_daily = random.randint(0, 3)
             for _ in range(num_daily):
-                merchant, cat_id, base_amount = random.choice(merchants)
+                merchant, business_context, cat_id, base_amount = random.choice(merchants)
                 amount = round(base_amount * random.uniform(0.8, 1.2), 2)
                 category = next((c for c in cls.CATEGORIES if c["id"] == cat_id), cls.CATEGORIES[0])
                 account = cls.ACCOUNTS[0] if amount < 0 else cls.ACCOUNTS[0]
@@ -250,6 +250,11 @@ class DemoProvider:
                     "id": f"tx-{tx_id}",
                     "date": current.strftime("%Y-%m-%d"),
                     "merchant": {"name": merchant},
+                    "businessEntity": (
+                        {"id": f"business-{tx_id}", "name": business_context}
+                        if business_context
+                        else None
+                    ),
                     "amount": amount,
                     "category": category,
                     "account": {"id": account["id"], "displayName": account["displayName"]},

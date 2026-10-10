@@ -34,6 +34,7 @@ function transaction(
     amountMinor: -2_500,
     currency: 'USD',
     merchantName: 'Invented Market',
+    businessContext: 'Invented Market Holdings',
     categoryRef: 'category-groceries',
     categoryName: 'Groceries',
     accountRef: 'account-card',
@@ -378,6 +379,7 @@ describe('FinanceInquiryService', () => {
     expect(result.metadata.derivation).toBe('viaMonarch');
     expect(result.data).toMatchObject({
       transaction: {
+        businessContext: 'Invented Market Holdings',
         factAttribution: {
           transaction: 'viaMonarch',
           attribution: 'derivedByTyrion',

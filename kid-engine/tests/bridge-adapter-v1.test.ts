@@ -11,6 +11,7 @@ const bridgeTransaction: NormalizedBridgeTransactionV1 = {
   date: '2026-08-08',
   amount: -12.34,
   merchant: { name: 'Synthetic Shop', logoUrl: null },
+  businessContext: 'Synthetic Parent Company',
   category: { id: 'category-demo', name: 'Synthetic Category' },
   account: {
     id: 'account-demo',
@@ -63,6 +64,7 @@ describe('normalized bridge v1 attribution adapter', () => {
     expect(serialized).not.toContain(bridgeTransaction.account.id);
     expect(serialized).not.toContain(bridgeTransaction.notes);
     expect(serialized).not.toContain(String(bridgeTransaction.amount));
+    expect(serialized).not.toContain(bridgeTransaction.businessContext!);
   });
 
   it('maps a page in order and takes observedAt from bridge provenance', () => {
@@ -124,6 +126,14 @@ describe('normalized bridge v1 attribution adapter', () => {
       [mappingContext]
     );
     expect(JSON.stringify(inputs)).not.toContain('future-value');
+  });
+
+  it('treats omitted business context from an older v1 response as unavailable', () => {
+    const { businessContext: _businessContext, ...legacyTransaction } =
+      bridgeTransaction;
+    expect(
+      parseNormalizedBridgeTransactionV1(legacyTransaction).businessContext
+    ).toBeNull();
   });
 
   it('rejects non-finite bridge amounts', () => {

@@ -25,7 +25,7 @@ export const FINANCE_INQUIRY_TOOL_DEFINITIONS: readonly FinanceInquiryToolDefini
     {
       name: 'finance_search_transactions',
       description:
-        'Search the bounded synchronized transaction projection. Private notes are never returned.',
+        'Search the bounded synchronized transaction projection, including optional Monarch business context. Private notes are never returned.',
       readOnly: true,
       inputSchema: financeToolInputSchemas.finance_search_transactions,
       inputKeys: [
@@ -46,7 +46,7 @@ export const FINANCE_INQUIRY_TOOL_DEFINITIONS: readonly FinanceInquiryToolDefini
     {
       name: 'finance_get_transaction',
       description:
-        'Get one normalized transaction and its Tyrion attribution, with an optional bounded freshness check.',
+        'Get one normalized transaction, optional Monarch business context, and its Tyrion attribution, with an optional bounded freshness check.',
       readOnly: true,
       inputSchema: financeToolInputSchemas.finance_get_transaction,
       inputKeys: ['transactionRef', 'requireFresh'],
