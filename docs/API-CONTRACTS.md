@@ -29,6 +29,12 @@ The separately versioned private Finance insight domain contract is defined by
 and its strict runtime parsers in `finance-insights/`. It does not change Bridge v1,
 expose a browser route, or accept raw external URLs.
 
+The Tyrion-owned bill reconciliation contract is defined by
+[`BILL-TRANSACTION-MATCHING-V1.md`](./BILL-TRANSACTION-MATCHING-V1.md) and its strict
+runtime parsers in `finance-insights/src/reconciliation/`. It consumes only normalized
+bill-derived inputs and normalized Bridge transactions; OWL retains document-extraction
+ownership.
+
 ## Mission Control connector gateway
 
 Mission Control may consume a strict subset of this contract through:
@@ -80,6 +86,7 @@ Insights projection:
 | `GET` | `/document-expectation-signals` | No query or body; latest promoted snapshot across connector scope; read gate and 12 MiB projection bound |
 | `GET` | `/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; no body; read gate and 12 MiB projection bound |
 | `GET` | `/payee-patterns/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; immutable privacy-safe transaction/recurring evidence; no body; read gate and 12 MiB projection bound |
+| `POST` | `/bill-matches` | Strict normalized bill-derived JSON only; 1 KiB request; derived transaction lookup of at most 100 rows; at most 10 privacy-bounded ranked candidates |
 
 Unknown routes, methods, parameters, duplicate singleton parameters, malformed values,
 and request bodies on bodyless operations fail before a bridge call. `/auth/*`,
