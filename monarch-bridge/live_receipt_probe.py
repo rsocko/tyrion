@@ -7,23 +7,112 @@ identifiers, URLs, filenames, response bodies, exception text, or session paths.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import struct
 import tempfile
+import zlib
 from pathlib import Path
 
 
 ENABLE_VALUE = "1"
 MUTATION_CONFIRMATION = "I_ACCEPT_RECEIPT_PROBE_MUTATIONS"
 SUCCESS_CODE = "receipt_probe_ok"
-_INVENTED_PNG = (
-    b"\x89PNG\r\n\x1a\n"
-    b"\x00\x00\x00\rIHDR"
-    b"\x00\x00\x00\x01\x00\x00\x00\x01"
-    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-    b"\x00\x00\x00\rIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff"
-    b"\x89\x99=\x1d"
-    b"\x00\x00\x00\x00IEND\xaeB`\x82"
+_GLYPHS = {
+    " ": (0, 0, 0, 0, 0, 0, 0),
+    "-": (0, 0, 0, 31, 0, 0, 0),
+    ".": (0, 0, 0, 0, 0, 12, 12),
+    "0": (14, 17, 19, 21, 25, 17, 14),
+    "1": (4, 12, 4, 4, 4, 4, 14),
+    "2": (14, 17, 1, 2, 4, 8, 31),
+    "3": (30, 1, 1, 14, 1, 1, 30),
+    "4": (2, 6, 10, 18, 31, 2, 2),
+    "5": (31, 16, 16, 30, 1, 1, 30),
+    "6": (14, 16, 16, 30, 17, 17, 14),
+    "7": (31, 1, 2, 4, 8, 8, 8),
+    "8": (14, 17, 17, 14, 17, 17, 14),
+    "9": (14, 17, 17, 15, 1, 1, 14),
+    "A": (14, 17, 17, 31, 17, 17, 17),
+    "C": (14, 17, 16, 16, 16, 17, 14),
+    "D": (30, 17, 17, 17, 17, 17, 30),
+    "E": (31, 16, 16, 30, 16, 16, 31),
+    "I": (31, 4, 4, 4, 4, 4, 31),
+    "L": (16, 16, 16, 16, 16, 16, 31),
+    "M": (17, 27, 21, 21, 17, 17, 17),
+    "N": (17, 25, 21, 19, 17, 17, 17),
+    "O": (14, 17, 17, 17, 17, 17, 14),
+    "P": (30, 17, 17, 30, 16, 16, 16),
+    "R": (30, 17, 17, 30, 20, 18, 17),
+    "S": (15, 16, 16, 14, 1, 1, 30),
+    "T": (31, 4, 4, 4, 4, 4, 4),
+    "Y": (17, 17, 10, 4, 4, 4, 4),
+}
+_RECEIPT_LINES = (
+    "TYRION TEST RECEIPT",
+    "DATE 2026-10-10",
+    "ITEM 1.00",
+    "TOTAL 1.00",
 )
+
+
+def _invented_receipt_png() -> bytes:
+    scale = 4
+    margin = 24
+    line_gap = 12
+    glyph_width = 5
+    glyph_height = 7
+    width = (
+        margin * 2
+        + max(len(line) for line in _RECEIPT_LINES)
+        * (glyph_width + 1)
+        * scale
+    )
+    height = (
+        margin * 2
+        + len(_RECEIPT_LINES) * glyph_height * scale
+        + (len(_RECEIPT_LINES) - 1) * line_gap
+    )
+    pixels = bytearray(b"\xff" * (width * height * 3))
+
+    for line_index, line in enumerate(_RECEIPT_LINES):
+        top = margin + line_index * (glyph_height * scale + line_gap)
+        for character_index, character in enumerate(line):
+            left = margin + character_index * (glyph_width + 1) * scale
+            for row_index, row in enumerate(_GLYPHS[character]):
+                for column in range(glyph_width):
+                    if not row & (1 << (glyph_width - column - 1)):
+                        continue
+                    for y_offset in range(scale):
+                        for x_offset in range(scale):
+                            x = left + column * scale + x_offset
+                            y = top + row_index * scale + y_offset
+                            index = (y * width + x) * 3
+                            pixels[index:index + 3] = b"\x00\x00\x00"
+
+    raw = b"".join(
+        b"\x00" + pixels[row * width * 3:(row + 1) * width * 3]
+        for row in range(height)
+    )
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + _png_chunk(b"IDAT", zlib.compress(raw, level=9))
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    payload = kind + data
+    return (
+        struct.pack(">I", len(data))
+        + payload
+        + struct.pack(">I", zlib.crc32(payload) & 0xFFFFFFFF)
+    )
+
+
+def _quiet_transport_logging() -> None:
+    for logger_name in ("httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 async def run() -> str:
@@ -41,6 +130,7 @@ async def run() -> str:
     os.environ["DEMO_MODE"] = "false"
 
     from main import get_client
+    _quiet_transport_logging()
     from receipt_probe import (
         ReceiptProbeError,
         create_receipt,
@@ -63,7 +153,7 @@ async def run() -> str:
         created = await create_receipt(client)
         with tempfile.TemporaryDirectory(prefix="tyrion-receipt-probe-") as directory:
             path = Path(directory) / "invented-receipt.png"
-            path.write_bytes(_INVENTED_PNG)
+            path.write_bytes(_invented_receipt_png())
             await upload_receipt_file(client, created.id, path)
         await start_receipt(client, created.id)
         completed = await poll_receipt(client, created.id)

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from collections import deque
+import logging
+import struct
+import zlib
 
 import httpx
 import pytest
 
 import receipt_probe
+from live_receipt_probe import _invented_receipt_png, _quiet_transport_logging
 from receipt_probe import (
     MAX_DOWNLOAD_BYTES,
     MAX_POLL_ATTEMPTS,
@@ -34,6 +38,36 @@ class FakeGraphQLClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+def test_invented_receipt_is_readable_nonempty_png():
+    content = _invented_receipt_png()
+
+    assert content.startswith(b"\x89PNG\r\n\x1a\n")
+    width, height = struct.unpack(">II", content[16:24])
+    assert width >= 400
+    assert height >= 180
+    idat_start = content.index(b"IDAT") + 4
+    idat_length = struct.unpack(">I", content[idat_start - 8:idat_start - 4])[0]
+    raw = zlib.decompress(content[idat_start:idat_start + idat_length])
+    assert raw.count(b"\x00") > width
+
+
+def test_live_probe_suppresses_transport_request_logging():
+    httpx_logger = logging.getLogger("httpx")
+    httpcore_logger = logging.getLogger("httpcore")
+    previous = (httpx_logger.level, httpcore_logger.level)
+    try:
+        httpx_logger.setLevel(logging.INFO)
+        httpcore_logger.setLevel(logging.INFO)
+
+        _quiet_transport_logging()
+
+        assert httpx_logger.level == logging.WARNING
+        assert httpcore_logger.level == logging.WARNING
+    finally:
+        httpx_logger.setLevel(previous[0])
+        httpcore_logger.setLevel(previous[1])
 
 
 def receipt(
