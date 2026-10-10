@@ -82,9 +82,9 @@ def test_operator_docs_define_safe_protected_receipt_route_smoke():
         assert "protected_receipt_route_cleanup_failed" in document
         assert "manual_restore" in document
         assert "Dockhand" in document
-        assert "unrun" in document
+        assert "protected_receipt_route_smoke_ok" in document
     assert "adds no browser proxy" in architecture
-    assert "remains unrun" in architecture
+    assert "protected_receipt_route_smoke_ok" in architecture
 
 
 def test_image_runs_non_root_with_external_session_storage():

@@ -338,17 +338,36 @@ The fixed `manual_unmatch` and `manual_restore` scenarios expose only safe statu
 values. This stop requires manual inspection before retrying or restarting normal
 callers.
 
-The sanitized deployed result from 2026-10-10 passed list, exact posted-identity
+The first sanitized deployed result from 2026-10-10 passed list, exact posted-identity
 preflight, detail, both downloads, create, upload/poll, and cleanup. Match returned
 `protected_receipt_route_match_http_5xx_receipt_upstream_error`; read-back did not run.
 No synthetic receipt remained, and the Bridge and UI were restored. Because the
 manual receipt was still matched when the runner tried to match the synthetic receipt
-to the same transaction, the bounded root-cause hypothesis is Monarch's
-one-receipt-per-transaction constraint. The adapter matrix had already proved
+to the same transaction, Monarch's one-receipt-per-transaction constraint remains the
+bounded historical root-cause hypothesis. The adapter matrix had already proved
 reversible unmatch/rematch and exact restoration of this same candidate. Neither the
 reference mutation signature nor the sanitized 5xx proves a stable upstream error
-classification, so the production route mapping is unchanged. The revised
-unmatch/match/read-back/restore flow remains **unrun**.
+classification, so the production route mapping is unchanged.
+
+After PR #282, the corrected controlled deployed run recorded
+`protected_receipt_route_smoke_ok`. List, exact posted-target preflight, detail,
+existing download, create, upload-poll, synthetic download, manual unmatch, match,
+read-back, cleanup, and exact manual restore all reported `passed`. The run used the
+documented immutable deployed image, existing restricted session volume and lease,
+stopped normal Bridge/UI callers, process-only gates, and a fresh ephemeral
+minimum-32-character route service token confined to the one-shot process. It
+published no port and redirected no output. The manual candidate was unlinked only
+after exact preflight; the synthetic receipt was removed and the original manual
+relationship authoritatively restored before services restarted. Post-run verification
+found `tyrion-monarch-bridge` and `tyrion-operations-ui` running and zero one-shot
+receipt-route containers remaining. That operational check records container state,
+not a separate Bridge health response.
+
+This proves the bounded protected receipt route and reversible cleanup/restoration
+flow worked end to end with the tested deployed image and pinned client. It does not
+prove email ingestion, pending-to-posted behavior, untested limits or longer-term
+asset semantics, broader concurrency, stable classification of unobserved failures,
+or readiness of a production Mission Control receipt workflow.
 
 For Dockhand, pull and verify the intended immutable Bridge image, then stop both
 `tyrion-operations-ui` and `tyrion-monarch-bridge`. Create one ephemeral one-shot
