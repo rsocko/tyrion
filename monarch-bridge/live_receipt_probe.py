@@ -95,6 +95,17 @@ def _invented_receipt_png() -> bytes:
         b"\x00" + pixels[row * width * 3:(row + 1) * width * 3]
         for row in range(height)
     )
+    return _encode_png_rgb(width, height, raw)
+
+
+def _invented_non_receipt_png() -> bytes:
+    width = 64
+    height = 64
+    raw = b"".join(b"\x00" + b"\xff" * (width * 3) for _ in range(height))
+    return _encode_png_rgb(width, height, raw)
+
+
+def _encode_png_rgb(width: int, height: int, raw: bytes) -> bytes:
     return (
         b"\x89PNG\r\n\x1a\n"
         + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
@@ -374,8 +385,8 @@ async def run_matrix(
             )
 
         failed = await create_synthetic(
-            "invented-non-receipt.txt",
-            b"This invented file is intentionally not a receipt.\n",
+            "invented-non-receipt.png",
+            _invented_non_receipt_png(),
         )
         summary["failed_receipt_delete"] = (
             "deletable" if failed.status == "failed" else "not_failed"

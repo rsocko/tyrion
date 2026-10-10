@@ -20,6 +20,7 @@ from live_receipt_probe import (
     _classify_duplicate,
     _classify_fidelity,
     _delete_synthetic_receipts,
+    _invented_non_receipt_png,
     _invented_receipt_pdf,
     _invented_receipt_png,
     _new_synthetic_attachment_candidates,
@@ -73,6 +74,14 @@ def test_invented_receipt_is_readable_nonempty_png():
     idat_length = struct.unpack(">I", content[idat_start - 8:idat_start - 4])[0]
     raw = zlib.decompress(content[idat_start:idat_start + idat_length])
     assert raw.count(b"\x00") > width
+
+
+def test_invented_non_receipt_is_valid_blank_png():
+    content = _invented_non_receipt_png()
+
+    assert content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert struct.unpack(">II", content[16:24]) == (64, 64)
+    assert b"TYRION" not in content
 
 
 def test_invented_receipt_is_readable_minimal_pdf():
