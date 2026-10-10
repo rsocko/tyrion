@@ -3329,7 +3329,7 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
   assert.equal((await stale.json()).error.code, "policy_version_conflict");
 });
 
-test("attribution policy discovery returns only active version metadata", async () => {
+test("attribution policy discovery returns active metadata and authoritative household currency", async () => {
   const response = await rawAttributionPolicyFetch(uiUrl, {
     Authorization: ["Bearer", serviceToken].join(" "),
   });
@@ -3341,7 +3341,9 @@ test("attribution policy discovery returns only active version metadata", async 
     engineVersion: "2.0.0",
     policyVersion: activePolicy.policyVersion,
     policyUpdatedAt: activePolicy.updatedAt,
+    householdCurrency: activePolicy.currency,
   });
+  assert.match(payload.householdCurrency, /^[A-Z]{3}$/);
   assert.equal(Number.isSafeInteger(payload.policyVersion), true);
   assert.ok(payload.policyVersion > 0);
   assert.match(

@@ -558,6 +558,13 @@ export function parseTimestampV1(value: unknown, field = 'timestamp'): string {
   return timestamp(value, field);
 }
 
+export function parseIsoCurrencyV1(
+  value: unknown,
+  field = 'currency'
+): string {
+  return isoCurrency(value, field);
+}
+
 export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
   const snapshot = object(value, 'policy snapshot');
   exactKeys(snapshot, [
@@ -1009,9 +1016,9 @@ function ianaTimezone(value: unknown, field: string): string {
 }
 
 function isoCurrency(value: unknown, field: string): string {
-  const result = boundedString(value, field, 3, 3).toUpperCase();
+  const result = boundedString(value, field, 3, 3);
   if (!/^[A-Z]{3}$/.test(result) || !SUPPORTED_CURRENCIES.has(result)) {
-    invalid(`${field} must be a supported ISO 4217 currency`);
+    invalid(`${field} must be a supported uppercase ISO 4217 currency`);
   }
   return result;
 }
