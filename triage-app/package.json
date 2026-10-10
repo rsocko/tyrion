@@ -16,8 +16,8 @@
     "@rsocko/tyrion-finance-insights": "file:../finance-insights",
     "@rsocko/tyrion-kid-engine": "file:../kid-engine",
     "next": "16.3.8",
-    "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@types/node": "^20",
