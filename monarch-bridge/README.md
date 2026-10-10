@@ -262,17 +262,27 @@ external session:
 $env:BRIDGE_LOAD_DOTENV = "false"
 $env:SESSION_FILE = "<external bridge-owned session path>"
 $env:TYRION_LIVE_RECEIPT_TESTS = "1"
-$env:TYRION_LIVE_RECEIPT_MUTATION_CONFIRM = "I_ACCEPT_RECEIPT_PROBE_MUTATIONS"
+$env:TYRION_LIVE_RECEIPT_MUTATION_CONFIRM = "I_ACCEPT_RECEIPT_ATTACHMENT_PROBE_MUTATIONS"
 python live_receipt_probe.py
 ```
 
-The probe creates invented PNG content in the OS temporary directory, applies hard
-poll/download limits, never emits identifiers or signed URLs, and deletes the
-synthetic receipt in `finally`. An optional process-only
-`TYRION_TEST_RECEIPT_TRANSACTION_ID` exercises match/unmatch restoration. Do not run
-the probe in CI or redirect its output. Treat `receipt_probe_cleanup_failed` as a
-manual-cleanup stop condition. Deterministic receipt coverage runs with
-`python -m pytest test_receipt_probe.py`.
+The probe accepts no receipt, transaction, or attachment ID. It proceeds only when a
+bounded 14-day/two-page search finds exactly one recent manually uploaded, matched PDF
+receipt. It reversibly unmatches/rematches that receipt and retries restoration in
+`finally`; it never deletes the manual receipt. The original linked posted transaction
+is used only for an invented attachment upload/download/delete lifecycle with complete
+pre-existing attachment drift detection. No transaction is created or otherwise
+edited.
+
+The remaining scenarios use only invented standard-library PNG, minimal PDF, and
+non-receipt content. They cover byte fidelity, duplicate classification, failed
+receipt deletion, immediate/two-second asset reuse, independent cleanup, and absent
+read-back. Email ingestion is explicitly skipped because no setup exists, and
+pending-to-posted identity is explicitly skipped because no pending transaction is
+available. Output is one stable JSON summary with no identifiers, filenames, URLs, or
+raw failures. Do not run the probe in CI or redirect its output. Treat
+`receipt_attachment_cleanup_failed` as a manual-inspection stop condition.
+Deterministic coverage runs with `python -m pytest test_receipt_probe.py`.
 
 See [`docs/MONARCH-INTEGRATION-VALIDATION.md`](../docs/MONARCH-INTEGRATION-VALIDATION.md)
 for the evidence matrix, limitations, and safe refresh procedure.

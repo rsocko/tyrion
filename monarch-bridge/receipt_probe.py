@@ -10,6 +10,7 @@ import asyncio
 import json
 import mimetypes
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Literal, Protocol
 from urllib.parse import urlparse
@@ -35,6 +36,8 @@ MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 MAX_POLL_ATTEMPTS = 8
 MAX_POLL_SECONDS = 120.0
 MAX_RECEIPT_SEARCH_PAGES = 5
+MAX_TRANSACTION_ATTACHMENTS = 25
+MAX_CANDIDATE_AGE = timedelta(days=14)
 ALLOWED_DOWNLOAD_TYPES = frozenset(
     {"image/jpeg", "image/png", "application/pdf"}
 )
@@ -42,6 +45,7 @@ TERMINAL_RECEIPT_STATUSES = frozenset({"pending_matches", "completed", "failed"}
 _SOURCE_VENDOR = {"upload": "user_import", "email": "email_import"}
 _VENDOR_SOURCE = {value: key for key, value in _SOURCE_VENDOR.items()}
 _ALLOWED_ASSET_HOST_SUFFIXES = (".cloudinary.com",)
+_ALLOWED_UPLOAD_HOSTS = frozenset({"api.cloudinary.com"})
 
 
 class GraphQLClient(Protocol):
@@ -114,6 +118,13 @@ class ReceiptPage:
             "limit": self.limit,
             "offset": self.offset,
         }
+
+
+@dataclass(frozen=True)
+class TransactionAttachmentSnapshot:
+    transaction_id: str
+    attachments: tuple[AttachmentMetadata, ...]
+
 
 
 _RECEIPT_FIELDS = """
@@ -274,6 +285,74 @@ query Mobile_GetAttachmentDetails($attachmentId: UUID!) {
 """
 )
 
+_LIST_TRANSACTION_ATTACHMENTS_QUERY = gql(
+    """
+query GetTransactionDrawer($id: UUID!, $redirectPosted: Boolean) {
+  getTransaction(id: $id, redirectPosted: $redirectPosted) {
+    id
+    pending
+    attachments {
+      id
+      filename
+      extension
+      sizeBytes
+      originalAssetUrl
+    }
+  }
+}
+"""
+)
+
+_GET_TRANSACTION_ATTACHMENT_UPLOAD_INFO_MUTATION = gql(
+    """
+mutation Common_GetTransactionAttachmentUploadInfo($transactionId: UUID!) {
+  getTransactionAttachmentUploadInfo(transactionId: $transactionId) {
+    info {
+      path
+      requestParams {
+        timestamp
+        folder
+        signature
+        api_key
+        upload_preset
+      }
+    }
+  }
+}
+"""
+)
+
+_ADD_TRANSACTION_ATTACHMENT_MUTATION = gql(
+    """
+mutation Common_AddTransactionAttachment(
+  $input: TransactionAddAttachmentMutationInput!
+) {
+  addTransactionAttachment(input: $input) {
+    attachment {
+      id
+      filename
+      extension
+      sizeBytes
+      originalAssetUrl
+    }
+    errors {
+      code
+    }
+  }
+}
+"""
+)
+
+_DELETE_TRANSACTION_ATTACHMENT_MUTATION = gql(
+    """
+mutation Web_TransactionDrawerDeleteAttachment($id: UUID!) {
+  deleteTransactionAttachment(id: $id) {
+    deleted
+  }
+}
+"""
+)
+
 
 async def list_receipts(
     client: GraphQLClient,
@@ -359,6 +438,63 @@ async def find_receipt(
     raise ReceiptProbeError("receipt_search_limit")
 
 
+async def discover_matched_pdf_candidate(
+    client: GraphQLClient,
+    *,
+    now: datetime | None = None,
+    page_size: int = 25,
+    max_pages: int = 2,
+    maximum_age: timedelta = MAX_CANDIDATE_AGE,
+) -> ReceiptRecord:
+    if not 1 <= page_size <= MAX_RECEIPT_PAGE:
+        raise ReceiptProbeError("invalid_page")
+    if not 1 <= max_pages <= MAX_RECEIPT_SEARCH_PAGES:
+        raise ReceiptProbeError("invalid_page_limit")
+    if maximum_age <= timedelta(0) or maximum_age > MAX_CANDIDATE_AGE:
+        raise ReceiptProbeError("invalid_candidate_window")
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None:
+        raise ReceiptProbeError("invalid_candidate_window")
+    cutoff = reference.astimezone(timezone.utc) - maximum_age
+    eligible: list[ReceiptRecord] = []
+    offset = 0
+    for _ in range(max_pages):
+        page = await list_receipts(
+            client,
+            source="upload",
+            limit=page_size,
+            offset=offset,
+        )
+        for receipt in page.receipts:
+            created_at = _parse_created_at(receipt.created_at)
+            if (
+                created_at is None
+                or created_at < cutoff
+                or created_at > reference.astimezone(timezone.utc)
+            ):
+                continue
+            if (
+                receipt.linked_transaction_id is not None
+                and any(
+                    attachment.extension
+                    and attachment.extension.lower() == "pdf"
+                    for attachment in receipt.attachments
+                )
+            ):
+                eligible.append(receipt)
+        offset += len(page.receipts)
+        if not page.receipts or offset >= page.total_count:
+            break
+    else:
+        if offset < page.total_count:
+            raise ReceiptProbeError("receipt_candidate_search_limit")
+    if not eligible:
+        raise ReceiptProbeError("receipt_candidate_not_found")
+    if len(eligible) != 1:
+        raise ReceiptProbeError("receipt_candidate_ambiguous")
+    return eligible[0]
+
+
 async def get_transaction_attachment(
     client: GraphQLClient,
     attachment_id: str,
@@ -374,6 +510,103 @@ async def get_transaction_attachment(
     if raw is None:
         return None
     return _normalize_attachment(raw)
+
+
+async def list_transaction_attachments(
+    client: GraphQLClient,
+    transaction_id: str,
+) -> TransactionAttachmentSnapshot:
+    _validate_identifier(transaction_id)
+    data = await _graphql(
+        client,
+        "GetTransactionDrawer",
+        _LIST_TRANSACTION_ATTACHMENTS_QUERY,
+        {"id": transaction_id, "redirectPosted": False},
+    )
+    raw = data.get("getTransaction")
+    if raw is None:
+        raise ReceiptProbeError("transaction_not_found")
+    transaction = _as_dict(raw, "malformed_transaction")
+    returned_id = transaction.get("id")
+    if returned_id != transaction_id or transaction.get("pending") is not False:
+        raise ReceiptProbeError("transaction_not_posted")
+    raw_attachments = transaction.get("attachments")
+    if (
+        not isinstance(raw_attachments, list)
+        or len(raw_attachments) > MAX_TRANSACTION_ATTACHMENTS
+    ):
+        raise ReceiptProbeError("malformed_transaction")
+    return TransactionAttachmentSnapshot(
+        transaction_id=transaction_id,
+        attachments=tuple(
+            _normalize_attachment(attachment) for attachment in raw_attachments
+        ),
+    )
+
+
+async def upload_transaction_attachment(
+    client: GraphQLClient,
+    transaction_id: str,
+    *,
+    filename: str,
+    content_type: str,
+    content: bytes,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> AttachmentMetadata:
+    _validate_identifier(transaction_id)
+    _validate_upload(filename, content_type, content)
+    data = await _graphql(
+        client,
+        "Common_GetTransactionAttachmentUploadInfo",
+        _GET_TRANSACTION_ATTACHMENT_UPLOAD_INFO_MUTATION,
+        {"transactionId": transaction_id},
+    )
+    payload = _required_dict(data, "getTransactionAttachmentUploadInfo")
+    info = _as_dict(payload.get("info"), "malformed_attachment_upload_info")
+    public_id = await _upload_transaction_attachment_content(
+        info,
+        filename=filename,
+        content_type=content_type,
+        content=content,
+        transport=transport,
+    )
+    extension = Path(filename).suffix.lstrip(".")
+    data = await _graphql(
+        client,
+        "Common_AddTransactionAttachment",
+        _ADD_TRANSACTION_ATTACHMENT_MUTATION,
+        {
+            "input": {
+                "transactionId": transaction_id,
+                "filename": Path(filename).stem,
+                "publicId": public_id,
+                "extension": extension,
+                "sizeBytes": len(content),
+            }
+        },
+    )
+    payload = _mutation_payload(data, "addTransactionAttachment")
+    return _normalize_attachment(
+        _as_dict(payload.get("attachment"), "malformed_attachment")
+    )
+
+
+async def delete_transaction_attachment(
+    client: GraphQLClient,
+    attachment_id: str,
+) -> bool:
+    _validate_identifier(attachment_id)
+    data = await _graphql(
+        client,
+        "Web_TransactionDrawerDeleteAttachment",
+        _DELETE_TRANSACTION_ATTACHMENT_MUTATION,
+        {"id": attachment_id},
+    )
+    payload = _required_dict(data, "deleteTransactionAttachment")
+    deleted = payload.get("deleted")
+    if not isinstance(deleted, bool):
+        raise ReceiptProbeError("malformed_mutation_result")
+    return deleted
 
 
 async def create_receipt(client: GraphQLClient) -> ReceiptRecord:
@@ -550,6 +783,8 @@ async def download_attachment(
             trust_env=transport is None,
         ) as http:
             async with http.stream("GET", url) as response:
+                if response.status_code in (401, 403):
+                    raise ReceiptProbeError("attachment_auth_rejected")
                 response.raise_for_status()
                 content_type = response.headers.get("content-type", "").split(";", 1)[0]
                 if content_type.lower() not in ALLOWED_DOWNLOAD_TYPES:
@@ -573,6 +808,73 @@ async def download_attachment(
     except (httpx.HTTPError, ValueError) as exc:
         raise ReceiptProbeError("attachment_download_failed") from exc
     return b"".join(chunks)
+
+
+def attachments_match(
+    expected: TransactionAttachmentSnapshot,
+    actual: TransactionAttachmentSnapshot,
+) -> bool:
+    return (
+        expected.transaction_id == actual.transaction_id
+        and expected.attachments == actual.attachments
+    )
+
+
+async def _upload_transaction_attachment_content(
+    info: dict[str, object],
+    *,
+    filename: str,
+    content_type: str,
+    content: bytes,
+    transport: httpx.AsyncBaseTransport | None,
+) -> str:
+    raw_path = info.get("path")
+    request_params = info.get("requestParams")
+    if not isinstance(raw_path, str) or not isinstance(request_params, dict):
+        raise ReceiptProbeError("malformed_attachment_upload_info")
+    url = (
+        raw_path
+        if raw_path.startswith(("https://", "http://"))
+        else f"https://api.cloudinary.com{raw_path}"
+    )
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in _ALLOWED_UPLOAD_HOSTS
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in (None, 443)
+    ):
+        raise ReceiptProbeError("attachment_upload_url_invalid")
+    form_data = {
+        str(key): str(value)
+        for key, value in request_params.items()
+        if key != "__typename" and value is not None
+    }
+    try:
+        async with httpx.AsyncClient(
+            timeout=60.0,
+            follow_redirects=False,
+            transport=transport,
+            trust_env=transport is None,
+        ) as http:
+            response = await http.post(
+                url,
+                data=form_data,
+                files={"file": (filename, content, content_type)},
+            )
+        if response.status_code >= 400:
+            raise ReceiptProbeError("attachment_upload_failed")
+        result = response.json()
+    except ReceiptProbeError:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ReceiptProbeError("attachment_upload_failed") from exc
+    if not isinstance(result, dict) or not isinstance(result.get("public_id"), str):
+        raise ReceiptProbeError("malformed_attachment_upload_response")
+    public_id = result["public_id"]
+    _validate_identifier(public_id)
+    return public_id
 
 
 async def _retail_transaction_id(
@@ -764,3 +1066,28 @@ def _is_allowed_asset_url(value: str) -> bool:
             for suffix in _ALLOWED_ASSET_HOST_SUFFIXES
         )
     )
+
+
+def _parse_created_at(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ReceiptProbeError("malformed_receipt") from exc
+    if parsed.tzinfo is None:
+        raise ReceiptProbeError("malformed_receipt")
+    return parsed.astimezone(timezone.utc)
+
+
+def _validate_upload(filename: str, content_type: str, content: bytes) -> None:
+    if (
+        not filename
+        or len(filename) > 255
+        or Path(filename).name != filename
+        or any(ord(character) < 32 for character in filename)
+        or content_type not in ALLOWED_DOWNLOAD_TYPES
+        or not content
+        or len(content) > MAX_UPLOAD_BYTES
+    ):
+        raise ReceiptProbeError("upload_size_invalid")
