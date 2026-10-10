@@ -274,8 +274,8 @@ is used only for an invented attachment upload/download/delete lifecycle with co
 pre-existing attachment drift detection. No transaction is created or otherwise
 edited.
 
-The remaining scenarios use only invented standard-library PNG, minimal PDF, and
-non-receipt content. They cover byte fidelity, duplicate classification, failed
+The remaining scenarios use only invented standard-library receipt and blank
+non-receipt PNGs plus a minimal PDF. They cover byte fidelity, duplicate classification, failed
 receipt deletion, immediate/two-second asset reuse, independent cleanup, and absent
 read-back. Email ingestion is explicitly skipped because no setup exists, and
 pending-to-posted identity is explicitly skipped because no pending transaction is
