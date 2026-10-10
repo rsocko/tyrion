@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ATTRIBUTION_BATCH_MAX_ITEMS,
   ATTRIBUTION_BATCH_PROVENANCE,
+  ATTRIBUTION_POLICY_MAX_SUBJECTS,
   AttributionBatchError,
   AttributionBatchService,
   AttributionPolicyService,
@@ -29,6 +30,33 @@ describe('v1 attribution policy discovery service', () => {
       policyVersion: policyFixture.policyVersion,
       policyUpdatedAt: policyFixture.updatedAt,
       householdCurrency: policyFixture.currency,
+      subjects: [
+        { kidId: 'kid-alpha', name: 'Alpha' },
+        { kidId: 'kid-beta', name: 'Beta' },
+      ],
+    });
+  });
+
+  it('returns every active profile in policy order and excludes inactive profiles', async () => {
+    const service = new AttributionPolicyService(repository({
+      ...policyFixture,
+      kids: [
+        policyFixture.kids[1],
+        {
+          id: 'kid-inactive',
+          displayName: 'Inactive',
+          color: null,
+          active: false,
+        },
+        policyFixture.kids[0],
+      ],
+    }));
+
+    await expect(service.discover(actor)).resolves.toMatchObject({
+      subjects: [
+        { kidId: 'kid-beta', name: 'Beta' },
+        { kidId: 'kid-alpha', name: 'Alpha' },
+      ],
     });
   });
 
@@ -45,6 +73,29 @@ describe('v1 attribution policy discovery service', () => {
         message: 'Household attribution policy is unavailable',
       });
     }
+  });
+
+  it('fails closed when active attribution subjects exceed the response bound', async () => {
+    const service = new AttributionPolicyService(repository({
+      ...policyFixture,
+      kids: Array.from(
+        { length: ATTRIBUTION_POLICY_MAX_SUBJECTS + 1 },
+        (_, index) => ({
+          id: `kid-${index}`,
+          displayName: `Synthetic Kid ${index}`,
+          color: null,
+          active: true,
+        })
+      ),
+      accountDefaults: [],
+      merchantRules: [],
+      limits: [],
+    }));
+
+    await expect(service.discover(actor)).rejects.toMatchObject({
+      code: 'policy_unavailable',
+      message: 'Household attribution policy is unavailable',
+    });
   });
 });
 
