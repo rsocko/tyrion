@@ -21,9 +21,17 @@ export type AllowedFinanceInsightConnectorRequest = {
   acceptsBody: false;
 };
 
+export type AllowedBillMatchConnectorRequest = {
+  allowed: true;
+  target: "bill-match";
+  upstreamPath: "/bill-matches";
+  acceptsBody: true;
+};
+
 export type AllowedConnectorRequest =
   | AllowedBridgeConnectorRequest
-  | AllowedFinanceInsightConnectorRequest;
+  | AllowedFinanceInsightConnectorRequest
+  | AllowedBillMatchConnectorRequest;
 
 export function authenticateConnectorRequest(
   authorization: string | null,

@@ -21,6 +21,7 @@ import {
   readDocumentExpectationSignalsV1,
   readPayeePatternsV1,
 } from "@/lib/finance-insight-service";
+import { matchBillToTransactionsV1 } from "@/lib/bill-match-service";
 
 const BRIDGE_TIMEOUT_MS = 30_000;
 const FORWARDED_RESPONSE_HEADERS = [
@@ -172,6 +173,7 @@ async function proxyConnectorRequest(
   }
 
   let body: string | undefined;
+  let parsedBody: unknown;
   if (policy.acceptsBody) {
     const contentType = request.headers
       .get("content-type")
@@ -182,7 +184,7 @@ async function proxyConnectorRequest(
       return jsonError(
         415,
         "unsupported_media_type",
-        "Transaction updates require application/json"
+        "This operation requires application/json"
       );
     }
     let boundedBody: Awaited<ReturnType<typeof readBoundedBody>>;
@@ -201,8 +203,11 @@ async function proxyConnectorRequest(
     } catch {
       return jsonError(400, "invalid_request", "Request body is invalid JSON");
     }
+    parsedBody = parsed;
     const mutation =
-      policy.upstreamPath === "/tags"
+      policy.target === "bill-match"
+        ? { allowed: true as const, body: JSON.stringify(parsed) }
+        : policy.upstreamPath === "/tags"
         ? parseTagCreateMutation(parsed)
         : policy.upstreamPath.endsWith("/tags")
           ? parseTagMutation(parsed)
@@ -260,6 +265,18 @@ async function proxyConnectorRequest(
       "connector_gateway_misconfigured",
       "Connector gateway is not configured"
     );
+  }
+
+  if (policy.target === "bill-match") {
+    try {
+      return await matchBillToTransactionsV1(
+        parsedBody,
+        bridge.baseUrl,
+        authentication.token
+      );
+    } catch (error) {
+      return handleFinanceInsightError(error);
+    }
   }
 
   if (policy.upstreamPath === "/health") {
