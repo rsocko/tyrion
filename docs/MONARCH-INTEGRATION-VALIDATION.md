@@ -93,6 +93,22 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Production images | Separate non-root bridge/UI runtimes, route allowlist, loopback health checks, external session mount, no auth state in build contexts | Pull immutable images, mount restricted state, and smoke test private bridge plus TLS UI ingress |
 | Redaction | Stable errors omit upstream/session values | Review application and proxy logs after controlled failures |
 
+### Monarch-first recovery importer
+
+The disabled one-shot importer has deterministic coverage in
+`test_receipt_recovery.py`. Invented transports verify bounded upload/email
+pagination, strict normalized receipt parsing, OWL occurrence lookup before download,
+accepted and duplicate reuse, query-after-unknown without blind resubmission, exact
+`monarch_recovery` identity derivation, `external_replica_eligible=false`, read-only
+Bridge access, allowlisted content, temporary streaming and SHA-256, restricted
+restart cursor state, and private sessionless Compose packaging.
+
+No live recovery run is part of #267. Enabling the production gate is an operational
+rollout decision after OWL canonical intake and the protected Bridge are healthy. A
+future separately authorized live check must use process-only secrets and an invented
+predesignated occurrence, retain only stable pass/fail codes, and must not delete a
+Monarch replica or canonical Paperless document.
+
 ## Tyrion domain integration boundary
 
 `kid-engine` is private Tyrion-internal code. Mission Control calls

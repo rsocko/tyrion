@@ -116,6 +116,46 @@ services:
       retries: 3
       start_period: 30s
 
+  tyrion-monarch-recovery:
+    profiles:
+      - receipt-recovery
+    image: ${TYRION_BRIDGE_IMAGE:-ghcr.io/rsocko/tyrion-bridge}:${TYRION_IMAGE_TAG:-latest}
+    container_name: tyrion-monarch-recovery
+    restart: "no"
+    init: true
+    read_only: true
+    cpus: "${TYRION_RECOVERY_CPUS:-0.5}"
+    mem_limit: "${TYRION_RECOVERY_MEMORY:-128m}"
+    memswap_limit: "${TYRION_RECOVERY_MEMORY:-128m}"
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=4m
+    depends_on:
+      tyrion-monarch-bridge:
+        condition: service_healthy
+    networks:
+      - tyrion-backend
+    volumes:
+      - tyrion-monarch-recovery-state:/var/lib/tyrion-recovery
+    environment:
+      BRIDGE_URL: http://tyrion-monarch-bridge:8100
+      BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:?Provision BRIDGE_API_TOKEN as a secret}
+      OWL_RECEIPT_INTAKE_URL: ${OWL_RECEIPT_INTAKE_URL:-}
+      OWL_RECEIPT_INTAKE_API_TOKEN: ${OWL_RECEIPT_INTAKE_API_TOKEN:-}
+      TYRION_RECEIPT_IDENTITY_NAMESPACE: ${TYRION_RECEIPT_IDENTITY_NAMESPACE:-}
+      TYRION_MONARCH_RECOVERY_ENABLED: "${TYRION_MONARCH_RECOVERY_ENABLED:-false}"
+      TYRION_MONARCH_RECOVERY_STATE_FILE: /var/lib/tyrion-recovery/checkpoint.json
+      TYRION_MONARCH_RECOVERY_PAGE_SIZE: "${TYRION_MONARCH_RECOVERY_PAGE_SIZE:-25}"
+      TYRION_MONARCH_RECOVERY_MAX_PAGES: "${TYRION_MONARCH_RECOVERY_MAX_PAGES:-20}"
+      TYRION_MONARCH_RECOVERY_MAX_ITEMS: "${TYRION_MONARCH_RECOVERY_MAX_ITEMS:-500}"
+      TYRION_MONARCH_RECOVERY_MAX_BYTES: "${TYRION_MONARCH_RECOVERY_MAX_BYTES:-2097152}"
+      TYRION_MONARCH_RECOVERY_TIMEOUT_SECONDS: "${TYRION_MONARCH_RECOVERY_TIMEOUT_SECONDS:-45}"
+    command: ["python", "receipt_recovery_worker.py", "--run-once"]
+
 volumes:
   tyrion-session:
     name: ${TYRION_SESSION_VOLUME:-tyrion-session}
@@ -123,6 +163,8 @@ volumes:
     name: ${TYRION_POLICY_VOLUME:-tyrion-policy}
   tyrion-finance-insights:
     name: ${TYRION_FINANCE_INSIGHT_VOLUME:-tyrion-finance-insights}
+  tyrion-monarch-recovery-state:
+    name: ${TYRION_MONARCH_RECOVERY_STATE_VOLUME:-tyrion-monarch-recovery-state}
 
 networks:
   tyrion-backend:

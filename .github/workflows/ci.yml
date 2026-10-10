@@ -40,7 +40,12 @@ jobs:
 
       - name: Test bridge and packaging contracts
         working-directory: monarch-bridge
-        run: python -m pytest test_auth.py test_bridge.py test_container.py
+        run: >-
+          python -m pytest
+          test_auth.py
+          test_bridge.py
+          test_container.py
+          test_receipt_recovery.py
 
       - name: Check bridge Python syntax
         run: python -m compileall -q monarch-bridge

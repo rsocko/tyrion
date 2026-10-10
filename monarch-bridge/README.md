@@ -397,6 +397,43 @@ transaction, and authoritative receipt read-back.
 These routes remain private Bridge operations; this slice does not add them to the
 browser proxy or public connector gateway allowlist.
 
+## Monarch-first recovery one-shot
+
+`receipt_recovery_worker.py` is a separate backend process packaged in the Bridge
+image. It does not import the Bridge application, session manager, receipt adapter, or
+Monarch client. It authenticates to the already-running protected Bridge and can call
+only receipt list, detail, and attachment-content `GET` routes.
+
+The worker is disabled unless `TYRION_MONARCH_RECOVERY_ENABLED=true`. It scans upload
+and email receipts in bounded pages, checks OWL's hashed `monarch_recovery` source
+occurrence before downloading, and accepts exactly one downloadable PNG, JPEG, or PDF
+up to 2 MiB. Bytes stream to an owner-only OS temporary file while SHA-256 is
+calculated, then stream to OWL canonical intake. The temporary directory is removed
+for acceptance, duplicate reuse, unknown, retryable, failed, timeout, or cancellation.
+OWL owns exact-hash reuse, Paperless acknowledgement, attempt state, canonical
+references, provenance, external-replica lifecycle, and relationships.
+
+The external checkpoint stores only schema version, source, and one 64-character
+hashed occurrence cursor. A cross-process lease prevents overlapping one-shots.
+Restart rescans from offset zero to the safe cursor and relies on OWL source-occurrence
+idempotency; completed runs clear the checkpoint. No identifier, filename, URL,
+document reference, hash of document bytes, content, temporary path, relationship, or
+upstream exception is retained or printed.
+
+Run through the explicit private Compose profile after provisioning the Bridge/OWL
+service URLs, their independent server-only tokens, the stable identity namespace, and
+the restricted recovery-state volume:
+
+```powershell
+docker compose --profile receipt-recovery run --rm tyrion-monarch-recovery
+```
+
+The job publishes no port, mounts no Monarch session, and returns only one stable JSON
+result with aggregate counts. `recovery_complete` and `recovery_disabled` exit zero;
+busy, retryable, contract, cleanup, and other failures exit nonzero. Scheduling and
+retry cadence belong to private infrastructure. There is no credentialed live runner
+in this issue, and the job never deletes a Monarch replica or Paperless document.
+
 ## Endpoints
 
 | Method | Path | Description |
