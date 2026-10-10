@@ -32,6 +32,8 @@ MAX_JSON_BYTES = 64 * 1024
 MAX_SMOKE_DOWNLOAD_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_SECONDS = 180.0
 MAX_CLEANUP_SECONDS = 30.0
+MAX_SYNTHETIC_CLEANUP_SECONDS = 15.0
+MAX_MANUAL_RESTORE_SECONDS = 15.0
 MAX_CANDIDATE_AGE = timedelta(days=14)
 SERVICE_TOKEN_ENV = "TYRION_LIVE_ROUTE_RECEIPT_SERVICE_TOKEN"
 _SCENARIOS = (
@@ -42,9 +44,11 @@ _SCENARIOS = (
     "create",
     "upload_poll",
     "synthetic_download",
+    "manual_unmatch",
     "match",
     "read_back",
     "cleanup",
+    "manual_restore",
 )
 _PUBLIC_ERROR_CODES = frozenset(
     {
@@ -228,17 +232,27 @@ async def run_route_smoke(
     delete_receipt_func: Callable[[object, str], Awaitable[bool]] | None = None,
     get_receipt_func: Callable[[object, str], Awaitable[object | None]] | None = None,
     unmatch_receipt_func: Callable[[object, object], Awaitable[None]] | None = None,
+    match_receipt_func: Callable[[object, object, str], Awaitable[None]] | None = None,
 ) -> dict[str, str]:
-    from receipt_probe import delete_receipt, get_receipt, unmatch_receipt
+    from receipt_probe import (
+        delete_receipt,
+        get_receipt,
+        match_receipt,
+        unmatch_receipt,
+    )
 
     deleter = delete_receipt_func or delete_receipt
     getter = get_receipt_func or get_receipt
     unmatcher = unmatch_receipt_func or unmatch_receipt
+    matcher = match_receipt_func or match_receipt
     summary = _summary(SUCCESS_CODE)
     synthetic_ids: list[str] = []
     creation_attempted = False
+    candidate: dict[str, object] | None = None
+    original_transaction_id: str | None = None
     primary_error: str | None = None
     cleanup_failed = False
+    restoration_failed = False
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     loop = asyncio.get_running_loop()
     deadline = loop.time() + total_timeout
@@ -279,6 +293,7 @@ async def run_route_smoke(
                     "linkedTransactionId",
                     scenario="list",
                 )
+                original_transaction_id = transaction_id
                 candidate_attachment = _single_pdf_attachment(
                     candidate,
                     scenario="list",
@@ -412,6 +427,15 @@ async def run_route_smoke(
                 )
                 summary["synthetic_download"] = "passed"
 
+                await _ensure_manual_unmatched(
+                    owner_client,
+                    candidate_id,
+                    transaction_id,
+                    getter=getter,
+                    unmatcher=unmatcher,
+                )
+                summary["manual_unmatch"] = "passed"
+
                 matched = await _json_request(
                     route_client,
                     "POST",
@@ -464,53 +488,149 @@ async def run_route_smoke(
         if creation_attempted and not synthetic_ids:
             cleanup_failed = True
         remaining = deadline - loop.time()
-        if synthetic_ids and remaining <= 0:
-            cleanup_failed = True
-        elif synthetic_ids:
-            try:
-                async with asyncio.timeout(
-                    min(remaining, MAX_CLEANUP_SECONDS)
-                ):
-                    for receipt_id in dict.fromkeys(synthetic_ids):
-                        try:
-                            current = await getter(owner_client, receipt_id)
-                            if current is not None and getattr(
-                                current,
-                                "linked_transaction_id",
-                                None,
-                            ) is not None:
-                                await unmatcher(owner_client, current)
+        if remaining <= 0:
+            if synthetic_ids or creation_attempted:
+                cleanup_failed = True
+            if candidate is not None and original_transaction_id is not None:
+                restoration_failed = True
+        else:
+            if synthetic_ids:
+                try:
+                    async with asyncio.timeout(
+                        min(remaining, MAX_SYNTHETIC_CLEANUP_SECONDS)
+                    ):
+                        for receipt_id in dict.fromkeys(synthetic_ids):
+                            try:
                                 current = await getter(owner_client, receipt_id)
-                                if current is None or getattr(
+                                if current is not None and getattr(
                                     current,
                                     "linked_transaction_id",
                                     None,
                                 ) is not None:
+                                    await unmatcher(owner_client, current)
+                                    current = await getter(owner_client, receipt_id)
+                                    if current is None or getattr(
+                                        current,
+                                        "linked_transaction_id",
+                                        None,
+                                    ) is not None:
+                                        cleanup_failed = True
+                                        continue
+                                if (
+                                    current is not None
+                                    and (
+                                        not await deleter(owner_client, receipt_id)
+                                        or await getter(owner_client, receipt_id)
+                                        is not None
+                                    )
+                                ):
                                     cleanup_failed = True
-                                    continue
-                            if (
-                                current is not None
-                                and (
-                                    not await deleter(owner_client, receipt_id)
-                                    or await getter(owner_client, receipt_id) is not None
-                                )
-                            ):
+                            except Exception:
                                 cleanup_failed = True
-                        except Exception:
-                            cleanup_failed = True
-            except TimeoutError:
-                cleanup_failed = True
+                except TimeoutError:
+                    cleanup_failed = True
+                if not cleanup_failed:
+                    summary["cleanup"] = "passed"
+            if candidate is not None and original_transaction_id is not None:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    restoration_failed = True
+                else:
+                    try:
+                        async with asyncio.timeout(
+                            min(remaining, MAX_MANUAL_RESTORE_SECONDS)
+                        ):
+                            await _ensure_manual_restored(
+                                owner_client,
+                                _required_identifier(
+                                    candidate,
+                                    "id",
+                                    scenario="manual_restore",
+                                ),
+                                original_transaction_id,
+                                getter=getter,
+                                matcher=matcher,
+                            )
+                        summary["manual_restore"] = "passed"
+                    except Exception:
+                        restoration_failed = True
 
-    if cleanup_failed:
+    if cleanup_failed or restoration_failed:
         summary["result"] = "protected_receipt_route_cleanup_failed"
-        summary["cleanup"] = "failed_manual_inspection_required"
+        if cleanup_failed:
+            summary["cleanup"] = "failed_manual_inspection_required"
+        if restoration_failed:
+            summary["manual_restore"] = "failed_manual_inspection_required"
     elif synthetic_ids:
-        summary["cleanup"] = "passed"
         if primary_error is not None:
             summary["result"] = primary_error
     elif primary_error is not None:
         summary["result"] = primary_error
     return summary
+
+
+async def _ensure_manual_unmatched(
+    client: object,
+    receipt_id: str,
+    original_transaction_id: str,
+    *,
+    getter: Callable[[object, str], Awaitable[object | None]],
+    unmatcher: Callable[[object, object], Awaitable[None]],
+) -> None:
+    try:
+        current = await getter(client, receipt_id)
+    except Exception as exc:
+        raise RouteSmokeError(
+            "protected_receipt_route_manual_unmatch_failed"
+        ) from exc
+    linked = _linked_transaction_id(current)
+    if linked != original_transaction_id:
+        raise RouteSmokeError("protected_receipt_route_manual_unmatch_failed")
+    try:
+        await unmatcher(client, current)
+    except Exception:
+        pass
+    try:
+        current = await getter(client, receipt_id)
+    except Exception as exc:
+        raise RouteSmokeError(
+            "protected_receipt_route_manual_unmatch_failed"
+        ) from exc
+    linked = _linked_transaction_id(current)
+    if linked is not None:
+        raise RouteSmokeError("protected_receipt_route_manual_unmatch_failed")
+
+
+async def _ensure_manual_restored(
+    client: object,
+    receipt_id: str,
+    original_transaction_id: str,
+    *,
+    getter: Callable[[object, str], Awaitable[object | None]],
+    matcher: Callable[[object, object, str], Awaitable[None]],
+) -> None:
+    current = await getter(client, receipt_id)
+    linked = _linked_transaction_id(current)
+    if linked == original_transaction_id:
+        return
+    if linked is not None:
+        raise RouteSmokeError("protected_receipt_route_manual_restore_failed")
+    try:
+        await matcher(client, current, original_transaction_id)
+    except Exception:
+        pass
+    restored = await getter(client, receipt_id)
+    if _linked_transaction_id(restored) != original_transaction_id:
+        raise RouteSmokeError("protected_receipt_route_manual_restore_failed")
+
+
+def _linked_transaction_id(receipt: object | None) -> str | None:
+    if receipt is None:
+        raise RouteSmokeError("protected_receipt_route_manual_receipt_missing")
+    linked = getattr(receipt, "linked_transaction_id", None)
+    if linked is not None and not isinstance(linked, str):
+        raise RouteSmokeError("protected_receipt_route_manual_receipt_malformed")
+    return linked
 
 
 async def _discover_candidate(

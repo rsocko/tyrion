@@ -65,6 +65,9 @@ class RouteState:
         self.fail_at: str | None = None
         self.cleanup_calls: list[str] = []
         self.matched_reads = 0
+        self.manual_reads = 0
+        self.manual_unmatched = False
+        self.synthetic_deleted = False
 
     def _receipt(
         self,
@@ -121,8 +124,14 @@ class RouteState:
 
     async def get_receipt(self, client, receipt_id):
         self._capture(client)
-        if self.fail_at == "detail" and receipt_id == "manual-candidate":
-            raise RuntimeError(PRIVATE_DETAIL)
+        if receipt_id == "manual-candidate":
+            self.manual_reads += 1
+            if self.fail_at == "detail" and self.manual_reads == 1:
+                raise RuntimeError(PRIVATE_DETAIL)
+            if self.fail_at == "manual_unmatch_readback" and self.manual_reads == 3:
+                raise RuntimeError(PRIVATE_DETAIL)
+            if self.fail_at == "manual_restore_readback" and self.manual_reads == 5:
+                raise RuntimeError(PRIVATE_DETAIL)
         if self.fail_at == "read_back" and receipt_id == "synthetic-receipt":
             record = self.records.get(receipt_id)
             if record and record.linked_transaction_id is not None:
@@ -181,27 +190,51 @@ class RouteState:
 
     async def match_receipt(self, client, receipt, transaction_id):
         self._capture(client)
-        if self.fail_at == "match":
+        self.cleanup_calls.append(f"match:{receipt.id}")
+        if self.fail_at == "match" and receipt.id == "synthetic-receipt":
+            raise RuntimeError(PRIVATE_DETAIL)
+        if (
+            self.fail_at == "manual_restore"
+            and receipt.id == "manual-candidate"
+        ):
             raise RuntimeError(PRIVATE_DETAIL)
         self.records[receipt.id] = replace(
             receipt,
             linked_transaction_id=transaction_id,
         )
+        if (
+            self.fail_at == "manual_restore_after"
+            and receipt.id == "manual-candidate"
+        ):
+            raise RuntimeError(PRIVATE_DETAIL)
 
     async def unmatch_receipt(self, client, receipt):
         self._capture(client)
-        self.cleanup_calls.append("unmatch")
+        if (
+            self.fail_at == "manual_unmatch"
+            and receipt.id == "manual-candidate"
+        ):
+            raise RuntimeError(PRIVATE_DETAIL)
+        self.cleanup_calls.append(f"unmatch:{receipt.id}")
         self.records[receipt.id] = replace(
             receipt,
             linked_transaction_id=None,
         )
+        if receipt.id == "manual-candidate":
+            self.manual_unmatched = True
+        if (
+            self.fail_at == "manual_unmatch_after"
+            and receipt.id == "manual-candidate"
+        ):
+            raise RuntimeError(PRIVATE_DETAIL)
 
     async def delete_receipt(self, client, receipt_id):
         self._capture(client)
-        self.cleanup_calls.append("delete")
+        self.cleanup_calls.append(f"delete:{receipt_id}")
         if self.fail_at == "cleanup":
             return False
         self.records.pop(receipt_id, None)
+        self.synthetic_deleted = True
         return True
 
 
@@ -252,6 +285,7 @@ async def execute(state, *, token=TOKEN, timeout=180.0):
         delete_receipt_func=state.delete_receipt,
         get_receipt_func=state.get_receipt,
         unmatch_receipt_func=state.unmatch_receipt,
+        match_receipt_func=state.match_receipt,
     )
 
 
@@ -265,10 +299,19 @@ async def test_route_smoke_runs_exact_protected_contract_and_same_owner_cleanup(
         "result": SUCCESS_CODE,
         **{scenario: "passed" for scenario in _SCENARIOS},
     }
-    assert route_state.cleanup_calls == ["unmatch", "delete"]
+    assert route_state.cleanup_calls == [
+        "unmatch:manual-candidate",
+        "match:synthetic-receipt",
+        "unmatch:synthetic-receipt",
+        "delete:synthetic-receipt",
+        "match:manual-candidate",
+    ]
     assert route_state.adapter_clients
     assert all(client is route_state.owner for client in route_state.adapter_clients)
-    assert "manual-candidate" in route_state.records
+    assert (
+        route_state.records["manual-candidate"].linked_transaction_id
+        == "transaction-opaque"
+    )
     assert "synthetic-receipt" not in route_state.records
     assert bridge.get_client.await_count >= 7
 
@@ -591,6 +634,14 @@ async def test_route_smoke_candidate_discovery_pagination_is_hard_capped(
             "protected_receipt_route_upload_poll_http_5xx_internal_error",
         ),
         ("synthetic_download", "protected_receipt_route_download_mismatch"),
+        (
+            "manual_unmatch",
+            "protected_receipt_route_manual_unmatch_failed",
+        ),
+        (
+            "manual_unmatch_readback",
+            "protected_receipt_route_manual_unmatch_failed",
+        ),
         ("match", "protected_receipt_route_match_http_5xx_upstream_error"),
         ("read_back", "protected_receipt_route_read_back_mismatch"),
     ),
@@ -613,6 +664,153 @@ async def test_route_smoke_sanitizes_failures_and_cleans_every_created_identity(
     else:
         assert result["cleanup"] == "passed"
         assert "synthetic-receipt" not in route_state.records
+    assert result["manual_restore"] == "passed"
+    assert (
+        route_state.records["manual-candidate"].linked_transaction_id
+        == "transaction-opaque"
+    )
+
+
+@pytest.mark.anyio
+async def test_manual_unmatch_accepts_authoritative_success_after_mutation_error(
+    route_state,
+):
+    route_state.fail_at = "manual_unmatch_after"
+
+    result = await execute(route_state)
+
+    assert result["result"] == SUCCESS_CODE
+    assert result["manual_unmatch"] == "passed"
+    assert result["manual_restore"] == "passed"
+    assert (
+        route_state.records["manual-candidate"].linked_transaction_id
+        == "transaction-opaque"
+    )
+
+
+@pytest.mark.anyio
+async def test_manual_unmatch_rejects_relationship_drift_before_mutation(
+    route_state,
+):
+    route_state.records["manual-candidate"] = replace(
+        route_state.records["manual-candidate"],
+        linked_transaction_id=None,
+    )
+    unmatcher = AsyncMock()
+
+    with pytest.raises(RouteSmokeError) as raised:
+        await route_receipt_smoke._ensure_manual_unmatched(
+            route_state.owner,
+            "manual-candidate",
+            "transaction-opaque",
+            getter=route_state.get_receipt,
+            unmatcher=unmatcher,
+        )
+
+    assert (
+        raised.value.code
+        == "protected_receipt_route_manual_unmatch_failed"
+    )
+    unmatcher.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_manual_restore_is_idempotent_when_relationship_is_already_restored(
+    route_state,
+):
+    matcher = AsyncMock()
+
+    await route_receipt_smoke._ensure_manual_restored(
+        route_state.owner,
+        "manual-candidate",
+        "transaction-opaque",
+        getter=route_state.get_receipt,
+        matcher=matcher,
+    )
+
+    matcher.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_manual_restore_accepts_authoritative_success_after_mutation_error(
+    route_state,
+):
+    route_state.fail_at = "manual_restore_after"
+
+    result = await execute(route_state)
+
+    assert result["result"] == SUCCESS_CODE
+    assert result["manual_restore"] == "passed"
+    assert (
+        route_state.records["manual-candidate"].linked_transaction_id
+        == "transaction-opaque"
+    )
+
+
+@pytest.mark.anyio
+async def test_manual_restore_failure_overrides_primary_failure_and_stops_callers(
+    route_state,
+):
+    route_state.fail_at = "manual_restore"
+
+    result = await execute(route_state)
+
+    assert result["result"] == "protected_receipt_route_cleanup_failed"
+    assert result["cleanup"] == "passed"
+    assert result["manual_restore"] == "failed_manual_inspection_required"
+    assert "synthetic-receipt" not in route_state.records
+    assert route_state.synthetic_deleted is True
+    assert route_state.records["manual-candidate"].linked_transaction_id is None
+    assert PRIVATE_DETAIL not in json.dumps(result)
+
+
+@pytest.mark.anyio
+async def test_manual_restore_readback_failure_requires_manual_inspection(
+    route_state,
+):
+    route_state.fail_at = "manual_restore_readback"
+
+    result = await execute(route_state)
+
+    assert result["result"] == "protected_receipt_route_cleanup_failed"
+    assert result["cleanup"] == "passed"
+    assert result["manual_restore"] == "failed_manual_inspection_required"
+    assert PRIVATE_DETAIL not in json.dumps(result)
+
+
+@pytest.mark.anyio
+async def test_synthetic_cleanup_precedes_manual_restoration_even_when_both_fail(
+    route_state,
+):
+    async def delete_fails(client, receipt_id):
+        route_state._capture(client)
+        route_state.cleanup_calls.append(f"delete:{receipt_id}")
+        return False
+
+    async def restore_fails(client, receipt, transaction_id):
+        route_state._capture(client)
+        route_state.cleanup_calls.append(f"match:{receipt.id}")
+        if receipt.id == "manual-candidate":
+            raise RuntimeError(PRIVATE_DETAIL)
+        await route_state.match_receipt(client, receipt, transaction_id)
+
+    result = await run_route_smoke(
+        bridge.app,
+        route_state.owner,
+        token=TOKEN,
+        now=NOW,
+        delete_receipt_func=delete_fails,
+        get_receipt_func=route_state.get_receipt,
+        unmatch_receipt_func=route_state.unmatch_receipt,
+        match_receipt_func=restore_fails,
+    )
+
+    assert result["result"] == "protected_receipt_route_cleanup_failed"
+    assert result["cleanup"] == "failed_manual_inspection_required"
+    assert result["manual_restore"] == "failed_manual_inspection_required"
+    assert route_state.cleanup_calls.index("delete:synthetic-receipt") < (
+        route_state.cleanup_calls.index("match:manual-candidate")
+    )
 
 
 @pytest.mark.anyio
@@ -634,6 +832,7 @@ async def test_cleanup_failure_overrides_primary_failure_and_stops_for_inspectio
         delete_receipt_func=cleanup_fails,
         get_receipt_func=route_state.get_receipt,
         unmatch_receipt_func=route_state.unmatch_receipt,
+        match_receipt_func=route_state.match_receipt,
     )
 
     assert result["result"] == "protected_receipt_route_cleanup_failed"
@@ -664,6 +863,7 @@ async def test_route_smoke_rejects_malformed_and_oversized_route_responses():
         delete_receipt_func=noop,
         get_receipt_func=noop,
         unmatch_receipt_func=noop,
+        match_receipt_func=noop,
     )
     second = await run_route_smoke(
         oversized,
@@ -673,6 +873,7 @@ async def test_route_smoke_rejects_malformed_and_oversized_route_responses():
         delete_receipt_func=noop,
         get_receipt_func=noop,
         unmatch_receipt_func=noop,
+        match_receipt_func=noop,
     )
 
     assert first["result"] == "protected_receipt_route_list_response_malformed"
@@ -701,6 +902,7 @@ async def test_route_smoke_total_runtime_is_capped_and_sanitized():
         delete_receipt_func=noop,
         get_receipt_func=noop,
         unmatch_receipt_func=noop,
+        match_receipt_func=noop,
     )
 
     assert result["result"] == "protected_receipt_route_total_timeout"
@@ -729,7 +931,7 @@ async def test_complete_run_timeout_includes_bridge_client_acquisition(
     )
     monkeypatch.setenv("SESSION_FILE", "invented-external-path")
     monkeypatch.setenv(SERVICE_TOKEN_ENV, TOKEN)
-    monkeypatch.setattr(route_receipt_smoke, "MAX_TOTAL_SECONDS", 0.03)
+    monkeypatch.setattr(route_receipt_smoke, "MAX_TOTAL_SECONDS", 0.1)
     monkeypatch.setattr(route_receipt_smoke, "run_route_smoke", delayed_routes)
     monkeypatch.setattr(bridge, "get_client", delayed_client)
 
@@ -738,17 +940,23 @@ async def test_complete_run_timeout_includes_bridge_client_acquisition(
     assert result["result"] == "protected_receipt_route_total_timeout"
     assert result["cleanup"] == "not_run"
     assert len(route_budgets) == 1
-    assert 0 < route_budgets[0] < 0.025
+    assert 0 < route_budgets[0] < 0.095
 
 
 @pytest.mark.anyio
 async def test_cleanup_has_independent_hard_timeout(route_state, monkeypatch):
     route_state.fail_at = "match"
-    monkeypatch.setattr(route_receipt_smoke, "MAX_CLEANUP_SECONDS", 0.01)
+    monkeypatch.setattr(
+        route_receipt_smoke,
+        "MAX_SYNTHETIC_CLEANUP_SECONDS",
+        0.01,
+    )
 
     async def stalled_getter(client, receipt_id):
         route_state._capture(client)
-        await asyncio.sleep(1)
+        if receipt_id == "synthetic-receipt":
+            await asyncio.sleep(1)
+        return await route_state.get_receipt(client, receipt_id)
 
     result = await asyncio.wait_for(
         run_route_smoke(
@@ -760,12 +968,18 @@ async def test_cleanup_has_independent_hard_timeout(route_state, monkeypatch):
             delete_receipt_func=route_state.delete_receipt,
             get_receipt_func=stalled_getter,
             unmatch_receipt_func=route_state.unmatch_receipt,
+            match_receipt_func=route_state.match_receipt,
         ),
         timeout=0.2,
     )
 
     assert result["result"] == "protected_receipt_route_cleanup_failed"
     assert result["cleanup"] == "failed_manual_inspection_required"
+    assert result["manual_restore"] == "passed"
+    assert (
+        route_state.records["manual-candidate"].linked_transaction_id
+        == "transaction-opaque"
+    )
 
 
 def test_invented_route_receipt_is_readable_and_within_upload_cap():
