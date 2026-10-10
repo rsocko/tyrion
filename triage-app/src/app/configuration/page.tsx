@@ -37,6 +37,7 @@ import {
   policyStatePresentation,
   type PolicyUiState,
 } from "@/lib/policy-ui-state.mjs";
+import ConnectorSettings from "@/components/connector-settings";
 
 type LoadState = "loading" | "ready" | "unauthorized" | "unavailable";
 type CatalogState = "loading" | "ready" | "error";
@@ -59,48 +60,71 @@ const SIGNALS: Array<{ value: ExceptionSignalV1; label: string }> = [
 ];
 const POLICY_SECTIONS = [
   {
+    id: "monarch-connector",
+    group: "Connection",
+    title: "Monarch connector",
+    description: "Authentication, health, and sync",
+    keywords: "connection bridge monarch authentication login cookies sync health",
+  },
+  {
     id: "policy-basics",
+    group: "Household",
     title: "Policy basics",
     description: "Timezone and currency",
     keywords: "locale money currency timezone",
   },
   {
     id: "kid-profiles",
+    group: "Household",
     title: "Kid profiles",
     description: "Household policy subjects",
     keywords: "children names active profile",
   },
   {
     id: "account-defaults",
+    group: "Attribution",
     title: "Account defaults",
     description: "Fallback attribution",
     keywords: "monarch account child shared rule",
   },
   {
     id: "merchant-attribution",
+    group: "Attribution",
     title: "Merchant attribution",
     description: "Deterministic matching rules",
     keywords: "pattern confidence rule",
   },
   {
     id: "household-limits",
+    group: "Policy",
     title: "Household limits",
     description: "Daily, weekly, and monthly amounts",
     keywords: "spending amount currency threshold",
   },
   {
     id: "exception-policy",
+    group: "Policy",
     title: "Exceptions & notifications",
     description: "Review and alert eligibility",
     keywords: "warning signals mission control likely attribution",
   },
   {
     id: "reattribution",
+    group: "Maintenance",
     title: "Controlled re-attribution",
     description: "Preview and apply bounded changes",
     keywords: "opaque record references preview impact",
   },
 ] as const;
+
+function filterSettingsSections(query: string) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  return POLICY_SECTIONS.filter((section) =>
+    `${section.title} ${section.description} ${section.keywords}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery)
+  );
+}
 
 export default function ConfigurationPage() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -134,6 +158,8 @@ export default function ConfigurationPage() {
   const [preview, setPreview] = useState<ReattributionPreviewSummary | null>(null);
   const [applyConfirmed, setApplyConfirmed] = useState(false);
   const [settingsQuery, setSettingsQuery] = useState("");
+  const [activeSection, setActiveSection] =
+    useState<(typeof POLICY_SECTIONS)[number]["id"]>("monarch-connector");
   const alertRef = useRef<HTMLDivElement>(null);
 
   const refreshCatalog = useCallback(async () => {
@@ -186,6 +212,18 @@ export default function ConfigurationPage() {
   useEffect(() => {
     if (error || conflict) alertRef.current?.focus();
   }, [conflict, error]);
+
+  useEffect(() => {
+    const selectHashSection = () => {
+      const hash = window.location.hash.slice(1);
+      if (POLICY_SECTIONS.some((section) => section.id === hash)) {
+        setActiveSection(hash as (typeof POLICY_SECTIONS)[number]["id"]);
+      }
+    };
+    selectHashSection();
+    window.addEventListener("hashchange", selectHashSection);
+    return () => window.removeEventListener("hashchange", selectHashSection);
+  }, []);
 
   const replaceDraft = (next: PolicyDraftV1) => {
     setDraft(next);
@@ -378,32 +416,120 @@ export default function ConfigurationPage() {
     }
   };
 
+  const pendingVisibleSections = filterSettingsSections(settingsQuery);
+  const pendingActiveSection = pendingVisibleSections.some(
+    (section) => section.id === activeSection
+  )
+    ? activeSection
+    : pendingVisibleSections[0]?.id;
+
+  if (
+    (loadState !== "ready" || !draft) &&
+    loadState !== "loading" &&
+    pendingActiveSection === "monarch-connector"
+  ) {
+    return (
+      <ConfigurationShell>
+        <header className="mb-8 border-b border-hair pb-7">
+          <h1 className="font-serif text-3xl font-bold text-parchment sm:text-4xl">
+            Settings
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+            Manage the Monarch connection and Tyrion&apos;s household money policy in
+            one place.
+          </p>
+        </header>
+        <div className="lg:grid lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start lg:gap-10">
+          <SettingsNavigation
+            query={settingsQuery}
+            onQueryChange={setSettingsQuery}
+            visibleSections={pendingVisibleSections}
+            activeSection={pendingActiveSection}
+            onSelect={(id) => {
+              setActiveSection(id);
+              window.history.replaceState(
+                null,
+                "",
+                `${window.location.pathname}${window.location.search}#${id}`
+              );
+            }}
+          />
+          <div className="min-w-0">
+            <SettingsPaneHeading
+              title="Monarch connector"
+              description="Connect Tyrion to Monarch, verify bridge health, and run a bounded sync."
+            />
+            <ConnectorSettings />
+          </div>
+        </div>
+      </ConfigurationShell>
+    );
+  }
+
   if (loadState !== "ready" || !draft) {
     const unavailableState =
       loadState === "unauthorized" ? "unauthenticated" : loadState;
     const presentation = policyStatePresentation(unavailableState);
     return (
       <ConfigurationShell>
-        <section className="rounded-xl border border-border bg-card p-6" aria-live="polite">
-          <h1 className="font-serif text-3xl font-bold text-parchment">
-            Household policy
+        <header className="mb-8 border-b border-hair pb-7">
+          <h1 className="font-serif text-3xl font-bold text-parchment sm:text-4xl">
+            Settings
           </h1>
-          {loadState === "loading" ? (
-            <p className="mt-4 text-muted">{presentation.description}</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+            Manage the Monarch connection and Tyrion&apos;s household money policy in
+            one place.
+          </p>
+        </header>
+        <div className="lg:grid lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start lg:gap-10">
+          <SettingsNavigation
+            query={settingsQuery}
+            onQueryChange={setSettingsQuery}
+            visibleSections={pendingVisibleSections}
+            activeSection={pendingActiveSection ?? activeSection}
+            onSelect={(id) => {
+              setActiveSection(id);
+              window.history.replaceState(
+                null,
+                "",
+                `${window.location.pathname}${window.location.search}#${id}`
+              );
+            }}
+          />
+          {pendingVisibleSections.length === 0 ? (
+            <SettingsSearchEmpty onClear={() => setSettingsQuery("")} />
           ) : (
-            <>
-              <h2 className="mt-6 text-lg font-semibold">
-                {presentation.label}
+            <section
+              className="rounded-xl border border-border bg-card p-6"
+              aria-live="polite"
+            >
+              <h2 className="font-serif text-2xl font-semibold text-parchment">
+                {POLICY_SECTIONS.find(
+                  (section) => section.id === pendingActiveSection
+                )?.title ?? "Household policy"}
               </h2>
-              <p role="alert" className="mt-2 text-sm text-error">
-                {error}
-              </p>
-              <button className="button-secondary mt-5" type="button" onClick={() => void refresh()}>
-                Recheck
-              </button>
-            </>
+              {loadState === "loading" ? (
+                <p className="mt-4 text-muted">{presentation.description}</p>
+              ) : (
+                <>
+                  <h3 className="mt-6 text-lg font-semibold">
+                    {presentation.label}
+                  </h3>
+                  <p role="alert" className="mt-2 text-sm text-error">
+                    {error}
+                  </p>
+                  <button
+                    className="button-secondary mt-5"
+                    type="button"
+                    onClick={() => void refresh()}
+                  >
+                    Recheck policy
+                  </button>
+                </>
+              )}
+            </section>
           )}
-        </section>
+        </div>
       </ConfigurationShell>
     );
   }
@@ -439,37 +565,47 @@ export default function ConfigurationPage() {
         missing: true,
       })),
   ];
-  const normalizedQuery = settingsQuery.trim().toLocaleLowerCase();
-  const visibleSections = POLICY_SECTIONS.filter((section) =>
-    `${section.title} ${section.description} ${section.keywords}`
-      .toLocaleLowerCase()
-      .includes(normalizedQuery)
-  );
+  const visibleSections = filterSettingsSections(settingsQuery);
+  const effectiveActiveSection = visibleSections.some(
+    (section) => section.id === activeSection
+  )
+    ? activeSection
+    : visibleSections[0]?.id;
   const sectionIsVisible = (id: (typeof POLICY_SECTIONS)[number]["id"]) =>
-    visibleSections.some((section) => section.id === id);
+    effectiveActiveSection === id;
+  const selectSection = (id: (typeof POLICY_SECTIONS)[number]["id"]) => {
+    setActiveSection(id);
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}#${id}`
+    );
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
     <ConfigurationShell>
-      <header className="mb-8 border-b border-hair pb-7">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded border border-border bg-elevated px-2 py-1 text-xs text-muted">
+      <header className="mb-8 flex flex-col gap-5 border-b border-hair pb-7 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-serif text-3xl font-bold text-parchment sm:text-4xl">
+            Settings
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+            Manage the Monarch connection and Tyrion&apos;s household money policy in
+            one place.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2" aria-label="Policy status">
+          <span className="rounded-md border border-border bg-elevated px-2.5 py-1.5 text-xs text-muted">
             {mode} mode
           </span>
-          <span className="rounded border border-border bg-elevated px-2 py-1 text-xs text-muted">
-            {policy ? `policy v${policy.policyVersion}` : "not saved"}
+          <span className="rounded-md border border-border bg-elevated px-2.5 py-1.5 text-xs text-muted">
+            {policy ? `Policy v${policy.policyVersion}` : "Not saved"}
           </span>
-          <span className="rounded border border-border bg-elevated px-2 py-1 text-xs text-muted">
+          <span className="rounded-md border border-border bg-elevated px-2.5 py-1.5 text-xs text-muted">
             {workflowPresentation.label}
           </span>
         </div>
-        <h1 className="mt-2 font-serif text-3xl font-bold text-parchment sm:text-4xl">
-          Household money policy
-        </h1>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
-          Configure household attribution and exception policy. Mission Control
-          remains the place for daily insights and review; Monarch remains the
-          financial system of record.
-        </p>
       </header>
 
       {(error || conflict) && (
@@ -499,28 +635,26 @@ export default function ConfigurationPage() {
         </p>
       )}
 
-      <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start lg:gap-8">
+      <div className="lg:grid lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start lg:gap-10">
         <SettingsNavigation
           query={settingsQuery}
           onQueryChange={setSettingsQuery}
           visibleSections={visibleSections}
+          activeSection={effectiveActiveSection ?? activeSection}
+          onSelect={selectSection}
         />
-        <div className="min-w-0">
+        <div className="min-w-0" aria-live="polite">
       {visibleSections.length === 0 && (
-        <div className="rounded-xl border border-dashed border-border bg-elevated p-8 text-center">
-          <h2 className="font-serif text-2xl font-semibold text-parchment">
-            No settings found
-          </h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">
-            Try a broader term, or clear the search to browse every policy section.
-          </p>
-          <button
-            className="button-secondary mt-5"
-            type="button"
-            onClick={() => setSettingsQuery("")}
-          >
-            Clear search
-          </button>
+        <SettingsSearchEmpty onClear={() => setSettingsQuery("")} />
+      )}
+
+      {sectionIsVisible("monarch-connector") && (
+        <div id="monarch-connector">
+          <SettingsPaneHeading
+            title="Monarch connector"
+            description="Connect Tyrion to Monarch, verify bridge health, and run a bounded sync."
+          />
+          <ConnectorSettings />
         </div>
       )}
 
@@ -1002,6 +1136,7 @@ export default function ConfigurationPage() {
       </Section>
       )}
 
+      {effectiveActiveSection !== "monarch-connector" && visibleSections.length > 0 && (
       <div className="sticky bottom-3 z-10 mb-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gold-deep bg-elevated p-4 shadow-xl">
         <p className="text-sm text-muted">
           {policy ? `Saving requires policy version ${policy.policyVersion}.` : "This creates policy version 1."}
@@ -1010,6 +1145,7 @@ export default function ConfigurationPage() {
           {busy === "saving" ? "Saving..." : "Save policy"}
         </button>
       </div>
+      )}
 
       {sectionIsVisible("reattribution") && (
       <Section id="reattribution" title="Controlled re-attribution" description="Preview an explicit bounded set of opaque record references. Only deterministic impact counts leave the server.">
@@ -1086,22 +1222,28 @@ function SettingsNavigation({
   query,
   onQueryChange,
   visibleSections,
+  activeSection,
+  onSelect,
 }: {
   query: string;
   onQueryChange: (value: string) => void;
   visibleSections: (typeof POLICY_SECTIONS)[number][];
+  activeSection: (typeof POLICY_SECTIONS)[number]["id"];
+  onSelect: (id: (typeof POLICY_SECTIONS)[number]["id"]) => void;
 }) {
+  const groups = Array.from(new Set(visibleSections.map((section) => section.group)));
+
   return (
-    <aside className="mb-7 lg:sticky lg:top-6 lg:mb-0" aria-label="Policy settings">
+    <aside className="mb-7 lg:sticky lg:top-6 lg:mb-0" aria-label="Settings navigation">
       <label className="block" htmlFor="settings-search">
-        <span className="text-sm font-medium text-parchment">Find a setting</span>
-        <span className="relative mt-2 block">
+        <span className="sr-only">Find a setting</span>
+        <span className="relative block">
           <SearchIcon />
           <input
             id="settings-search"
             className="input w-full pl-10 pr-10"
             type="search"
-            placeholder="Search policy settings"
+            placeholder="Find a setting"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
           />
@@ -1120,26 +1262,77 @@ function SettingsNavigation({
       <p className="mt-3 text-xs text-dim" aria-live="polite">
         {visibleSections.length} of {POLICY_SECTIONS.length} sections
       </p>
-      <nav className="mt-4 overflow-x-auto lg:overflow-visible" aria-label="Policy sections">
-        <ul className="flex min-w-max gap-2 pb-2 lg:min-w-0 lg:flex-col lg:gap-1 lg:pb-0">
+      <label className="mt-4 block lg:hidden" htmlFor="mobile-settings-section">
+        <span className="sr-only">Settings section</span>
+        <select
+          id="mobile-settings-section"
+          className="input w-full"
+          value={activeSection}
+          onChange={(event) =>
+            onSelect(event.target.value as (typeof POLICY_SECTIONS)[number]["id"])
+          }
+        >
           {visibleSections.map((section) => (
-            <li key={section.id}>
-              <a
-                className="group block rounded-lg border border-border bg-elevated px-3 py-2.5 transition-colors hover:border-gold-deep hover:bg-card lg:border-transparent lg:bg-transparent"
-                href={`#${section.id}`}
-              >
-                <span className="block text-sm font-medium text-parchment group-hover:text-gold-hi">
-                  {section.title}
-                </span>
-                <span className="mt-0.5 hidden text-xs leading-5 text-muted lg:block">
-                  {section.description}
-                </span>
-              </a>
-            </li>
+            <option key={section.id} value={section.id}>
+              {section.group} — {section.title}
+            </option>
           ))}
-        </ul>
+        </select>
+      </label>
+      <nav className="mt-6 hidden lg:block" aria-label="Settings sections">
+        {groups.map((group, groupIndex) => (
+          <div key={group} className={groupIndex === 0 ? "" : "mt-6"}>
+            <h2 className="px-3 text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-dim">
+              {group}
+            </h2>
+            <ul className="mt-2 space-y-1">
+              {visibleSections
+                .filter((section) => section.group === group)
+                .map((section) => {
+                  const active = activeSection === section.id;
+                  return (
+                    <li key={section.id}>
+                      <button
+                        type="button"
+                        aria-current={active ? "page" : undefined}
+                        className={`group w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
+                          active
+                            ? "bg-card text-gold-hi"
+                            : "text-muted hover:bg-elevated hover:text-parchment"
+                        }`}
+                        onClick={() => onSelect(section.id)}
+                      >
+                        <span className="block text-sm font-medium">
+                          {section.title}
+                        </span>
+                        <span className="mt-0.5 block text-xs leading-5 text-muted">
+                          {section.description}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+            </ul>
+          </div>
+        ))}
       </nav>
     </aside>
+  );
+}
+
+function SettingsSearchEmpty({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-elevated p-8 text-center">
+      <h2 className="font-serif text-2xl font-semibold text-parchment">
+        No settings found
+      </h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">
+        Try a broader term, or clear the search to browse every settings section.
+      </p>
+      <button className="button-secondary mt-5" type="button" onClick={onClear}>
+        Clear search
+      </button>
+    </div>
   );
 }
 
@@ -1186,8 +1379,8 @@ function ConfigurationShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       <header className="border-b border-hair bg-elevated">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:flex-nowrap sm:gap-6 sm:px-6 lg:px-8">
-          <Link className="group flex items-center gap-3" href="/" aria-label="Tyrion home">
+        <div className="mx-auto flex max-w-7xl items-center px-4 py-4 sm:px-6 lg:px-8">
+          <Link className="group flex items-center gap-3" href="/configuration" aria-label="Tyrion settings">
             <TyrionMark />
             <span>
               <span className="block font-serif text-xl font-bold leading-none text-parchment">
@@ -1198,21 +1391,16 @@ function ConfigurationShell({ children }: { children: React.ReactNode }) {
               </span>
             </span>
           </Link>
-          <nav aria-label="Tyrion operations" className="flex w-full items-center gap-1 rounded-lg bg-background p-1 text-sm sm:w-auto">
-            <Link className="flex-1 rounded-md px-3 py-2 text-center text-muted hover:bg-card hover:text-parchment sm:flex-none" href="/">
-              Connector
-            </Link>
-            <Link aria-current="page" className="flex-1 rounded-md bg-card px-3 py-2 text-center font-medium text-gold-hi sm:flex-none" href="/configuration">
-              Policy
-            </Link>
-          </nav>
+          <span className="ml-4 border-l border-border pl-4 text-sm text-muted">
+            Settings
+          </span>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         {children}
       </main>
       <footer className="mx-auto max-w-7xl border-t border-hair px-4 py-6 text-xs leading-5 text-dim sm:px-6 lg:px-8">
-        The Monarch connector is independent and unofficial. It is not affiliated with,
+        The Monarch connector is independent and unofficial. Not affiliated with,
         endorsed by, sponsored by, or supported by Monarch Money, Inc.
       </footer>
     </div>
@@ -1237,6 +1425,23 @@ function Section({
       <p className="mb-5 mt-1 text-sm leading-6 text-muted">{description}</p>
       {children}
     </section>
+  );
+}
+
+function SettingsPaneHeading({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <header className="mb-6 border-b border-hair pb-5">
+      <h2 className="font-serif text-2xl font-semibold text-parchment sm:text-3xl">
+        {title}
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{description}</p>
+    </header>
   );
 }
 
