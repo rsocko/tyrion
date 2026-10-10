@@ -24,8 +24,12 @@ export const policyDraftFixture: PolicyDraftV1 = {
   merchantRules: [
     {
       id: 'rule-merchant-beta',
+      outcome: 'kid',
       kidId: 'kid-beta',
       pattern: 'SYNTHETIC SHOP',
+      businessEntityPattern: null,
+      scope: 'global',
+      accountRefs: [],
       confidence: 'likely',
       enabled: true,
     },
@@ -64,6 +68,7 @@ export const inputFixture: AttributionInputV1 = {
   },
   transaction: {
     merchantName: 'Synthetic Shop',
+    businessEntityName: null,
     accountRef: 'bridge-account-shared',
     occurredOn: '2026-08-08',
   },

@@ -45,10 +45,13 @@ attribution:
   household/Kids identities, history, raw responses, and session material cannot be
   smuggled into the envelope. The response requires sources for facts, explicit
   labeling of inference, and forbids fraud assertions.
-- `POST /api/internal/v1/finance/quick-review/rule-suggestion` accepts only normalized
-  merchant name, opaque Tyrion kid reference, and the user's explicit
-  `suggestReusableRule` choice. It returns either `null` or a likely-confidence
-  merchant-rule suggestion with `requiresConfirmation: true`; it never mutates policy.
+- `POST /api/internal/v1/finance/quick-review/rule-suggestion` accepts normalized
+  merchant name, optional normalized business-entity label, an account reference only
+  for selected-account scope, an opaque Tyrion kid reference, and the user's explicit
+  `suggestReusableRule` choice. It returns the current `policyVersion` plus either
+  `null` or a likely-confidence merchant-rule suggestion with explicit outcome,
+  global/selected-account scope, optional business-entity pattern, and
+  `requiresConfirmation: true`; it never mutates policy.
 
 All three requests require `application/json`, share the existing 64 KiB body bound,
 reject unknown fields, return `Cache-Control: no-store`, and use sanitized error
@@ -67,8 +70,23 @@ After a successful confirmed correction, Mission Control calls the verified Brid
 mark-reviewed operation; a failed correction must not mark reviewed. Confirm without
 correction also uses that operation. Skip leaves Monarch unchanged. Mission Control
 may keep only opaque ephemeral progress/resume state; it must not create a competing
-durable reviewed flag. A confirmed rule suggestion uses Tyrion's policy mutation
-contract and version fence rather than this advisory endpoint.
+durable reviewed flag. A confirmed rule suggestion uses
+`POST /api/internal/v2/attribution/rules`, never the advisory endpoint. The strict
+request carries the advisory's positive `expectedPolicyVersion`, an 8-128 character
+idempotency key, a fresh explicit confirmation timestamp, and one complete merchant
+rule. Tyrion derives a stable rule ID from household, service actor, and idempotency
+key; sets `enabled: true`; validates the kid and 1-32 selected accounts against
+server-owned state; and atomically increments the policy version. Exact retries return
+`outcome: replayed` even after the policy version advances. Reusing the key for a
+different rule or creating against a stale version returns `409`. A successful new
+rule writes a metadata-only `merchant-rule-created` policy audit event.
+
+Merchant rules have explicit `kid`, `parent-shared`, or `review` outcomes. They apply
+globally or to a non-empty bounded account-reference set, and may include an optional
+normalized business-entity pattern as an additional required discriminator.
+Account-scoped matches override global matches; same-specificity disagreement remains
+a `merchant-rule-conflict`. Business-entity identifiers and upstream objects never
+enter policy.
 
 Monarch's official transaction-review documentation describes native needs-review
 and already-reviewed states, rule-driven review state, dashboard surfacing, and
@@ -237,11 +255,13 @@ observation timestamp and requires exactly one consumer mapping context per
 transaction. Additive Bridge v1 fields are accepted and ignored, as required by the
 bridge contract; all required fields and consumed values remain validated.
 
-The adapter deliberately copies only the normalized merchant name and calendar date
-from a bridge transaction. Amount, notes, tags, category, raw transaction ID, raw
+The adapter deliberately copies only the normalized merchant name, optional normalized
+business-entity display label, and calendar date from a bridge transaction. Amount,
+notes, tags, category, raw transaction ID, raw
 account ID, display name, mask, pending state, recurring state, logo, and pagination
 cursor are validated but never copied into attribution input, policy, explanation,
-or result. Tyrion's internal adapter supplies:
+or result. Business-entity identifiers, types, and raw objects are also excluded.
+Tyrion's internal adapter supplies:
 
 - `householdId`: server-authorized Tyrion household scope.
 - `sourceRef`: opaque stable consumer reference derived outside this package; never
@@ -267,7 +287,8 @@ duplicate rule IDs or limit periods, and currency mismatches.
 - Kid profiles
 - One optional direct account default per Bridge account: `child`, `parent-shared`,
   or `rule-based`
-- Enabled merchant rules
+- Enabled merchant rules with explicit global or selected-account scope, optional
+  business-entity pattern, and kid, parent/shared, or review outcome
 - Daily, weekly, and monthly limits
 - Limit-warning threshold, likely-attribution review policy, and the bounded exception
   signals eligible for Mission Control notification
@@ -310,10 +331,11 @@ No fingerprint sidecar or parity check is used.
 `attributeTransactionV1` applies this deterministic order:
 
 1. Existing manual assignment or parent-expense decision
-2. Enabled merchant rules, including existing conflict handling
-3. Account default (`child`, `parent-shared`, or no decision for `rule-based`)
-4. Historical attribution aggregate
-5. Unassigned review
+2. Matching account-scoped merchant rules, including conflict handling
+3. Matching global merchant rules, including conflict handling
+4. Account default (`child`, `parent-shared`, or no decision for `rule-based`)
+5. Historical attribution aggregate
+6. Unassigned review
 
 Manual decisions always win and are returned as `method: "manual"` with resolved
 review state. Specific merchant rules override every account default. A child default
@@ -321,8 +343,9 @@ returns a definite `account-default` attribution. A parent/shared default return
 `status: "unassigned"`, `confidence: "definite"`, `method: "account-default"`, and
 `review.status: "not-required"`; it never produces `no-match`. Rule-based accounts
 continue to history and then `no-match`. Rules matching multiple kids produce a
-conflict reason rather than first-item wins. Likely matches and historical ties remain
-pending review.
+conflict reason rather than first-item wins. The same applies when equally specific
+rules disagree between kid, parent/shared, and review outcomes. Likely matches and
+historical ties remain pending review.
 
 Every `AttributionResultV1` includes:
 

@@ -10,8 +10,11 @@ Monarch account A is used, attribute the transaction to household member X.
 
 ### 1. Manual Decisions and Specific Rules
 
-Per-transaction manual decisions always win. Specific merchant rules are evaluated
-next and can override every account default, including child and Parent/shared.
+Per-transaction manual decisions always win. Account-scoped merchant rules are
+evaluated next, followed by global merchant rules. A matching account-scoped rule
+suppresses matching global rules for that transaction. Equally specific rules that
+produce different outcomes create a reviewable conflict instead of choosing by array
+order.
 
 ### 2. Account Defaults
 
@@ -36,6 +39,15 @@ Merchant contains "STEAM" or "EPIC GAMES" → Jake (confidence: likely)
 Merchant contains "SCHOOL LUNCH - WESTVIEW" → Sophie (confidence: definite)
 ```
 
+- **Selected accounts** requires the merchant match on one of 1-32 exact normalized
+  Bridge account references.
+- **All accounts** applies the merchant match globally.
+- An optional business-entity pattern is an additional required match when Monarch
+  supplies a stable normalized business-entity label. It never exposes or matches a
+  raw upstream business-entity identifier.
+- Rule outcomes are **attribute to a profile**, **parent/shared**, or **leave
+  unassigned for review**. This lets an account-scoped rule explicitly override a
+  global profile rule without relying on an account default.
 - `definite` = auto-assigned, no triage needed
 - `likely` = auto-assigned but queued for quick confirmation in triage
 

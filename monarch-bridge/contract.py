@@ -104,6 +104,7 @@ class Transaction(ApiModel):
     date: date
     amount: float
     merchant: Merchant
+    business_entity_name: Optional[str] = Field(default=None, max_length=160)
     category: Optional[CategoryRef] = None
     account: AccountRef
     is_pending: bool = False
@@ -444,6 +445,19 @@ def normalize_transaction(raw: Any) -> Transaction:
     )
     review_assignee_id = _pick(review_assignee, "id")
     review_assignee_name = _pick(review_assignee, "name")
+    business_entity = _mapping(_pick(value, "businessEntity", default={}))
+    business_entity_value = _pick(business_entity, "name", "displayName")
+    business_entity_name = (
+        " ".join(business_entity_value.split())
+        if isinstance(business_entity_value, str)
+        else None
+    )
+    if (
+        not business_entity_name
+        or len(business_entity_name) > 160
+        or any(ord(character) < 32 for character in business_entity_name)
+    ):
+        business_entity_name = None
     return Transaction(
         id=_identifier(_pick(value, "id")),
         date=_date(_pick(value, "date", "postedDate", "createdAt")),
@@ -452,6 +466,7 @@ def normalize_transaction(raw: Any) -> Transaction:
             name=_text(_pick(merchant, "name", default=_pick(value, "merchantName")), "Unknown merchant"),
             logo_url=_optional_http_url(_pick(merchant, "logoUrl", "logo_url")),
         ),
+        business_entity_name=business_entity_name,
         category=normalize_category_ref(_pick(value, "category", default={})),
         account=normalize_account_ref(_pick(value, "account", default={})),
         is_pending=bool(_pick(value, "isPending", "pending", default=False)),

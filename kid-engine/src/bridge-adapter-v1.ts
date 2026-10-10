@@ -13,6 +13,7 @@ export interface NormalizedBridgeTransactionV1 {
   date: string;
   amount: number;
   merchant: { name: string; logoUrl: string | null };
+  businessEntityName: string | null;
   category: { id: string; name: string } | null;
   account: { id: string; displayName: string; mask: string | null };
   isPending: boolean;
@@ -117,6 +118,7 @@ function buildAttributionInput(
     },
     transaction: {
       merchantName: transaction.merchant.name,
+      businessEntityName: transaction.businessEntityName,
       accountRef: context.accountRef,
       occurredOn: transaction.date,
     },
@@ -156,6 +158,11 @@ export function parseNormalizedBridgeTransactionV1(
           ? null
           : string(merchant.logoUrl, 'merchant.logoUrl', 1, 2_000),
     },
+    businessEntityName:
+      transaction.businessEntityName === null ||
+      transaction.businessEntityName === undefined
+        ? null
+        : string(transaction.businessEntityName, 'businessEntityName', 1, 160),
     category,
     account: {
       id: string(account.id, 'account.id', 1, 256),

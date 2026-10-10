@@ -85,7 +85,12 @@ export class FilePolicyRepository implements PolicyRepository {
       if (currentVersion !== expectedPolicyVersion) {
         throw new PolicyVersionConflictError();
       }
-      validateAuditEvent(parsedAuditEvent, parsed, expectedPolicyVersion);
+      validateAuditEvent(
+        parsedAuditEvent,
+        parsed,
+        expectedPolicyVersion,
+        store.policies[parsed.householdId] ?? null
+      );
       store.policies[parsed.householdId] = parsed;
       store.audit.push(parsedAuditEvent);
       await this.writeStore(store);
@@ -434,7 +439,8 @@ function parseAuditEvent(value: unknown): PolicyAuditEventV1 {
 function validateAuditEvent(
   event: PolicyAuditEventV1,
   snapshot: PolicySnapshotV1,
-  expectedPolicyVersion: number | null
+  expectedPolicyVersion: number | null,
+  previous: PolicySnapshotV1 | null
 ): void {
   if (
     event.contractVersion !== TYRION_DOMAIN_CONTRACT_VERSION ||
@@ -442,11 +448,46 @@ function validateAuditEvent(
     event.policyVersion !== snapshot.policyVersion ||
     event.previousPolicyVersion !== expectedPolicyVersion ||
     event.occurredAt !== snapshot.updatedAt ||
-    event.action !==
-      (expectedPolicyVersion === null ? 'policy-created' : 'policy-replaced')
+    (expectedPolicyVersion === null
+      ? event.action !== 'policy-created'
+      : event.action !== 'policy-replaced' &&
+        (event.action !== 'merchant-rule-created' ||
+          !isMerchantRuleCreation(previous, snapshot)))
   ) {
     throw new PolicyStoreCorruptError();
   }
+}
+
+function isMerchantRuleCreation(
+  previous: PolicySnapshotV1 | null,
+  snapshot: PolicySnapshotV1
+): boolean {
+  if (
+    !previous ||
+    snapshot.merchantRules.length !== previous.merchantRules.length + 1 ||
+    !snapshot.merchantRules
+      .slice(0, -1)
+      .every(
+        (rule, index) =>
+          JSON.stringify(rule) === JSON.stringify(previous.merchantRules[index])
+      ) ||
+    snapshot.merchantRules.at(-1)?.enabled !== true
+  ) {
+    return false;
+  }
+  const {
+    policyVersion: _previousVersion,
+    updatedAt: _previousUpdatedAt,
+    merchantRules: _previousRules,
+    ...previousStable
+  } = previous;
+  const {
+    policyVersion: _nextVersion,
+    updatedAt: _nextUpdatedAt,
+    merchantRules: _nextRules,
+    ...nextStable
+  } = snapshot;
+  return JSON.stringify(previousStable) === JSON.stringify(nextStable);
 }
 
 function isWithin(parent: string, candidate: string): boolean {

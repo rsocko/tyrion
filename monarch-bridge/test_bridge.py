@@ -127,6 +127,7 @@ async def test_transactions(client):
         assert "account" in tx
         assert set(tx) == {
             "id", "date", "amount", "merchant", "category", "account",
+            "businessEntityName",
             "isPending", "isRecurring", "reviewStatus", "reviewAssignee",
             "notes", "tags", "tagReferences",
         }
@@ -815,23 +816,7 @@ def test_pinned_client_inquiry_signatures_are_supported():
     } <= set(inspect.signature(MonarchMoney.get_budgets).parameters)
 
 
-@pytest.mark.parametrize(
-    "business_entity",
-    [
-        {
-            "id": "entity-1",
-            "name": "Conflicting Entity",
-            "__typename": "BusinessEntity",
-        },
-        {"id": "entity-1", "name": "Invented Store"},
-        {"id": {"nested": "identifier"}, "name": ["not", "text"]},
-        "malformed",
-        None,
-    ],
-)
-def test_transaction_normalizer_ignores_untrusted_business_entity_metadata(
-    business_entity,
-):
+def test_transaction_normalizer_exposes_only_normalized_business_entity_name():
     baseline = {
         "id": "tx-1",
         "date": "2026-08-01",
@@ -841,16 +826,45 @@ def test_transaction_normalizer_ignores_untrusted_business_entity_metadata(
         "account": {"id": "acc-1", "displayName": "Checking"},
         "needsReview": False,
     }
-    with_upstream_additions = {
+    normalized = normalize_transaction({
         **baseline,
-        "businessEntity": business_entity,
-    }
-
-    normalized = normalize_transaction(with_upstream_additions)
-    assert normalized == normalize_transaction(baseline)
+        "businessEntity": {
+            "id": "entity-1",
+            "name": "  Invented   Holdings  ",
+            "__typename": "BusinessEntity",
+        },
+    })
     assert normalized.merchant.name == "Invented Store"
-    assert "businessEntity" not in normalized.model_dump_json(by_alias=True)
+    assert normalized.business_entity_name == "Invented Holdings"
+    serialized = normalized.model_dump_json(by_alias=True)
+    assert '"businessEntityName":"Invented Holdings"' in serialized
     assert "entity-1" not in normalized.model_dump_json(by_alias=True)
+
+
+@pytest.mark.parametrize(
+    "business_entity",
+    [
+        {"id": {"nested": "identifier"}, "name": ["not", "text"]},
+        {"name": "unsafe\u0000label"},
+        {"name": "x" * 161},
+        "malformed",
+        None,
+    ],
+)
+def test_transaction_normalizer_omits_invalid_business_entity_names(
+    business_entity,
+):
+    normalized = normalize_transaction({
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -12.5,
+        "merchant": {"name": "Invented Store"},
+        "businessEntity": business_entity,
+        "category": {"id": "cat-1", "name": "Shopping"},
+        "account": {"id": "acc-1", "displayName": "Checking"},
+        "needsReview": False,
+    })
+    assert normalized.business_entity_name is None
 
 
 def test_transaction_normalizer_does_not_expose_upstream_identity_additions():

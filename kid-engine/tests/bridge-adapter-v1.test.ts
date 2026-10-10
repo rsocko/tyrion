@@ -11,6 +11,7 @@ const bridgeTransaction: NormalizedBridgeTransactionV1 = {
   date: '2026-08-08',
   amount: -12.34,
   merchant: { name: 'Synthetic Shop', logoUrl: null },
+  businessEntityName: 'Synthetic Holdings',
   category: { id: 'category-demo', name: 'Synthetic Category' },
   account: {
     id: 'account-demo',
@@ -51,6 +52,7 @@ describe('normalized bridge v1 attribution adapter', () => {
       },
       transaction: {
         merchantName: 'Synthetic Shop',
+        businessEntityName: 'Synthetic Holdings',
         accountRef:
           'bridge-account-alpha',
         occurredOn: '2026-08-08',
@@ -63,6 +65,7 @@ describe('normalized bridge v1 attribution adapter', () => {
     expect(serialized).not.toContain(bridgeTransaction.account.id);
     expect(serialized).not.toContain(bridgeTransaction.notes);
     expect(serialized).not.toContain(String(bridgeTransaction.amount));
+    expect(serialized).not.toContain(bridgeTransaction.account.displayName);
   });
 
   it('maps a page in order and takes observedAt from bridge provenance', () => {

@@ -151,6 +151,14 @@ export function authorizeAttributionActions(
   authorize(parsedActor, householdId, 'attribution:actions');
 }
 
+export function authorizeMerchantRuleCreation(
+  actor: PolicyActorV1,
+  householdId: string
+): void {
+  const parsedActor = parsePolicyActorV1(actor);
+  authorize(parsedActor, householdId, 'merchant-rules:create');
+}
+
 export function authorizePolicy(
   actor: PolicyActorV1,
   householdId: string,

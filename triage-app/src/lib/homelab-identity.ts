@@ -22,6 +22,10 @@ export function resolveMissionControlAttributionActor(): PolicyActorV1 {
   return {
     actorId: MISSION_CONTROL_ATTRIBUTION_ACTOR_ID,
     householdId: HOMELAB_HOUSEHOLD_ID,
-    permissions: ["attribution:batch", "attribution:actions"],
+    permissions: [
+      "attribution:batch",
+      "attribution:actions",
+      "merchant-rules:create",
+    ],
   };
 }

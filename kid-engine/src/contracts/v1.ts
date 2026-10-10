@@ -18,7 +18,8 @@ export type PolicyPermissionV1 =
   | 'reattribution:preview'
   | 'reattribution:apply'
   | 'attribution:batch'
-  | 'attribution:actions';
+  | 'attribution:actions'
+  | 'merchant-rules:create';
 
 export interface KidProfileV1 {
   id: string;
@@ -35,10 +36,17 @@ export interface AccountDefaultV1 {
   kidId: string | null;
 }
 
+export type MerchantRuleScopeV1 = 'global' | 'accounts';
+export type MerchantRuleOutcomeV1 = 'kid' | 'parent-shared' | 'review';
+
 export interface MerchantAttributionRuleV1 {
   id: string;
-  kidId: string;
+  outcome: MerchantRuleOutcomeV1;
+  kidId: string | null;
   pattern: string;
+  businessEntityPattern: string | null;
+  scope: MerchantRuleScopeV1;
+  accountRefs: string[];
   confidence: Exclude<AttributionConfidenceV1, 'none'>;
   enabled: boolean;
 }
@@ -118,6 +126,7 @@ export interface AttributionSourceV1 {
 
 export interface NormalizedAttributionTransactionV1 {
   merchantName: string;
+  businessEntityName: string | null;
   accountRef: string;
   occurredOn: string;
 }
@@ -157,6 +166,7 @@ export type AttributionReviewReasonV1 =
   | 'no-match'
   | 'low-confidence'
   | 'merchant-rule-conflict'
+  | 'merchant-rule-review'
   | 'historical-attribution-tie'
   | 'engine-unavailable'
   | 'policy-unavailable'
@@ -252,7 +262,7 @@ export interface PolicyAuditEventV1 {
   eventId: string;
   householdId: string;
   actorId: string;
-  action: 'policy-created' | 'policy-replaced';
+  action: 'policy-created' | 'policy-replaced' | 'merchant-rule-created';
   previousPolicyVersion: number | null;
   policyVersion: number;
   occurredAt: string;
@@ -351,6 +361,7 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
         'no-match',
         'low-confidence',
         'merchant-rule-conflict',
+        'merchant-rule-review',
         'historical-attribution-tie',
         'engine-unavailable',
         'policy-unavailable',
@@ -509,6 +520,7 @@ export function parsePolicyActorV1(value: unknown): PolicyActorV1 {
           'reattribution:apply',
           'attribution:batch',
           'attribution:actions',
+          'merchant-rules:create',
         ] as const,
         `permissions[${index}]`
       )
@@ -545,7 +557,7 @@ export function parsePolicyAuditEventV1(value: unknown): PolicyAuditEventV1 {
     actorId: identifier(event.actorId, 'actorId'),
     action: enumeration(
       event.action,
-      ['policy-created', 'policy-replaced'] as const,
+      ['policy-created', 'policy-replaced', 'merchant-rule-created'] as const,
       'action'
     ),
     previousPolicyVersion,
@@ -667,18 +679,89 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
   const merchantRules = array(draft.merchantRules, 'merchantRules').map(
     (item, index) => {
       const rule = object(item, `merchantRules[${index}]`);
-      exactKeys(rule, ['id', 'kidId', 'pattern', 'confidence', 'enabled']);
-      const kidId = identifier(rule.kidId, `merchantRules[${index}].kidId`);
-      referencedKid(kidIds, kidId, `merchantRules[${index}].kidId`);
+      const isLegacyRule = !('outcome' in rule);
+      exactKeys(
+        rule,
+        isLegacyRule
+          ? ['id', 'kidId', 'pattern', 'confidence', 'enabled']
+          : [
+              'id',
+              'outcome',
+              'kidId',
+              'pattern',
+              'businessEntityPattern',
+              'scope',
+              'accountRefs',
+              'confidence',
+              'enabled',
+            ]
+      );
+      const outcome = isLegacyRule
+        ? 'kid'
+        : enumeration(
+            rule.outcome,
+            ['kid', 'parent-shared', 'review'] as const,
+            `merchantRules[${index}].outcome`
+          );
+      const kidId =
+        rule.kidId === null
+          ? null
+          : identifier(rule.kidId, `merchantRules[${index}].kidId`);
+      if (outcome === 'kid') {
+        if (kidId === null) {
+          invalid(`merchantRules[${index}].kidId is required for kid outcome`);
+        }
+        referencedKid(kidIds, kidId, `merchantRules[${index}].kidId`);
+        if (!kids.find((kid) => kid.id === kidId)?.active) {
+          invalid(`merchantRules[${index}].kidId must reference an active kid`);
+        }
+      } else if (kidId !== null) {
+        invalid(`merchantRules[${index}].kidId must be null unless outcome is kid`);
+      }
+      const scope = isLegacyRule
+        ? 'global'
+        : enumeration(
+            rule.scope,
+            ['global', 'accounts'] as const,
+            `merchantRules[${index}].scope`
+          );
+      const accountRefs = isLegacyRule
+        ? []
+        : array(rule.accountRefs, `merchantRules[${index}].accountRefs`).map(
+            (value, accountIndex) =>
+              accountRef(
+                value,
+                `merchantRules[${index}].accountRefs[${accountIndex}]`
+              )
+          );
+      unique(accountRefs, `merchantRules[${index}] account references`);
+      accountRefs.sort();
+      if (
+        (scope === 'global' && accountRefs.length !== 0) ||
+        (scope === 'accounts' &&
+          (accountRefs.length === 0 || accountRefs.length > 32))
+      ) {
+        invalid(
+          `merchantRules[${index}].accountRefs must be empty for global scope or contain 1-32 references for accounts scope`
+        );
+      }
       return {
         id: identifier(rule.id, `merchantRules[${index}].id`),
+        outcome,
         kidId,
-        pattern: boundedString(
+        pattern: merchantRulePattern(
           rule.pattern,
           `merchantRules[${index}].pattern`,
-          2,
-          160
         ),
+        businessEntityPattern:
+          isLegacyRule || rule.businessEntityPattern === null
+            ? null
+            : merchantRulePattern(
+                rule.businessEntityPattern,
+                `merchantRules[${index}].businessEntityPattern`,
+              ),
+        scope,
+        accountRefs,
         confidence: confidence(
           rule.confidence,
           `merchantRules[${index}].confidence`
@@ -783,6 +866,7 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
   const transaction = object(input.transaction, 'transaction');
   exactKeys(transaction, [
     'merchantName',
+    ...('businessEntityName' in transaction ? ['businessEntityName'] : []),
     'accountRef',
     'occurredOn',
   ]);
@@ -866,6 +950,16 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
         1,
         160
       ),
+      businessEntityName:
+        !('businessEntityName' in transaction) ||
+        transaction.businessEntityName === null
+          ? null
+          : boundedString(
+              transaction.businessEntityName,
+              'transaction.businessEntityName',
+              1,
+              160
+            ),
       accountRef: accountRef(transaction.accountRef, 'transaction.accountRef'),
       occurredOn: calendarDate(transaction.occurredOn, 'transaction.occurredOn'),
     },
@@ -916,6 +1010,14 @@ function boundedString(
     invalid(`${field} has an invalid length`);
   }
   return normalized;
+}
+
+function merchantRulePattern(value: unknown, field: string): string {
+  const normalized = boundedString(value, field, 2, 160);
+  if (/[\u0000-\u001f\u007f]/.test(normalized)) {
+    invalid(`${field} contains unsupported control characters`);
+  }
+  return normalized.replace(/ {2,}/g, ' ');
 }
 
 function identifier(value: unknown, field: string): string {

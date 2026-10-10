@@ -80,6 +80,9 @@ export interface VendorResearchEnvelopeV1 {
 export interface MerchantRuleSuggestionRequestV1 {
   contractVersion: typeof QUICK_REVIEW_CONTRACT_VERSION;
   merchantName: string;
+  businessEntityName?: string | null;
+  accountRef?: string | null;
+  scope?: 'global' | 'accounts';
   kidId: string;
   suggestReusableRule: boolean;
 }
@@ -88,7 +91,11 @@ export interface MerchantRuleSuggestionResponseV1 {
   contractVersion: typeof QUICK_REVIEW_CONTRACT_VERSION;
   suggestion: {
     kind: 'merchant';
+    outcome: 'kid';
     merchantPattern: string;
+    businessEntityPattern: string | null;
+    scope: 'global' | 'accounts';
+    accountRefs: string[];
     kidId: string;
     confidence: 'likely';
     requiresConfirmation: true;
@@ -250,14 +257,41 @@ export function prepareVendorResearchV1(
 export function suggestMerchantRuleV1(
   value: unknown
 ): MerchantRuleSuggestionResponseV1 {
-  const request = strictObject(value, [
-    'contractVersion',
-    'merchantName',
-    'kidId',
-    'suggestReusableRule',
-  ]);
+  const request = objectWithOptionalKeys(
+    value,
+    ['contractVersion', 'merchantName', 'kidId', 'suggestReusableRule'],
+    ['businessEntityName', 'accountRef', 'scope']
+  );
   contractVersion(request.contractVersion);
   const merchantName = normalizedText(request.merchantName, 'merchantName', 120);
+  const businessEntityName =
+    request.businessEntityName === undefined ||
+    request.businessEntityName === null
+      ? null
+      : normalizedText(
+          request.businessEntityName,
+          'businessEntityName',
+          160
+        );
+  const scope =
+    request.scope === 'accounts' ? 'accounts' : 'global';
+  if (
+    request.scope !== undefined &&
+    request.scope !== 'global' &&
+    request.scope !== 'accounts'
+  ) {
+    invalid('scope is invalid');
+  }
+  const accountRef =
+    request.accountRef === undefined || request.accountRef === null
+      ? null
+      : opaqueIdentifier(request.accountRef, 'accountRef');
+  if (
+    (scope === 'accounts' && accountRef === null) ||
+    (scope === 'global' && accountRef !== null)
+  ) {
+    invalid('accountRef is inconsistent with scope');
+  }
   const kidId = opaqueIdentifier(request.kidId, 'kidId');
   if (typeof request.suggestReusableRule !== 'boolean') {
     invalid('suggestReusableRule is invalid');
@@ -267,7 +301,13 @@ export function suggestMerchantRuleV1(
     suggestion: request.suggestReusableRule
       ? {
           kind: 'merchant',
+          outcome: 'kid',
           merchantPattern: merchantName.toLocaleUpperCase('en-US'),
+          businessEntityPattern: businessEntityName
+            ? businessEntityName.toLocaleUpperCase('en-US')
+            : null,
+          scope,
+          accountRefs: accountRef ? [accountRef] : [],
           kidId,
           confidence: 'likely',
           requiresConfirmation: true,
@@ -433,6 +473,36 @@ function strictObject(
   value: unknown,
   keys: readonly string[]
 ): Record<string, unknown> {
+  const objectValue = plainObject(value);
+  const actualKeys = Object.keys(objectValue);
+  if (
+    actualKeys.length !== keys.length ||
+    actualKeys.some((key) => !keys.includes(key))
+  ) {
+    invalid('request fields are invalid');
+  }
+  return objectValue;
+}
+
+function objectWithOptionalKeys(
+  value: unknown,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[]
+): Record<string, unknown> {
+  const objectValue = plainObject(value);
+  const actualKeys = Object.keys(objectValue);
+  if (
+    requiredKeys.some((key) => !Object.hasOwn(objectValue, key)) ||
+    actualKeys.some(
+      (key) => !requiredKeys.includes(key) && !optionalKeys.includes(key)
+    )
+  ) {
+    invalid('request fields are invalid');
+  }
+  return objectValue;
+}
+
+function plainObject(value: unknown): Record<string, unknown> {
   if (
     value === null ||
     typeof value !== 'object' ||
@@ -440,13 +510,6 @@ function strictObject(
     Object.getPrototypeOf(value) !== Object.prototype
   ) {
     invalid('request must be an object');
-  }
-  const actualKeys = Object.keys(value);
-  if (
-    actualKeys.length !== keys.length ||
-    actualKeys.some((key) => !keys.includes(key))
-  ) {
-    invalid('request fields are invalid');
   }
   return value as Record<string, unknown>;
 }

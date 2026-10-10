@@ -99,6 +99,58 @@ describe('v1 domain contract validation', () => {
     ).toThrow('must be null unless mode is child');
   });
 
+  it('migrates legacy merchant rules to explicit global kid outcomes', () => {
+    const parsed = parsePolicySnapshotV1({
+      ...policyFixture,
+      merchantRules: [
+        {
+          id: 'legacy-rule',
+          kidId: 'kid-alpha',
+          pattern: 'LEGACY SHOP',
+          confidence: 'likely',
+          enabled: true,
+        },
+      ],
+    });
+    expect(parsed.merchantRules[0]).toEqual({
+      id: 'legacy-rule',
+      outcome: 'kid',
+      kidId: 'kid-alpha',
+      pattern: 'LEGACY SHOP',
+      businessEntityPattern: null,
+      scope: 'global',
+      accountRefs: [],
+      confidence: 'likely',
+      enabled: true,
+    });
+  });
+
+  it('validates merchant scope and override outcome invariants', () => {
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        merchantRules: [
+          {
+            ...policyFixture.merchantRules[0],
+            scope: 'accounts',
+            accountRefs: [],
+          },
+        ],
+      })
+    ).toThrow('must be empty for global scope or contain 1-32 references');
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        merchantRules: [
+          {
+            ...policyFixture.merchantRules[0],
+            outcome: 'parent-shared',
+          },
+        ],
+      })
+    ).toThrow('must be null unless outcome is kid');
+  });
+
   it('rejects duplicate limit periods and mismatched currencies', () => {
     expect(() =>
       parsePolicySnapshotV1({
