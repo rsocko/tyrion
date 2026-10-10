@@ -33,8 +33,10 @@ MAX_SMOKE_DOWNLOAD_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_SECONDS = 180.0
 MAX_CLEANUP_SECONDS = 30.0
 MAX_CANDIDATE_AGE = timedelta(days=14)
+SERVICE_TOKEN_ENV = "TYRION_LIVE_ROUTE_RECEIPT_SERVICE_TOKEN"
 _SCENARIOS = (
     "list",
+    "match_preflight",
     "detail",
     "existing_download",
     "create",
@@ -43,6 +45,32 @@ _SCENARIOS = (
     "match",
     "read_back",
     "cleanup",
+)
+_PUBLIC_ERROR_CODES = frozenset(
+    {
+        "attachment_too_large",
+        "attachment_unavailable",
+        "bridge_auth_required",
+        "invalid_request",
+        "internal_error",
+        "not_found",
+        "payload_too_large",
+        "pending_transaction_not_supported",
+        "receipt_failed",
+        "receipt_match_conflict",
+        "receipt_not_found",
+        "receipt_processing",
+        "receipt_processing_timeout",
+        "receipt_upstream_error",
+        "request_failed",
+        "session_expired",
+        "session_in_use",
+        "unsupported_content_encoding",
+        "unsupported_media_type",
+        "upstream_error",
+        "upstream_rate_limited",
+        "upstream_timeout",
+    }
 )
 _GLYPHS = {
     " ": (0, 0, 0, 0, 0, 0, 0),
@@ -163,12 +191,13 @@ async def run() -> dict[str, str]:
         return _summary("protected_receipt_route_mutation_confirmation_required")
     if not os.getenv("SESSION_FILE"):
         return _summary("protected_receipt_route_session_path_required")
-    token = os.getenv("BRIDGE_API_TOKEN", "")
+    token = os.getenv(SERVICE_TOKEN_ENV, "")
     if len(token) < 32:
         return _summary("protected_receipt_route_service_token_required")
 
     os.environ["BRIDGE_LOAD_DOTENV"] = "false"
     os.environ["DEMO_MODE"] = "false"
+    os.environ["BRIDGE_API_TOKEN"] = token
     _quiet_logging()
     try:
         loop = asyncio.get_running_loop()
@@ -240,20 +269,34 @@ async def run_route_smoke(
                     reference=reference,
                 )
                 summary["list"] = "passed"
-                candidate_id = _required_identifier(candidate, "id")
+                candidate_id = _required_identifier(
+                    candidate,
+                    "id",
+                    scenario="list",
+                )
                 transaction_id = _required_identifier(
                     candidate,
                     "linkedTransactionId",
+                    scenario="list",
                 )
-                candidate_attachment = _single_pdf_attachment(candidate)
+                candidate_attachment = _single_pdf_attachment(
+                    candidate,
+                    scenario="list",
+                )
+                await _preflight_posted_transaction(
+                    owner_client,
+                    transaction_id,
+                )
+                summary["match_preflight"] = "passed"
 
                 detail = await _json_request(
                     route_client,
                     "GET",
                     f"/receipts/{_path(candidate_id)}",
+                    scenario="detail",
                     expected_status=200,
                 )
-                detailed = _required_receipt(detail)
+                detailed = _required_receipt(detail, scenario="detail")
                 if (
                     detailed.get("id") != candidate_id
                     or detailed.get("linkedTransactionId") != transaction_id
@@ -262,7 +305,16 @@ async def run_route_smoke(
                     raise RouteSmokeError("protected_receipt_route_detail_mismatch")
                 detailed_attachment = _attachment_by_id(
                     detailed,
-                    _required_identifier(candidate_attachment, "id"),
+                    _required_identifier(
+                        candidate_attachment,
+                        "id",
+                        scenario="list",
+                    ),
+                )
+                detailed_attachment_id = _required_identifier(
+                    detailed_attachment,
+                    "id",
+                    scenario="detail",
                 )
                 summary["detail"] = "passed"
 
@@ -271,8 +323,9 @@ async def run_route_smoke(
                     "GET",
                     (
                         f"/receipts/{_path(candidate_id)}/attachments/"
-                        f"{_path(_required_identifier(detailed_attachment, 'id'))}/content"
+                        f"{_path(detailed_attachment_id)}/content"
                     ),
+                    scenario="existing_download",
                     max_bytes=MAX_SMOKE_DOWNLOAD_BYTES,
                 )
                 _verify_download(
@@ -288,11 +341,16 @@ async def run_route_smoke(
                     route_client,
                     "POST",
                     "/receipts",
+                    scenario="create",
                     expected_status=201,
                     content=b"",
                 )
-                synthetic = _required_receipt(created)
-                synthetic_id = _required_identifier(synthetic, "id")
+                synthetic = _required_receipt(created, scenario="create")
+                synthetic_id = _required_identifier(
+                    synthetic,
+                    "id",
+                    scenario="create",
+                )
                 synthetic_ids.append(synthetic_id)
                 if (
                     synthetic.get("status") != "processing"
@@ -313,11 +371,15 @@ async def run_route_smoke(
                     route_client,
                     "PUT",
                     f"/receipts/{_path(synthetic_id)}/content",
+                    scenario="upload_poll",
                     expected_status=200,
                     content=upload_content,
                     headers={"Content-Type": "image/png"},
                 )
-                processed = _required_receipt(uploaded)
+                processed = _required_receipt(
+                    uploaded,
+                    scenario="upload_poll",
+                )
                 if (
                     processed.get("id") != synthetic_id
                     or processed.get("status") != "awaiting_match"
@@ -325,6 +387,11 @@ async def run_route_smoke(
                 ):
                     raise RouteSmokeError("protected_receipt_route_upload_mismatch")
                 synthetic_attachment = _single_attachment(processed)
+                synthetic_attachment_id = _required_identifier(
+                    synthetic_attachment,
+                    "id",
+                    scenario="upload_poll",
+                )
                 summary["upload_poll"] = "passed"
 
                 downloaded, downloaded_type = await _bytes_request(
@@ -332,8 +399,9 @@ async def run_route_smoke(
                     "GET",
                     (
                         f"/receipts/{_path(synthetic_id)}/attachments/"
-                        f"{_path(_required_identifier(synthetic_attachment, 'id'))}/content"
+                        f"{_path(synthetic_attachment_id)}/content"
                     ),
+                    scenario="synthetic_download",
                     max_bytes=MAX_SMOKE_DOWNLOAD_BYTES,
                 )
                 _verify_download(
@@ -348,6 +416,7 @@ async def run_route_smoke(
                     route_client,
                     "POST",
                     f"/receipts/{_path(synthetic_id)}/match",
+                    scenario="match",
                     expected_status=200,
                     json_body={
                         "transactionId": transaction_id,
@@ -355,7 +424,10 @@ async def run_route_smoke(
                         "confirmed": True,
                     },
                 )
-                matched_receipt = _required_receipt(matched)
+                matched_receipt = _required_receipt(
+                    matched,
+                    scenario="match",
+                )
                 if (
                     matched.get("status") != "matched"
                     or matched_receipt.get("id") != synthetic_id
@@ -368,9 +440,13 @@ async def run_route_smoke(
                     route_client,
                     "GET",
                     f"/receipts/{_path(synthetic_id)}",
+                    scenario="read_back",
                     expected_status=200,
                 )
-                normalized = _required_receipt(read_back)
+                normalized = _required_receipt(
+                    read_back,
+                    scenario="read_back",
+                )
                 if (
                     normalized.get("id") != synthetic_id
                     or normalized.get("status") != "matched"
@@ -452,6 +528,7 @@ async def _discover_candidate(
                 "/receipts?source=upload"
                 f"&limit={DISCOVERY_PAGE_SIZE}&offset={offset}"
             ),
+            scenario="list",
             expected_status=200,
         )
         receipts = payload.get("receipts")
@@ -479,7 +556,7 @@ async def _discover_candidate(
                 and reference - MAX_CANDIDATE_AGE <= created <= reference
             ):
                 try:
-                    _single_pdf_attachment(value)
+                    _single_pdf_attachment(value, scenario="list")
                 except RouteSmokeError:
                     continue
                 eligible.append(value)
@@ -497,11 +574,62 @@ async def _discover_candidate(
     return eligible[0]
 
 
+async def _preflight_posted_transaction(
+    client: object,
+    transaction_id: str,
+) -> None:
+    try:
+        result = await client.get_transaction_details(
+            transaction_id,
+            redirect_posted=False,
+        )
+    except Exception as exc:
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_unavailable"
+        ) from exc
+    if not isinstance(result, dict):
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_malformed"
+        )
+    if "getTransaction" not in result:
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_malformed"
+        )
+    transaction = result.get("getTransaction")
+    if transaction is None:
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_not_found"
+        )
+    if not isinstance(transaction, dict):
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_malformed"
+        )
+    returned_id = transaction.get("id")
+    if not isinstance(returned_id, str):
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_malformed"
+        )
+    if returned_id != transaction_id:
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_identity_mismatch"
+        )
+    pending = transaction.get("pending")
+    if not isinstance(pending, bool):
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_malformed"
+        )
+    if pending:
+        raise RouteSmokeError(
+            "protected_receipt_route_match_preflight_pending"
+        )
+
+
 async def _json_request(
     client: httpx.AsyncClient,
     method: str,
     path: str,
     *,
+    scenario: str,
     expected_status: int,
     content: bytes | None = None,
     headers: dict[str, str] | None = None,
@@ -511,21 +639,30 @@ async def _json_request(
         client,
         method,
         path,
+        scenario=scenario,
         max_bytes=MAX_JSON_BYTES,
         content=content,
         headers=headers,
         json_body=json_body,
     )
     if status != expected_status:
-        raise RouteSmokeError("protected_receipt_route_request_failed")
+        raise RouteSmokeError(
+            _http_failure_code(scenario, status, body, media_type)
+        )
     if media_type != "application/json":
-        raise RouteSmokeError("protected_receipt_route_response_malformed")
+        raise RouteSmokeError(
+            f"protected_receipt_route_{scenario}_response_malformed"
+        )
     try:
         payload = json.loads(body)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RouteSmokeError("protected_receipt_route_response_malformed") from exc
+        raise RouteSmokeError(
+            f"protected_receipt_route_{scenario}_response_malformed"
+        ) from exc
     if not isinstance(payload, dict):
-        raise RouteSmokeError("protected_receipt_route_response_malformed")
+        raise RouteSmokeError(
+            f"protected_receipt_route_{scenario}_response_malformed"
+        )
     return payload
 
 
@@ -534,16 +671,20 @@ async def _bytes_request(
     method: str,
     path: str,
     *,
+    scenario: str,
     max_bytes: int,
 ) -> tuple[bytes, str]:
     body, media_type, status = await _bounded_request(
         client,
         method,
         path,
+        scenario=scenario,
         max_bytes=max_bytes,
     )
     if status != 200:
-        raise RouteSmokeError("protected_receipt_route_request_failed")
+        raise RouteSmokeError(
+            _http_failure_code(scenario, status, body, media_type)
+        )
     return body, media_type
 
 
@@ -552,6 +693,7 @@ async def _bounded_request(
     method: str,
     path: str,
     *,
+    scenario: str,
     max_bytes: int,
     content: bytes | None = None,
     headers: dict[str, str] | None = None,
@@ -571,7 +713,7 @@ async def _bounded_request(
                 total += len(chunk)
                 if total > max_bytes:
                     raise RouteSmokeError(
-                        "protected_receipt_route_response_too_large"
+                        f"protected_receipt_route_{scenario}_response_too_large"
                     )
                 chunks.append(chunk)
             media_type = (
@@ -584,21 +726,64 @@ async def _bounded_request(
     except RouteSmokeError:
         raise
     except httpx.HTTPError as exc:
-        raise RouteSmokeError("protected_receipt_route_transport_failed") from exc
+        raise RouteSmokeError(
+            f"protected_receipt_route_{scenario}_transport_failed"
+        ) from exc
 
 
-def _required_receipt(payload: dict[str, object]) -> dict[str, object]:
+def _http_failure_code(
+    scenario: str,
+    status: int,
+    body: bytes,
+    media_type: str,
+) -> str:
+    if 400 <= status <= 499:
+        status_class = "4xx"
+    elif 500 <= status <= 599:
+        status_class = "5xx"
+    else:
+        status_class = "other"
+    public_code = "unrecognized_error"
+    if media_type == "application/json":
+        try:
+            payload = json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict) and error.get("code") in _PUBLIC_ERROR_CODES:
+                public_code = error["code"]
+    return (
+        f"protected_receipt_route_{scenario}_http_"
+        f"{status_class}_{public_code}"
+    )
+
+
+def _required_receipt(
+    payload: dict[str, object],
+    *,
+    scenario: str,
+) -> dict[str, object]:
     value = payload.get("receipt")
     if not isinstance(value, dict):
-        raise RouteSmokeError("protected_receipt_route_response_malformed")
-    _required_identifier(value, "id")
+        raise RouteSmokeError(
+            f"protected_receipt_route_{scenario}_response_malformed"
+        )
+    _required_identifier(value, "id", scenario=scenario)
     attachments = value.get("attachments")
     if not isinstance(attachments, list) or len(attachments) > 10:
-        raise RouteSmokeError("protected_receipt_route_response_malformed")
+        raise RouteSmokeError(
+            f"protected_receipt_route_{scenario}_response_malformed"
+        )
     return value
 
 
-def _required_identifier(value: dict[str, object], key: str) -> str:
+def _required_identifier(
+    value: dict[str, object],
+    key: str,
+    *,
+    scenario: str,
+) -> str:
     identifier = value.get(key)
     if (
         not isinstance(identifier, str)
@@ -607,14 +792,22 @@ def _required_identifier(value: dict[str, object], key: str) -> str:
         or identifier != identifier.strip()
         or any(ord(character) < 32 or ord(character) == 127 for character in identifier)
     ):
-        raise RouteSmokeError("protected_receipt_route_response_malformed")
+        raise RouteSmokeError(
+            f"protected_receipt_route_{scenario}_response_malformed"
+        )
     return identifier
 
 
-def _single_pdf_attachment(receipt: dict[str, object]) -> dict[str, object]:
+def _single_pdf_attachment(
+    receipt: dict[str, object],
+    *,
+    scenario: str,
+) -> dict[str, object]:
     attachments = receipt.get("attachments")
     if not isinstance(attachments, list):
-        raise RouteSmokeError("protected_receipt_route_response_malformed")
+        raise RouteSmokeError(
+            f"protected_receipt_route_{scenario}_response_malformed"
+        )
     eligible = [
         value
         for value in attachments
