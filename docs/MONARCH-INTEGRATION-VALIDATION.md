@@ -61,6 +61,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Merchant/payee write-back | Normalized 1-120 character input, unknown-field/control-character rejection, exact mutation-response verification, deterministic demo response, connector body allowlisting, and sanitized failures | Controlled live validation required with explicit confirmation, read-back, and restoration |
 | Transaction review | Pinned-client `needsReview`, `reviewStatus`, `needsReviewByUser`, household directory, `needs_review` filter, and `reviewed=True` mutation inspected; normalized status/assignee, strict mark-reviewed body, exact mutation verification, missing-capability failure, deterministic demo response, and connector allowlisting | Controlled live validation required on a dedicated needs-review transaction; do not run without accepting that the authoritative review action is not safely reversible |
+| Receipts and attachment retrieval | Isolated internal probe covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; nested linked transaction identity; bounded attachment metadata with signed URLs omitted from result shapes; capped pagination and exponential polling; strict malformed/oversized rejection; and streamed MIME/byte limits. The probe adds no public Bridge DTO or route. | Not run. Requires the separate receipt enable and mutation confirmation gates, a bridge-owned external session, invented PNG input in an OS temporary directory, verified cleanup, and sanitized one-code output. |
 | Kids tag projection | Stable kid-to-tag mapping; collision/deletion/rename handling; reassignment, shared purchase, parent expense, retry/idempotency, partial failure, unrelated-tag preservation, optimistic drift refusal, exact read-back, action replay recovery, and re-attribution convergence use invented deterministic state only | Controlled live tag-set validation requires `TYRION_TEST_TRANSACTION_ID`, a pre-created `TYRION_TEST_TAG_ID`, and the reversible mutation confirmation; the test restores and verifies the complete original tag set. Managed-tag creation is not performed live because the pinned client exposes no verified deletion contract |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB general response bounds; composed health with one 4 KiB `/auth/status` verification, explicit v1 shape/version validation, derived status/reachability, no auth-field leakage, and sanitized non-success failures; status/body/safe-header preservation for passthrough operations; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
@@ -170,6 +171,86 @@ and resumes its projections after return.
   success. Deterministic limits are 1,000 accounts, 250 category groups, 2,000
   categories, 1,000 transaction tags, 5,000 recurring obligations, and 5,000 current
   budget rows.
+
+### Receipt and attachment validation slice
+
+The current public source of `erikrubstein/monarch-api2` was inspected at commit
+`ffa6ac493bb3a01a6d41b6c75ec7e762f5ffa961` as reference code only. Tyrion does
+not install or import that project. The isolated `monarch-bridge/receipt_probe.py`
+adapter accepts only the client returned by the existing Bridge session manager and
+does not add a production endpoint or change `contract.py`.
+
+The deterministic probe implements these private operations:
+
+| Purpose | Operation |
+| --- | --- |
+| List receipts by uploaded/email source | `Common_RetailSyncsQueryWithTotal` |
+| Get and poll one opaque receipt identity | `Common_RetailSyncQuery` |
+| Create an uploaded receipt shell | `Common_CreateRetailSync` |
+| Start receipt processing | `Common_StartRetailSync` |
+| Delete the synthetic unmatched receipt | `Common_DeleteRetailSync` |
+| Optional reversible match | `Common_MatchRetailTransaction` |
+| Restore the optional match | `Web_UnmatchRetailTransaction` |
+| Get transaction attachment metadata | `Mobile_GetAttachmentDetails` |
+
+Receipt file transfer uses the referenced bounded
+`POST /retail-sync/{opaque-id}/files` workflow with the bridge-owned client's
+authenticated transport state. Receipt and transaction attachment downloads use
+`originalAssetUrl` only transiently after HTTPS Cloudinary host validation. Normalized
+results expose `downloadAvailable`, never the URL. Downloads reject redirects,
+unknown MIME types, invalid lengths, and bodies over 10 MiB while streaming. Upload
+input is limited to 2 MiB. These values are validation safety bounds, not claims about
+Monarch's product limits.
+
+Run deterministic coverage only during normal development:
+
+```powershell
+Set-Location monarch-bridge
+python -m pytest test_receipt_probe.py
+```
+
+The controlled-live runner is deliberately not a pytest test and is not collected by
+CI. It requires all values in the current process:
+
+```powershell
+$env:BRIDGE_LOAD_DOTENV = "false"
+$env:SESSION_FILE = "<external bridge-owned session path>"
+$env:TYRION_LIVE_RECEIPT_TESTS = "1"
+$env:TYRION_LIVE_RECEIPT_MUTATION_CONFIRM = "I_ACCEPT_RECEIPT_PROBE_MUTATIONS"
+python live_receipt_probe.py
+```
+
+An optional `TYRION_TEST_RECEIPT_TRANSACTION_ID` enables match/unmatch validation
+against a dedicated controlled transaction. The runner writes invented PNG content
+only under the OS temporary directory, caps polling at eight attempts and 120
+seconds, restores an attempted match, deletes the synthetic receipt in `finally`,
+and emits only one stable result code. Do not redirect its output or enable it in CI.
+Do not run it until the operator has reviewed the account-risk notice and is prepared
+to remove a synthetic receipt manually if the stable
+`receipt_probe_cleanup_failed` code is returned.
+
+The following remain unknown until that controlled run:
+
+- Whether Monarch currently accepts PNG and PDF uploads, and the effective size and
+  page limits for each format.
+- Whether `originalAssetUrl` is public, cookie-authenticated, token-authenticated,
+  signed, single-use, or time-limited; Tyrion does not persist or expose it.
+- Whether downloaded bytes are identical to uploaded bytes or transformed by the
+  receipt pipeline.
+- Email ingestion timing, sender/address requirements, threading behavior, and
+  attachment selection.
+- Duplicate-upload detection and whether duplicate content creates one or multiple
+  receipt identities.
+- Whether a pending transaction's linked identity changes when it posts and how long
+  receipt correlation remains stable.
+- Exact deletion behavior for processing, failed, matched, and unmatched receipts,
+  including whether attachment assets are deleted synchronously.
+- Whether transaction attachment retrieval uses the same URL lifetime,
+  authentication, transformation, and deletion semantics as receipt attachments.
+
+Until live evidence resolves these items, this slice supports contract validation
+only. It does not establish production compatibility or authorize a Mission Control
+receipt workflow.
 
 ## Contract refresh
 
