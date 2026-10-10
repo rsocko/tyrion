@@ -39,7 +39,8 @@ LABEL org.opencontainers.image.source="https://github.com/rsocko/tyrion" \
 RUN groupadd --gid "${TYRION_GID}" tyrion \
     && useradd --uid "${TYRION_UID}" --gid tyrion --create-home \
         --home-dir /home/tyrion --shell /usr/sbin/nologin tyrion \
-    && install -d -m 0700 -o tyrion -g tyrion /app /var/lib/tyrion
+    && install -d -m 0700 -o tyrion -g tyrion \
+        /app /var/lib/tyrion /var/lib/tyrion-recovery
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/
@@ -47,6 +48,10 @@ COPY --chown=tyrion:tyrion monarch-bridge/bridge_runtime.py \
     monarch-bridge/contract.py \
     monarch-bridge/live_receipt_probe.py \
     monarch-bridge/main.py \
+    monarch-bridge/receipt_recovery_clients.py \
+    monarch-bridge/receipt_recovery_contract.py \
+    monarch-bridge/receipt_recovery_state.py \
+    monarch-bridge/receipt_recovery_worker.py \
     monarch-bridge/receipt_probe.py \
     monarch-bridge/route_receipt_smoke.py \
     /app/

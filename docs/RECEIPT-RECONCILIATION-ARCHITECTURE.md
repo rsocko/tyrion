@@ -195,22 +195,39 @@ sequenceDiagram
     Note over M: Receipt entered Monarch first
     T->>M: List or read receipt and attachment metadata
     M-->>T: Opaque receipt identity and retrievable artifact
-    T->>T: Stream to OS temporary storage with MIME and byte limits
-    T->>O: Check source occurrence and exact hash
+    T->>O: Check hashed source occurrence before download
     alt Existing canonical document
         O-->>T: Existing Paperless reference
     else New artifact
-        T->>P: Upload artifact
-        P-->>T: Canonical document reference
-        T-->>O: Record Monarch origin and replica identity
+        T->>T: Stream to OS temporary storage with MIME and byte limits
+        T->>O: Submit monarch_recovery occurrence and exact bytes
+        O->>P: Canonical intake with source occurrence and SHA-256 gates
+        P-->>O: Accepted, duplicate, unknown, retryable, or failed
+        O-->>T: Bounded canonical intake result
     end
     T->>T: Remove temporary bytes
     Note over M,P: Never re-submit the recovered artifact to Monarch
 ```
 
-The recovery importer is optional until list/get, attachment retrieval, URL
-authentication and lifetime, MIME behavior, byte fidelity, pagination, and
-idempotency have controlled live evidence.
+The optional importer is implemented as a disabled one-shot process above the
+protected Bridge. It can call only receipt list, detail, and attachment-content
+`GET` operations. It derives OWL's versioned `monarch_recovery` occurrence before
+download, checks OWL first, and streams at most one PNG, JPEG, or PDF through
+size-capped OS temporary storage while hashing. OWL owns source/hash idempotency,
+Paperless submission, canonical references, attempt history, and relationships.
+
+The worker persists only an external restart cursor and singleton lease. The cursor
+contains a hashed occurrence, never a raw receipt or attachment identifier. Restart
+rescans from the bounded list origin until the cursor is found; if it disappeared,
+the next run safely replays because OWL owns occurrence idempotency. Completed runs
+clear the cursor, so later one-shots can discover new receipts without a Tyrion
+document ledger.
+
+Every intake uses `source_channel=monarch_recovery`; OWL guarantees these results have
+`external_replica_eligible=false`. The worker also exposes no Monarch create, upload,
+match, unmatch, or delete client method. These two structural constraints prevent a
+recovered artifact from fanning back to Monarch. Replica deletion remains a separate,
+unimplemented danger action.
 
 ## Provenance and duplicate prevention
 

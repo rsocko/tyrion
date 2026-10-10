@@ -146,6 +146,16 @@ The raw Monarch Bridge has no host port or Traefik router. Its authentication se
 cookie/session lifecycle, complete contract, and reusable session material remain on
 the isolated `tyrion-backend` network.
 
+The optional `tyrion-monarch-recovery` container is an explicit Compose-profile
+one-shot, not an ingress service. It reuses the Bridge image but calls the running
+protected Bridge over `tyrion-backend`, mounts no Monarch session volume, publishes no
+port, and has no Traefik labels. It can issue only bounded receipt reads. Its separate
+restricted volume stores a hashed restart cursor and singleton lease; document bytes
+exist only in its size-capped `/tmp` and are removed before exit. OWL canonical intake
+uses an independent server-only token. Both the Compose profile and
+`TYRION_MONARCH_RECOVERY_ENABLED` gate must be enabled, so ordinary deployment cannot
+start recovery accidentally.
+
 The UI container owns the existing `https://tyrion.socko.us` origin with two disjoint
 Traefik surfaces:
 

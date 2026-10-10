@@ -66,7 +66,32 @@ def test_image_contains_internal_receipt_probe_runtime():
 
     assert "monarch-bridge/live_receipt_probe.py" in probe_copy
     assert "monarch-bridge/route_receipt_smoke.py" in probe_copy
+    assert "monarch-bridge/receipt_recovery_worker.py" in probe_copy
+    assert "monarch-bridge/receipt_recovery_clients.py" in probe_copy
+    assert "monarch-bridge/receipt_recovery_contract.py" in probe_copy
+    assert "monarch-bridge/receipt_recovery_state.py" in probe_copy
     assert probe_copy[-1] == "/app/"
+
+
+def test_recovery_compose_job_is_private_bounded_and_sessionless():
+    compose = read_repository_file("deploy/homelab/compose.yaml")
+    recovery = compose.split("  tyrion-monarch-recovery:", 1)[1].split(
+        "\nvolumes:", 1
+    )[0]
+
+    assert "profiles:" in recovery
+    assert "receipt-recovery" in recovery
+    assert 'restart: "no"' in recovery
+    assert "read_only: true" in recovery
+    assert "no-new-privileges:true" in recovery
+    assert "cap_drop:" in recovery
+    assert "/tmp:rw,noexec,nosuid,nodev,size=4m" in recovery
+    assert "receipt_recovery_worker.py" in recovery
+    assert "TYRION_MONARCH_RECOVERY_ENABLED" in recovery
+    assert "tyrion-monarch-recovery-state:/var/lib/tyrion-recovery" in recovery
+    assert "tyrion-session" not in recovery
+    assert "ports:" not in recovery
+    assert "traefik" not in recovery
 
 
 def test_operator_docs_define_safe_protected_receipt_route_smoke():
@@ -107,6 +132,7 @@ def test_image_runs_non_root_with_external_session_storage():
 
     assert "USER tyrion" in dockerfile
     assert "TYRION_UID=10001" in dockerfile
+    assert "/var/lib/tyrion-recovery" in dockerfile
     assert runtime_env["SESSION_FILE"] == "/var/lib/tyrion/monarch-session.json"
     assert 'VOLUME ["/var/lib/tyrion"]' in dockerfile
     assert runtime_env["BRIDGE_HOST"] == "0.0.0.0"
@@ -307,7 +333,7 @@ def test_homelab_contract_routes_only_ui_through_traefik():
         "routers.tyrion-connector-secure.middlewares="
         "tyrion-public-connector-marker,compression@file,security-headers@file"
     ) in ui_section
-    assert compose.count("read_only: true") == 2
+    assert compose.count("read_only: true") == 3
     assert compose.count("user:") == 0
     assert "TYRION_BRIDGE_IMAGE=ghcr.io/rsocko/tyrion-bridge" in environment
     assert "TYRION_UI_IMAGE=ghcr.io/rsocko/tyrion-ui" in environment

@@ -52,6 +52,29 @@ only after OWL canonical intake is healthy. Keep recovery disabled until the sep
 Monarch-first recovery work is approved. The UI streams artifacts through its bounded
 64 MiB `/tmp` tmpfs, persists only byte-free orchestration state, and removes temporary
 files in every terminal or unknown outcome.
+
+The `receipt-recovery` Compose profile adds a disabled one-shot
+`tyrion-monarch-recovery` job for Monarch-first backfill. It reuses the immutable
+Bridge image but runs `receipt_recovery_worker.py --run-once`; it does not start a
+second Bridge, load Monarch session material, publish a port, or join Traefik. The job
+calls the healthy Bridge on `tyrion-backend`, calls OWL's protected canonical intake,
+uses a size-capped `/tmp`, and mounts only the separate
+`tyrion-monarch-recovery-state` checkpoint volume.
+
+Keep `TYRION_MONARCH_RECOVERY_ENABLED=false` until both protected services and the
+restricted state volume are provisioned. Then invoke one bounded cycle explicitly:
+
+```powershell
+docker compose --profile receipt-recovery run --rm tyrion-monarch-recovery
+```
+
+The checkpoint volume must be owned by UID/GID `10001` and excluded from repository
+and CI capture. It contains only a schema version, source selector, hashed occurrence
+cursor, and lease file. A nonzero result is not permission to delete state or retry
+blindly: preserve the checkpoint, correct connectivity or contract configuration,
+and rerun so OWL occurrence lookup reconciles any unknown intake first. Private
+infrastructure may schedule the same one-shot command, but overlapping runs are
+rejected by the lease.
 For local/demo development, run the bridge with `python main.py --demo` and the UI with
 `npm run dev`; the homelab compose file is the production contract, not the local
 development launcher.
