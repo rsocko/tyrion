@@ -14,6 +14,28 @@ also confirm that the existing transaction DTO still provides `id`, `date`, `amo
 `merchant.name`, `account.id`, and `isPending`. Do not capture the response or add it as
 a fixture. Bill matching does not add a live mutation.
 
+## Receipt evidence orchestration
+
+The private receipt evidence service consumes OWL receipt intake v1 from
+`rsocko/owl` commit `f9f4a5801988da28a30dc7a51c18fcd60f9008f2`. Deterministic
+coverage validates the exact result vocabulary, strict unknown-field rejection,
+opaque identities, occurrence/hash idempotency, optimistic intake and replica
+revisions, semantic review gating without ingestion suppression, and durable
+review-gated unknown outcomes.
+
+Transport coverage must verify fixed authority, bearer authentication, browser
+rejection, exact route/method and `X-OWL-*` metadata allowlists, 25 MiB canonical
+spooling, signature/hash validation, the Bridge's separate 2 MiB and MIME bounds,
+temporary cleanup, sanitized OWL/Bridge failures, restart reuse, and no second create
+after uncertainty. Bill Matching v1 regression tests remain required because it is
+the only fallback scorer.
+
+Normal validation uses invented artifacts and demo dependencies only. The successful
+PR #283 deployed receipt smoke remains the live evidence for the private Bridge
+primitives. Enabling production replica writes requires a separate controlled rollout
+with OWL canonical intake healthy; it does not authorize a new credentialed live
+mutation test or Monarch-first recovery.
+
 ## Evidence status
 
 - Supported client: `monarchmoneycommunity==1.6.0`

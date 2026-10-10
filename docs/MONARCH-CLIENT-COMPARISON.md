@@ -359,6 +359,13 @@ product ownership into Tyrion:
 The implementation should be independently written and tested from observed
 operation contracts; this document is not permission to copy source.
 
+For receipt evidence v1, Tyrion will propose these typed primitives upstream but
+retains the independently implemented `monarch-bridge/receipt_probe.py` adapter in
+production. Upstream acceptance alone does not switch the runtime. Migration requires
+a released `monarchmoneycommunity` version, refreshed synthetic normalizers and
+dependency policy, the full deterministic suite, and the separately controlled live
+matrix. `monarch-api2` is not added as a second runtime client.
+
 ### Policy that must remain in Tyrion
 
 - Sole Bridge ownership of reusable Monarch session state.

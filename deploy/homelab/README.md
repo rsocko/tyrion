@@ -43,6 +43,15 @@ enable evaluation/write, read, confirmed actions, and the automation transport i
 that order. The automation gate exposes only the private scheduled-job and exact
 delivery-acknowledgement routes; it does not create a browser or public connector
 surface.
+Receipt evidence uses the same private-authority posture at
+`/api/internal/v1/finance/receipt-evidence`. OWL and Tyrion must share an explicitly
+allowlisted private service network; no Traefik router exposes this path. Configure
+OWL's fixed service URL and its independent `OWL_RECEIPT_INTAKE_API_TOKEN`, plus a
+stable receipt identity namespace. Enable receipt reads first, then replica writes
+only after OWL canonical intake is healthy. Keep recovery disabled until the separate
+Monarch-first recovery work is approved. The UI streams artifacts through its bounded
+64 MiB `/tmp` tmpfs, persists only byte-free orchestration state, and removes temporary
+files in every terminal or unknown outcome.
 For local/demo development, run the bridge with `python main.py --demo` and the UI with
 `npm run dev`; the homelab compose file is the production contract, not the local
 development launcher.

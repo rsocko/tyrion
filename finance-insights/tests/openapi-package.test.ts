@@ -263,6 +263,7 @@ describe('executable contract and internal package boundary', () => {
       './policy',
       './ports',
       './projection',
+      './receipt',
       './reconciliation',
       './services',
     ]);

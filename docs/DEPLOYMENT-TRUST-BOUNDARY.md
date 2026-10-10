@@ -197,6 +197,22 @@ gate permits only the collection route to persist normalized account/recurring
 generations; it does not enable the general source-generation ingestion API. The route
 remains bearer-authenticated and rejects browser-originated requests.
 
+Receipt evidence uses the same fixed private authority under
+`/api/internal/v1/finance/receipt-evidence`. It is excluded from all public routers,
+is absent from the connector and browser-proxy allowlists, rejects browser metadata,
+and authenticates with the existing server-only Bridge credential. Tyrion calls only
+the deployment-configured OWL authority using the independent
+`OWL_RECEIPT_INTAKE_API_TOKEN`; no request may select an OWL or Monarch URL.
+
+`TYRION_RECEIPT_IDENTITY_NAMESPACE` is a stable deployment value of at least 32
+characters used to derive opaque receipt and transaction references. It is not sent
+to browsers or upstream systems. The read, replica-write, and recovery gates default
+off independently. Recovery remains off for this phase. Byte-free occurrence/hash,
+private receipt mapping, lifecycle, and optimistic revision state share the restricted
+Finance Insights SQLite volume. Artifacts are streamed through the UI container's
+bounded, non-executable `/tmp` tmpfs, never stored in SQLite, and removed after every
+success, failure, conflict, or unknown result.
+
 Connector `GET /health` is composed inside the server-only gateway: it makes exactly
 one protected Bridge `/auth/status` verification with `BRIDGE_API_TOKEN`, validates
 the bounded v1 response, derives reachability and service status from that result,

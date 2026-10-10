@@ -4,6 +4,14 @@
 **Authoritative boundaries:** [PRODUCT-BOUNDARY.md](./PRODUCT-BOUNDARY.md)  
 **Existing matching substrate:** [BILL-TRANSACTION-MATCHING-V1.md](./BILL-TRANSACTION-MATCHING-V1.md)
 
+**Implemented Tyrion boundary:** The private receipt evidence v1 service consumes
+OWL canonical intake from `rsocko/owl` commit
+`f9f4a5801988da28a30dc7a51c18fcd60f9008f2`, persists byte-free occurrence/hash
+orchestration state, and conditionally creates one controlled Monarch replica behind
+default-off gates. Unknown outcomes remain queryable and are never blindly recreated.
+The generated contract is
+[`receipt-evidence-service-v1.openapi.json`](./receipt-evidence-service-v1.openapi.json).
+
 ## Decision
 
 Paperless-ngx is the canonical store for original receipts, invoices, bills, order
