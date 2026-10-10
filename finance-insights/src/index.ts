@@ -10,4 +10,5 @@ export * from './persistence/index.js';
 export * from './policy/v1.js';
 export * from './ports/repositories.js';
 export * from './projection/index.js';
+export * from './reconciliation/index.js';
 export * from './services/index.js';

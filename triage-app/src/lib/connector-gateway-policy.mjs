@@ -82,6 +82,16 @@ export function isBrowserConnectorRequest(headers) {
 
 export function evaluateConnectorRequest(method, segments, searchParams) {
   const path = Array.isArray(segments) ? segments.join("/") : "";
+  if (path === "bill-matches") {
+    if (method !== "POST") return methodNotAllowed();
+    if ([...searchParams.keys()].length > 0) return queryNotAccepted();
+    return {
+      allowed: true,
+      target: "bill-match",
+      acceptsBody: true,
+      upstreamPath: "/bill-matches",
+    };
+  }
   if (path === "tags") {
     if (method !== "GET" && method !== "POST") return methodNotAllowed();
     if ([...searchParams.keys()].length > 0) return queryNotAccepted();

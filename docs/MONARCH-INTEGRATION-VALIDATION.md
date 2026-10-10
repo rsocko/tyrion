@@ -1,5 +1,19 @@
 # Monarch Integration Validation
 
+## Bill matching contract
+
+`POST /api/connector/v1/bill-matches` derives a bounded Bridge v1
+`GET /transactions` lookup from strict normalized bill fields and scores only the
+normalized transaction DTO. Deterministic automated coverage uses invented transactions
+and verifies paid, pending, unmatched, ambiguous, authorization, browser rejection,
+invalid caller scope, malformed response, and unavailable dependency behavior. No live
+bill or transaction fixture is permitted.
+
+For a future Bridge client-version upgrade, the controlled read-only live matrix must
+also confirm that the existing transaction DTO still provides `id`, `date`, `amount`,
+`merchant.name`, `account.id`, and `isPending`. Do not capture the response or add it as
+a fixture. Bill matching does not add a live mutation.
+
 ## Evidence status
 
 - Supported client: `monarchmoneycommunity==1.6.0`

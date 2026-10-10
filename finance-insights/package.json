@@ -40,6 +40,10 @@
       "types": "./dist/projection/index.d.ts",
       "import": "./dist/projection/index.js"
     },
+    "./reconciliation": {
+      "types": "./dist/reconciliation/index.d.ts",
+      "import": "./dist/reconciliation/index.js"
+    },
     "./evidence": {
       "types": "./dist/evidence/index.d.ts",
       "import": "./dist/evidence/index.js"
