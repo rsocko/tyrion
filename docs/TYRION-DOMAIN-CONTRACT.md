@@ -90,7 +90,11 @@ assignment and is not evidence of the physical spender. The review mutation acce
 Transaction tags are independent household labels managed by
 `get_transaction_tags()` and `set_transaction_tags(transaction_id, tag_ids)`.
 The client can read complete transaction rules but has no rule mutation API that
-establishes spender identity.
+establishes spender identity. Tyrion does not import or compare those rules: Monarch's
+priority-ordered transaction-management criteria and actions do not map safely to a
+Tyrion kid, confidence, or conflict outcome. The bounded product-fit analysis and
+reconsideration gate are recorded in
+[`MONARCH-TRANSACTION-RULE-EVALUATION.md`](MONARCH-TRANSACTION-RULE-EVALUATION.md).
 
 Therefore no verified upstream field says which child made a purchase. Account
 ownership identifies a Monarch household owner, review assignment identifies who
