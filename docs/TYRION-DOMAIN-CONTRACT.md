@@ -175,13 +175,16 @@ Mission Control discovers the active policy metadata through
 operation. The route uses the same private authority, bearer credential, and fixed
 service actor as batch attribution. A successful response is non-cacheable and
 contains exactly `contractVersion`, `engineVersion`, the positive `policyVersion`,
-`policyUpdatedAt`, and the required `householdCurrency` sourced from the same
-Tyrion-owned policy configuration used by the operations UI. The currency is an
-exact supported uppercase ISO-4217 code; missing or invalid currency fails closed
-with `policy_unavailable` rather than being normalized or defaulted. It never exposes
-rules, kids, account defaults, merchant rules, household identity, or other policy
-contents. Missing or unreadable policy state returns the existing
-`policy_unavailable` error rather than a default version.
+`policyUpdatedAt`, the required `householdCurrency`, and `subjects`. The currency is
+sourced from the same Tyrion-owned policy configuration used by the operations UI
+and is an exact supported uppercase ISO-4217 code. `subjects` contains all active
+profiles from that same policy snapshot in configured order as
+`{ "kidId": string, "name": string }`; it may be empty and is limited to 100 entries.
+`kidId` uses the existing 1-128 character identifier constraint and `name` uses the
+configured 1-100 character display-name constraint. Inactive profiles, rules,
+account defaults, merchant rules, household identity, and other policy contents are
+not exposed. Missing or invalid policy state, invalid currency, or more than 100
+active profiles returns `policy_unavailable` rather than a partial/default response.
 Mission Control sends the discovered version as `expectedPolicyVersion` on every
 batch in that operation; a later policy change therefore fails the operation's next
 batch with `policy_conflict`.

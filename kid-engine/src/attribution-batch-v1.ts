@@ -3,8 +3,8 @@ import {
   TYRION_DOMAIN_CONTRACT_VERSION,
   ContractValidationError,
   parseAttributionInputV1,
-  parseIsoCurrencyV1,
   parsePolicyActorV1,
+  parsePolicySnapshotV1,
   type AttributionInputV1,
   type AttributionResultV1,
   type PolicyActorV1,
@@ -16,6 +16,7 @@ import {
 } from './policy/service.js';
 
 export const ATTRIBUTION_BATCH_MAX_ITEMS = 100;
+export const ATTRIBUTION_POLICY_MAX_SUBJECTS = 100;
 export const ATTRIBUTION_BATCH_PROVENANCE =
   'mission-control-normalized-v2' as const;
 
@@ -71,6 +72,12 @@ export interface AttributionPolicyResponseV1 {
   policyVersion: number;
   policyUpdatedAt: string;
   householdCurrency: string;
+  subjects: AttributionPolicySubjectV1[];
+}
+
+export interface AttributionPolicySubjectV1 {
+  kidId: string;
+  name: string;
 }
 
 export interface AttributionBatchServiceOptions {
@@ -92,11 +99,20 @@ export class AttributionPolicyService {
         'Household attribution policy is unavailable'
       );
     }
-    let householdCurrency: string;
+    let parsedPolicy: ReturnType<typeof parsePolicySnapshotV1>;
     try {
-      householdCurrency = parseIsoCurrencyV1(policy.currency);
+      parsedPolicy = parsePolicySnapshotV1(policy);
     } catch (error) {
       if (!(error instanceof ContractValidationError)) throw error;
+      throw new AttributionBatchError(
+        'policy_unavailable',
+        'Household attribution policy is unavailable'
+      );
+    }
+    const subjects = parsedPolicy.kids
+      .filter((kid) => kid.active)
+      .map((kid) => ({ kidId: kid.id, name: kid.displayName }));
+    if (subjects.length > ATTRIBUTION_POLICY_MAX_SUBJECTS) {
       throw new AttributionBatchError(
         'policy_unavailable',
         'Household attribution policy is unavailable'
@@ -105,9 +121,10 @@ export class AttributionPolicyService {
     return {
       contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
       engineVersion: KID_ATTRIBUTION_ENGINE_VERSION,
-      policyVersion: policy.policyVersion,
-      policyUpdatedAt: policy.updatedAt,
-      householdCurrency,
+      policyVersion: parsedPolicy.policyVersion,
+      policyUpdatedAt: parsedPolicy.updatedAt,
+      householdCurrency: parsedPolicy.currency,
+      subjects,
     };
   }
 }

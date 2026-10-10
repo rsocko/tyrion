@@ -88,12 +88,15 @@ Mission Control authenticates with the existing server-only
 `BRIDGE_API_TOKEN`/finance-manager bearer credential on the private Docker network.
 Tyrion derives the fixed `mission-control-finance-manager` actor and
 `homelab-household` scope internally, loads the current policy snapshot server-side,
-and returns only contract, engine, policy version, policy update timestamp, and the
-exact supported uppercase ISO-4217 household currency from Tyrion's authoritative
-policy configuration. Mission Control sends that exact positive version on every
+and returns contract, engine, policy version, policy update timestamp, the exact
+supported uppercase ISO-4217 household currency, and up to 100 active attribution
+subjects from Tyrion's authoritative policy configuration. Subjects contain only the
+stable kid identifier and configured display name; inactive profiles are excluded.
+Mission Control sends that exact positive version on every
 batch in the operation, and Tyrion evaluates each whole batch under one policy-version
 fence. Discovery never returns other policy contents and fails closed with
-`policy_unavailable` when policy or currency configuration is missing or invalid.
+`policy_unavailable` when policy/currency configuration is missing or invalid or the
+active-subject bound is exceeded.
 Attribution failure
 does not change bridge sync success: Mission Control persists the transaction with
 pending attribution review and retries later. No controlled live Monarch validation

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tyrion Internal Attribution Service",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "Private trusted-homelab service contract. Mission Control sends only privacy-safe normalized attribution facts; Tyrion derives the fixed household and service actor from its server implementation."
   },
   "servers": [
@@ -24,8 +24,8 @@
     "/api/internal/v2/attribution/policy": {
       "get": {
         "operationId": "getAttributionPolicyV2",
-        "summary": "Discover the active attribution policy version and household currency",
-        "description": "Returns only the active contract, engine, policy version metadata, and the authoritative household currency from Tyrion policy configuration. Policy rules, kids, account defaults, merchant rules, and household identity are never exposed. Missing or invalid policy currency fails closed as policy_unavailable. This route uses the same fixed private authority, bearer credential, and service actor as batch attribution.",
+        "summary": "Discover active attribution policy metadata and subjects",
+        "description": "Returns the active contract, engine, policy version metadata, authoritative household currency, and up to 100 active attribution subjects from the same Tyrion policy snapshot. Each subject exposes only its stable kidId and configured display name. Inactive profiles, policy rules, account defaults, merchant rules, and household identity are never exposed. Missing or invalid policy state, or more than 100 active profiles, fails closed as policy_unavailable. This route uses the same fixed private authority, bearer credential, and service actor as batch attribution.",
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": {
@@ -164,6 +164,20 @@
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "AttributionSubjectV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kidId", "name"],
+      "properties": {
+        "kidId": { "$ref": "#/$defs/Identifier" },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "The configured displayName from Tyrion's authoritative active kid profile."
+        }
+      }
     },
     "Timestamp": {
       "type": "string",
@@ -498,7 +512,8 @@
         "engineVersion",
         "policyVersion",
         "policyUpdatedAt",
-        "householdCurrency"
+        "householdCurrency",
+        "subjects"
       ],
       "properties": {
         "contractVersion": { "const": "2.0" },
@@ -509,6 +524,12 @@
           "type": "string",
           "pattern": "^[A-Z]{3}$",
           "description": "The exact supported uppercase ISO 4217 currency configured on Tyrion's authoritative household policy."
+        },
+        "subjects": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/AttributionSubjectV2" },
+          "description": "All active attribution profiles from the same policy snapshot, in configured policy order. The array may be empty."
         }
       }
     },
