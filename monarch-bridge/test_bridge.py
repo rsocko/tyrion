@@ -126,7 +126,8 @@ async def test_transactions(client):
         assert "category" in tx
         assert "account" in tx
         assert set(tx) == {
-            "id", "date", "amount", "merchant", "category", "account",
+            "id", "date", "amount", "merchant", "businessContext",
+            "category", "account",
             "isPending", "isRecurring", "reviewStatus", "reviewAssignee",
             "notes", "tags", "tagReferences",
         }
@@ -669,6 +670,9 @@ async def test_openapi_json(client):
             ]
             == maximum
         )
+    transaction_schema = schema["components"]["schemas"]["Transaction"]["properties"]
+    assert transaction_schema["businessContext"]["anyOf"][0]["maxLength"] == 120
+    assert "businessEntity" not in transaction_schema
 
 
 def test_live_and_demo_normalizers_produce_identical_dtos():
@@ -678,6 +682,7 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
             "date": "2026-08-01",
             "amount": -12.5,
             "merchant": {"name": "Store"},
+            "businessEntity": {"id": "demo-entity", "name": "Store Holdings"},
             "category": {"id": "cat-1", "name": "Shopping"},
             "account": {"id": "acc-1", "displayName": "Checking"},
             "needsReview": False,
@@ -690,6 +695,7 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
                 "postedDate": "2026-08-01T08:00:00Z",
                 "amount": "-12.50",
                 "merchant": {"name": "Store"},
+                "businessEntity": {"id": "live-entity", "name": "Store Holdings"},
                 "category": {"id": "cat-1", "name": "Shopping"},
                 "account": {"id": "acc-1", "displayName": "Checking"},
                 "needsReview": False,
@@ -898,18 +904,18 @@ def test_pinned_client_inquiry_signatures_are_supported():
 @pytest.mark.parametrize(
     "business_entity",
     [
-        {
-            "id": "entity-1",
-            "name": "Conflicting Entity",
-            "__typename": "BusinessEntity",
-        },
-        {"id": "entity-1", "name": "Invented Store"},
         {"id": {"nested": "identifier"}, "name": ["not", "text"]},
         "malformed",
         None,
+        {},
+        {"id": "entity-1", "name": "   "},
+        {"id": "entity-1", "name": 123},
+        {"id": "entity-1", "name": "unsafe\u0000context"},
+        {"id": "entity-1", "name": "unsafe\u0080context"},
+        {"id": "entity-1", "name": "x" * 121},
     ],
 )
-def test_transaction_normalizer_ignores_untrusted_business_entity_metadata(
+def test_transaction_normalizer_omits_invalid_business_entity_metadata(
     business_entity,
 ):
     baseline = {
@@ -928,9 +934,45 @@ def test_transaction_normalizer_ignores_untrusted_business_entity_metadata(
 
     normalized = normalize_transaction(with_upstream_additions)
     assert normalized == normalize_transaction(baseline)
-    assert normalized.merchant.name == "Invented Store"
+    assert normalized.business_context is None
     assert "businessEntity" not in normalized.model_dump_json(by_alias=True)
     assert "entity-1" not in normalized.model_dump_json(by_alias=True)
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Conflicting Entity", "Conflicting Entity"),
+        ("Invented Store", "Invented Store"),
+        ("  Invented   Parent  ", "Invented Parent"),
+    ],
+)
+def test_transaction_normalizer_exposes_only_bounded_business_context_name(
+    name,
+    expected,
+):
+    transaction = normalize_transaction({
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -12.5,
+        "merchant": {"name": "Invented Store"},
+        "businessEntity": {
+            "id": "private-entity-identifier",
+            "name": name,
+            "__typename": "BusinessEntity",
+        },
+        "category": {"id": "cat-1", "name": "Shopping"},
+        "account": {"id": "acc-1", "displayName": "Checking"},
+        "needsReview": False,
+    })
+
+    serialized = transaction.model_dump_json(by_alias=True)
+    assert transaction.business_context == expected
+    assert transaction.merchant.name == "Invented Store"
+    assert '"businessContext":' in serialized
+    assert "businessEntity" not in serialized
+    assert "private-entity-identifier" not in serialized
+    assert "__typename" not in serialized
 
 
 def test_transaction_normalizer_does_not_expose_upstream_identity_additions():

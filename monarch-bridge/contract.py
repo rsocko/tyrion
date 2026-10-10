@@ -104,6 +104,7 @@ class Transaction(ApiModel):
     date: date
     amount: float
     merchant: Merchant
+    business_context: Optional[str] = Field(default=None, max_length=120)
     category: Optional[CategoryRef] = None
     account: AccountRef
     is_pending: bool = False
@@ -386,6 +387,23 @@ def _optional_text(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _optional_business_context(value: Any) -> Optional[str]:
+    if not isinstance(value, Mapping):
+        return None
+    name = value.get("name")
+    if not isinstance(name, str):
+        return None
+    if any(
+        ord(character) < 32 or 127 <= ord(character) <= 159
+        for character in name
+    ):
+        return None
+    normalized = " ".join(name.split())
+    if not normalized or len(normalized) > 120:
+        return None
+    return normalized
+
+
 def _optional_http_url(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -490,6 +508,7 @@ def normalize_transaction(raw: Any) -> Transaction:
             name=_text(_pick(merchant, "name", default=_pick(value, "merchantName")), "Unknown merchant"),
             logo_url=_optional_http_url(_pick(merchant, "logoUrl", "logo_url")),
         ),
+        business_context=_optional_business_context(value.get("businessEntity")),
         category=normalize_category_ref(_pick(value, "category", default={})),
         account=normalize_account_ref(_pick(value, "account", default={})),
         is_pending=bool(_pick(value, "isPending", "pending", default=False)),

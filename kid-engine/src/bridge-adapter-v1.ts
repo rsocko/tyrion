@@ -13,6 +13,7 @@ export interface NormalizedBridgeTransactionV1 {
   date: string;
   amount: number;
   merchant: { name: string; logoUrl: string | null };
+  businessContext?: string | null;
   category: { id: string; name: string } | null;
   account: { id: string; displayName: string; mask: string | null };
   isPending: boolean;
@@ -156,6 +157,10 @@ export function parseNormalizedBridgeTransactionV1(
           ? null
           : string(merchant.logoUrl, 'merchant.logoUrl', 1, 2_000),
     },
+    businessContext:
+      transaction.businessContext == null
+        ? null
+        : string(transaction.businessContext, 'businessContext', 1, 120),
     category,
     account: {
       id: string(account.id, 'account.id', 1, 256),

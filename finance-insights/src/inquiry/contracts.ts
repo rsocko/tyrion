@@ -205,6 +205,7 @@ export const transactionInquiryRecordSchema = z.strictObject({
   amountMinor: z.number().int().min(-100_000_000_000).max(100_000_000_000),
   currency: currencySchema,
   merchantName: displayTextSchema,
+  businessContext: displayTextSchema.nullable().optional(),
   categoryRef: sourceRefSchema.nullable(),
   categoryName: displayTextSchema.nullable(),
   accountRef: sourceRefSchema.nullable(),
