@@ -45,6 +45,7 @@ const financeRequire = createRequire(
 );
 const Database = financeRequire("better-sqlite3");
 const serviceToken = "synthetic-test-service-token-value";
+const owlReceiptToken = "synthetic-owl-receipt-token-value";
 const internalAttributionHost = "tyrion-operations-ui:3000";
 const policyActor = {
   actorId: "local-operator",
@@ -60,6 +61,8 @@ let fakeBridge;
 let fakeBridgeUrl;
 let fakeReattribution;
 let fakeReattributionUrl;
+let fakeOwl;
+let fakeOwlUrl;
 let uiProcess;
 let uiUrl;
 let standaloneRoot;
@@ -93,6 +96,10 @@ let bridgeTransactionTags = new Map();
 let expireNextPreview = false;
 let reattributionResponseMode = "normal";
 let activePolicy;
+let receiptSequence = 0;
+let owlReceiptRequests = 0;
+const syntheticReceipts = new Map();
+let receiptCreateOutcomeUnknown = false;
 
 function listen(server, port = 0) {
   return new Promise((resolve, reject) => {
@@ -139,6 +146,62 @@ before(async () => {
         hasBody: chunks.length > 0,
         body: Buffer.concat(chunks).toString("utf8"),
       });
+
+      if (request.url === "/receipts" && request.method === "POST") {
+        if (receiptCreateOutcomeUnknown) {
+          request.socket.destroy();
+          return;
+        }
+        const id = `private-receipt-${++receiptSequence}`;
+        const receipt = {
+          id,
+          source: "upload",
+          status: "processing",
+          createdAt: "2026-10-10T18:00:00.000Z",
+          linkedTransactionId: null,
+          attachments: [],
+        };
+        syntheticReceipts.set(id, receipt);
+        response.writeHead(201, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ contractVersion: "1.0", receipt }));
+        return;
+      }
+      const receiptUpload = /^\/receipts\/([^/]+)\/content$/.exec(request.url);
+      if (receiptUpload && request.method === "PUT") {
+        const id = decodeURIComponent(receiptUpload[1]);
+        const receipt = {
+          ...syntheticReceipts.get(id),
+          status: "matched",
+          linkedTransactionId: "private-transaction-invented",
+          attachments: [
+            {
+              id: "private-attachment-invented",
+              mediaType: request.headers["content-type"],
+              sizeBytes: Buffer.concat(chunks).byteLength,
+              downloadAvailable: true,
+            },
+          ],
+        };
+        syntheticReceipts.set(id, receipt);
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ contractVersion: "1.0", receipt }));
+        return;
+      }
+      const receiptRead = /^\/receipts\/([^/]+)$/.exec(request.url);
+      if (receiptRead && request.method === "GET") {
+        const receipt = syntheticReceipts.get(decodeURIComponent(receiptRead[1]));
+        response.writeHead(receipt ? 200 : 404, {
+          "Content-Type": "application/json",
+        });
+        response.end(
+          JSON.stringify(
+            receipt
+              ? { contractVersion: "1.0", receipt }
+              : { error: { code: "receipt_not_found", message: "Not found" } }
+          )
+        );
+        return;
+      }
 
       const responseMode =
         bridgePathResponseModes.get(request.url) ?? bridgeResponseMode;
@@ -426,6 +489,54 @@ before(async () => {
   const bridgeAddress = await listen(fakeBridge);
   fakeBridgeUrl = `http://127.0.0.1:${bridgeAddress.port}`;
 
+  fakeOwl = createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      if (
+        request.headers.authorization !==
+        ["Bearer", owlReceiptToken].join(" ")
+      ) {
+        response.writeHead(401, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ detail: { code: "unauthorized" } }));
+        return;
+      }
+      if (request.url === "/api/receipt-intake/v1/lookup") {
+        response.writeHead(404, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            detail: { code: "intake_not_found", message: "Not found" },
+          })
+        );
+        return;
+      }
+      owlReceiptRequests += 1;
+      const occurrence = request.headers["x-owl-source-occurrence"];
+      const channel = request.headers["x-owl-source-channel"];
+      const suffix = String(occurrence).slice(0, 12);
+      response.writeHead(202, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          schema_version: "1.0",
+          intake_ref: `intake_${suffix}`,
+          outcome: "new_canonical",
+          attempt_state: "accepted",
+          canonical_document_ref: `document_${suffix}`,
+          review_ref: null,
+          reason_codes: ["paperless_acknowledged"],
+          source_channel: channel,
+          source_occurrence_version:
+            request.headers["x-owl-source-occurrence-version"] ?? "1",
+          source_as_of: "2026-10-10T18:00:00Z",
+          retry_safe: true,
+          external_replica_eligible: channel !== "monarch_recovery",
+        })
+      );
+    });
+  });
+  const owlAddress = await listen(fakeOwl);
+  fakeOwlUrl = `http://127.0.0.1:${owlAddress.port}`;
+
   fakeReattribution = createServer((request, response) => {
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));
@@ -625,6 +736,10 @@ before(async () => {
       ...process.env,
       BRIDGE_URL: fakeBridgeUrl,
       BRIDGE_API_TOKEN: serviceToken,
+      OWL_RECEIPT_INTAKE_URL: fakeOwlUrl,
+      OWL_RECEIPT_INTAKE_API_TOKEN: owlReceiptToken,
+      TYRION_RECEIPT_IDENTITY_NAMESPACE:
+        "synthetic-receipt-identity-namespace-value",
       MISSION_CONTROL_RETURN_URL:
         "https://mission-control.example.invalid/finance/settings",
       MISSION_CONTROL_RETURN_ALLOWED_ORIGINS:
@@ -636,6 +751,9 @@ before(async () => {
       TYRION_FINANCE_INSIGHT_PROJECTION_REFRESH_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_ACTIONS_ENABLED: "true",
       TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "true",
+      TYRION_RECEIPT_EVIDENCE_READ_ENABLED: "true",
+      TYRION_RECEIPT_REPLICA_WRITE_ENABLED: "true",
+      TYRION_RECEIPT_RECOVERY_ENABLED: "false",
       TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
       TYRION_REATTRIBUTION_URL: fakeReattributionUrl,
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "true",
@@ -654,6 +772,9 @@ after(async () => {
   }
   if (fakeReattribution?.listening) {
     await close(fakeReattribution);
+  }
+  if (fakeOwl?.listening) {
+    await close(fakeOwl);
   }
   if (temporaryStateDirectory) {
     await rm(temporaryStateDirectory, {
@@ -1045,6 +1166,200 @@ test("finance insight runtime applies retention cleanup on startup", async () =>
     store.close();
   }
 });
+
+test("receipt evidence is private, Paperless-first, and idempotent", async () => {
+  const path = "/api/internal/v1/finance/receipt-evidence/occurrences";
+  const missing = await rawReceiptEvidenceFetch(
+    path,
+    "POST",
+    syntheticPdf(),
+    receiptEvidenceHeaders({ Authorization: undefined })
+  );
+  assert.equal(missing.status, 401);
+
+  const browser = await rawReceiptEvidenceFetch(
+    path,
+    "POST",
+    syntheticPdf(),
+    receiptEvidenceHeaders({ Origin: "https://example.invalid" })
+  );
+  assert.equal(browser.status, 403);
+
+  const beforeOwl = owlReceiptRequests;
+  const beforeCreates = receiptSequence;
+  const response = await rawReceiptEvidenceFetch(
+    path,
+    "POST",
+    syntheticPdf(),
+    receiptEvidenceHeaders()
+  );
+  assert.equal(response.status, 202);
+  const body = await response.json();
+  assert.equal(body.receiptContractVersion, "1.0");
+  assert.equal(body.intake.outcome, "new_canonical");
+  assert.equal(body.replicaLifecycle, "matched");
+  assert.equal(body.nativeEvidence.receiptState, "matched");
+  assert.equal(body.nativeEvidence.transactionRef.startsWith("transaction-v1_"), true);
+  assert.equal(JSON.stringify(body).includes("private-receipt"), false);
+  assert.equal(JSON.stringify(body).includes("private-transaction"), false);
+
+  const disabledRecovery = await rawReceiptEvidenceFetch(
+    `${path}/${body.intake.intake_ref}/reconcile`,
+    "POST",
+    undefined,
+    receiptEvidenceHeaders()
+  );
+  assert.equal(disabledRecovery.status, 503);
+  assert.equal(
+    (await disabledRecovery.json()).error.code,
+    "receipt_recovery_disabled"
+  );
+  assert.equal(owlReceiptRequests, beforeOwl + 1);
+  assert.equal(receiptSequence, beforeCreates + 1);
+
+  const replay = await rawReceiptEvidenceFetch(
+    path,
+    "POST",
+    syntheticPdf(),
+    receiptEvidenceHeaders()
+  );
+  assert.equal(replay.status, 202);
+  assert.deepEqual(await replay.json(), body);
+  assert.equal(owlReceiptRequests, beforeOwl + 1);
+  assert.equal(receiptSequence, beforeCreates + 1);
+
+  const read = await rawReceiptEvidenceFetch(
+    `${path}/${encodeURIComponent(body.intake.intake_ref)}`,
+    "GET",
+    undefined,
+    receiptEvidenceHeaders({ "Content-Type": undefined })
+  );
+  assert.equal(read.status, 200);
+  assert.deepEqual(await read.json(), body);
+});
+
+test("receipt evidence validates signatures and structurally blocks recovery loops", async () => {
+  const path = "/api/internal/v1/finance/receipt-evidence/occurrences";
+  const beforeOwl = owlReceiptRequests;
+  const invalid = await rawReceiptEvidenceFetch(
+    path,
+    "POST",
+    Buffer.from("not-a-pdf"),
+    receiptEvidenceHeaders({
+      "X-OWL-Source-Occurrence": "b".repeat(64),
+    })
+  );
+  assert.equal(invalid.status, 422);
+  assert.equal((await invalid.json()).error.code, "artifact_signature_mismatch");
+  assert.equal(owlReceiptRequests, beforeOwl);
+
+  const beforeCreates = receiptSequence;
+  const recovery = await rawReceiptEvidenceFetch(
+    path,
+    "POST",
+    syntheticPdf(),
+    receiptEvidenceHeaders({
+      "X-OWL-Source-Occurrence": "c".repeat(64),
+      "X-OWL-Source-Channel": "monarch_recovery",
+    })
+  );
+  assert.equal(recovery.status, 202);
+  const result = await recovery.json();
+  assert.equal(result.intake.external_replica_eligible, false);
+  assert.equal(result.replicaLifecycle, "not_applicable");
+  assert.equal(result.replicaRef, null);
+  assert.equal(receiptSequence, beforeCreates);
+});
+
+test("receipt evidence persists unknown create outcomes without blind recreation", async () => {
+  const path = "/api/internal/v1/finance/receipt-evidence/occurrences";
+  const headers = receiptEvidenceHeaders({
+    "X-OWL-Source-Occurrence": "d".repeat(64),
+  });
+  const attemptsBefore = receivedRequests.filter(
+    (request) => request.path === "/receipts" && request.method === "POST"
+  ).length;
+  receiptCreateOutcomeUnknown = true;
+  try {
+    const first = await rawReceiptEvidenceFetch(
+      path,
+      "POST",
+      syntheticPdf(),
+      headers
+    );
+    assert.equal(first.status, 202);
+    const firstBody = await first.json();
+    assert.equal(firstBody.replicaLifecycle, "review");
+    assert.equal(firstBody.replicaRef, null);
+    assert.equal(firstBody.reviewRequired, true);
+    assert.deepEqual(firstBody.reasonCodes, [
+      "paperless_acknowledged",
+      "monarch_create_outcome_unknown",
+    ]);
+
+    const replay = await rawReceiptEvidenceFetch(
+      path,
+      "POST",
+      syntheticPdf(),
+      headers
+    );
+    assert.equal(replay.status, 202);
+    assert.equal((await replay.json()).replicaLifecycle, "review");
+    const attemptsAfter = receivedRequests.filter(
+      (request) => request.path === "/receipts" && request.method === "POST"
+    ).length;
+    assert.equal(attemptsAfter, attemptsBefore + 1);
+  } finally {
+    receiptCreateOutcomeUnknown = false;
+  }
+});
+
+function receiptEvidenceHeaders(overrides = {}) {
+  return Object.fromEntries(
+    Object.entries({
+      Host: internalAttributionHost,
+      Authorization: ["Bearer", serviceToken].join(" "),
+      "Content-Type": "application/pdf",
+      "X-OWL-Source-Channel": "manual_upload",
+      "X-OWL-Source-Occurrence-Version": "1",
+      "X-OWL-Source-Occurrence": "a".repeat(64),
+      ...overrides,
+    }).filter(([, value]) => value !== undefined)
+  );
+}
+
+function syntheticPdf() {
+  return Buffer.from("%PDF-1.4\n% invented receipt\n%%EOF\n");
+}
+
+function rawReceiptEvidenceFetch(path, method, body, requestHeaders) {
+  const target = new URL(uiUrl);
+  return new Promise((resolvePromise, reject) => {
+    const request = httpRequest(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path,
+        method,
+        headers: requestHeaders,
+      },
+      (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolvePromise({
+            status: response.statusCode,
+            text: async () => text,
+            json: async () => JSON.parse(text),
+          });
+        });
+      }
+    );
+    request.on("error", reject);
+    request.end(body);
+  });
+}
 
 async function publishFinanceGeneration(publication) {
   const begin = await insightRequest("/source-generations", {
@@ -4318,6 +4633,27 @@ test("container and homelab contracts separate public connector and private attr
   assert.doesNotMatch(compose, /forwardauth|TYRION_POLICY_AUTH/i);
   assert.match(compose, /TYRION_POLICY_STORE_PATH: \/var\/lib\/tyrion-policy/);
   assert.match(compose, /BRIDGE_API_TOKEN: \$\{BRIDGE_API_TOKEN:/);
+  assert.match(
+    compose,
+    /OWL_RECEIPT_INTAKE_API_TOKEN: \$\{OWL_RECEIPT_INTAKE_API_TOKEN:-\}/
+  );
+  assert.match(
+    compose,
+    /TYRION_RECEIPT_IDENTITY_NAMESPACE: \$\{TYRION_RECEIPT_IDENTITY_NAMESPACE:-\}/
+  );
+  assert.match(
+    compose,
+    /TYRION_RECEIPT_EVIDENCE_READ_ENABLED: "\$\{TYRION_RECEIPT_EVIDENCE_READ_ENABLED:-false\}"/
+  );
+  assert.match(
+    compose,
+    /TYRION_RECEIPT_REPLICA_WRITE_ENABLED: "\$\{TYRION_RECEIPT_REPLICA_WRITE_ENABLED:-false\}"/
+  );
+  assert.match(
+    compose,
+    /TYRION_RECEIPT_RECOVERY_ENABLED: "\$\{TYRION_RECEIPT_RECOVERY_ENABLED:-false\}"/
+  );
+  assert.match(compose, /\/tmp:rw,noexec,nosuid,nodev,size=64m/);
   assert.match(
     compose,
     /!PathPrefix\(`\/api\/internal\/`\)/

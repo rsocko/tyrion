@@ -44,6 +44,10 @@
       "types": "./dist/reconciliation/index.d.ts",
       "import": "./dist/reconciliation/index.js"
     },
+    "./receipt": {
+      "types": "./dist/receipt/index.d.ts",
+      "import": "./dist/receipt/index.js"
+    },
     "./evidence": {
       "types": "./dist/evidence/index.d.ts",
       "import": "./dist/evidence/index.js"
@@ -72,6 +76,7 @@
   "scripts": {
     "build": "tsc",
     "generate:openapi": "npm run build && node scripts/generate-openapi.mjs",
+    "generate:receipt-openapi": "npm run build && node scripts/generate-receipt-openapi.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

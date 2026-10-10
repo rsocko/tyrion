@@ -35,12 +35,61 @@ runtime parsers in `finance-insights/src/reconciliation/`. It consumes only norm
 bill-derived inputs and normalized Bridge transactions; OWL retains document-extraction
 ownership.
 
-The phased receipt design is defined by
+The receipt design is defined by
 [`RECEIPT-RECONCILIATION-ARCHITECTURE.md`](./RECEIPT-RECONCILIATION-ARCHITECTURE.md).
-It reuses Bill Matching v1 identities and candidate semantics. Receipt list, upload,
-polling, attachment retrieval, and match mutations are not Bridge v1 or connector
-gateway operations until their private Monarch contracts complete controlled live
-validation and a separate versioned DTO is approved.
+Its independently versioned private orchestration schema is published as
+[`receipt-evidence-service-v1.openapi.json`](./receipt-evidence-service-v1.openapi.json).
+It reuses Bill Matching v1 identities and candidate semantics without changing that
+contract. Raw receipt list, upload, polling, attachment retrieval, and match routes
+remain private Bridge operations and are not connector-gateway operations.
+
+## Private receipt evidence service
+
+The fixed-authority route family
+`/api/internal/v1/finance/receipt-evidence` accepts only backend calls on
+`tyrion-operations-ui:3000`, rejects browser fetch metadata, and requires the existing
+server bearer credential. It is excluded from every Traefik public router.
+
+`POST /occurrences` accepts one raw PDF, JPEG, PNG, or TIFF plus the exact bounded
+`X-OWL-*` occurrence headers from OWL receipt intake v1. Tyrion streams the artifact
+to restricted temporary storage, validates its signature and SHA-256, submits it to
+OWL's protected canonical intake first, and creates one Monarch replica only when
+OWL returns an accepted canonical result with `external_replica_eligible=true`.
+TIFF and artifacts above the Bridge's 2 MiB receipt limit remain canonical in
+Paperless but return a reviewable `not_applicable` replica result.
+
+`GET /occurrences/{intakeRef}` returns the byte-free orchestration record.
+`POST /occurrences/{intakeRef}/reconcile` asks OWL to reconcile an unknown canonical
+upload and, when a private Monarch receipt identity is already known, performs one
+authoritative Bridge read. The operation additionally requires the independently
+default-off receipt recovery gate. It never creates a replacement receipt. Unknown create
+outcomes without a discoverable receipt remain review-gated with a bounded unknown
+outcome reason.
+
+Responses contain OWL's bounded intake result, a Tyrion opaque replica reference,
+lifecycle, optimistic revision, optional privacy-safe native match evidence, review
+state, freshness, and reason codes. They exclude document bytes, OCR, filenames,
+signed URLs, raw Paperless or Monarch identifiers, account data, credentials, and
+upstream payloads. OWL records returned lifecycle changes through its local
+`ReceiptIntakeService.record_external_replica` optimistic-revision boundary. The
+caller supplies `external_system="monarch"`, Tyrion's opaque `replicaRef`, the
+returned lifecycle, Tyrion's orchestration revision as `source_revision`, and the
+current OWL replica revision as `expected_revision`; the two revision sequences are
+independent.
+
+Before the first Monarch create call, Tyrion durably advances the orchestration to
+`review` with `monarch_create_reserved`. A process interruption or ambiguous create
+therefore cannot trigger blind recreation. Ambiguous create or upload results use
+OWL's supported `review` lifecycle with bounded `monarch_*_outcome_unknown` reason
+codes. Tyrion also persists `review` plus `monarch_upload_reserved` before starting
+the upload, so process interruption cannot publish an uncertain upload as final.
+Reconciliation changes the OWL intake result only through Tyrion's optimistic
+revision boundary.
+
+Bill Matching v1 remains the fallback when native Monarch evidence is not decisive.
+Callers submit the normalized bill fields to the existing
+`POST /api/connector/v1/bill-matches`; receipt orchestration does not add headers,
+weights, a second scorer, or payment-settlement state.
 
 ## Mission Control connector gateway
 
