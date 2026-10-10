@@ -25,6 +25,9 @@ a fixture. Bill matching does not add a live mutation.
   with MFA disabled; retained as a best-effort fallback
 - Live category mutation: **completed 2026-08-08** with explicit confirmation,
   read-back verification, and restoration verification
+- Controlled receipt create/upload/process/list/get/download/delete:
+  **completed 2026-10-10** with invented PNG content, stable sanitized output, and
+  verified cleanup; match/unmatch was not enabled
 - Repository policy: no credentials, cookies, session material, private financial
   records, raw upstream payloads, or machine-specific session paths
 
@@ -61,7 +64,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Merchant/payee write-back | Normalized 1-120 character input, unknown-field/control-character rejection, exact mutation-response verification, deterministic demo response, connector body allowlisting, and sanitized failures | Controlled live validation required with explicit confirmation, read-back, and restoration |
 | Transaction review | Pinned-client `needsReview`, `reviewStatus`, `needsReviewByUser`, household directory, `needs_review` filter, and `reviewed=True` mutation inspected; normalized status/assignee, strict mark-reviewed body, exact mutation verification, missing-capability failure, deterministic demo response, and connector allowlisting | Controlled live validation required on a dedicated needs-review transaction; do not run without accepting that the authoritative review action is not safely reversible |
-| Receipts and attachment retrieval | Isolated internal probe covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; nested linked transaction identity; bounded attachment metadata with signed URLs omitted from result shapes; capped pagination and exponential polling; strict malformed/oversized rejection; and streamed MIME/byte limits. The probe adds no public Bridge DTO or route. | Not run. Requires the separate receipt enable and mutation confirmation gates, a bridge-owned external session, invented PNG input in an OS temporary directory, verified cleanup, and sanitized one-code output. |
+| Receipts and attachment retrieval | Isolated internal probe covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; nested linked transaction identity; bounded attachment metadata with signed URLs omitted from result shapes; capped pagination and exponential polling; strict malformed/oversized rejection; and streamed MIME/byte limits. The probe adds no public Bridge DTO or route. | Create, invented PNG upload, processing, upload-source list/get correlation, attachment metadata, bounded download, and verified deletion completed 2026-10-10 with stable `receipt_probe_ok`, empty stderr, and no retained synthetic object. Match/unmatch, email ingestion, PDF, duplicate, pending-to-posted, and transaction-attachment behavior remain unvalidated. |
 | Kids tag projection | Stable kid-to-tag mapping; collision/deletion/rename handling; reassignment, shared purchase, parent expense, retry/idempotency, partial failure, unrelated-tag preservation, optimistic drift refusal, exact read-back, action replay recovery, and re-attribution convergence use invented deterministic state only | Controlled live tag-set validation requires `TYRION_TEST_TRANSACTION_ID`, a pre-created `TYRION_TEST_TAG_ID`, and the reversible mutation confirmation; the test restores and verifies the complete original tag set. Managed-tag creation is not performed live because the pinned client exposes no verified deletion contract |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB general response bounds; composed health with one 4 KiB `/auth/status` verification, explicit v1 shape/version validation, derived status/reachability, no auth-field leakage, and sanitized non-success failures; status/body/safe-header preservation for passthrough operations; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
@@ -229,10 +232,17 @@ Do not run it until the operator has reviewed the account-risk notice and is pre
 to remove a synthetic receipt manually if the stable
 `receipt_probe_cleanup_failed` code is returned.
 
-The following remain unknown until that controlled run:
+The first controlled create/upload/read/download/delete run completed on 2026-10-10
+with invented PNG content. It returned only `receipt_probe_ok`, emitted no stderr,
+correlated the opaque receipt through upload-source list and detail reads, retrieved
+one bounded attachment, and verified deletion in `finally`. Match/unmatch was
+deliberately disabled because that mutation was not authorized for the run.
 
-- Whether Monarch currently accepts PNG and PDF uploads, and the effective size and
-  page limits for each format.
+The following remain unknown:
+
+- Whether Monarch currently accepts PDF uploads, and the effective size and page
+  limits for PNG and PDF. The controlled run established acceptance only for the
+  generated PNG within the probe's 2 MiB safety bound.
 - Whether `originalAssetUrl` is public, cookie-authenticated, token-authenticated,
   signed, single-use, or time-limited; Tyrion does not persist or expose it.
 - Whether downloaded bytes are identical to uploaded bytes or transformed by the
@@ -243,14 +253,15 @@ The following remain unknown until that controlled run:
   receipt identities.
 - Whether a pending transaction's linked identity changes when it posts and how long
   receipt correlation remains stable.
-- Exact deletion behavior for processing, failed, matched, and unmatched receipts,
-  including whether attachment assets are deleted synchronously.
+- Exact deletion behavior for processing, failed, and matched receipts, including
+  whether attachment assets are deleted synchronously. The controlled run verified
+  deletion and absent read-back only for its completed unmatched synthetic receipt.
 - Whether transaction attachment retrieval uses the same URL lifetime,
   authentication, transformation, and deletion semantics as receipt attachments.
 
-Until live evidence resolves these items, this slice supports contract validation
-only. It does not establish production compatibility or authorize a Mission Control
-receipt workflow.
+This slice now establishes observed compatibility only for the completed controlled
+path above. It does not establish the remaining behaviors or authorize a production
+Mission Control receipt workflow.
 
 ## Contract refresh
 
