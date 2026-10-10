@@ -2626,7 +2626,7 @@ test("production route tree contains no broad finance pages", async () => {
   const configuration = await fetch(`${uiUrl}/configuration`);
   assert.equal(configuration.status, 200);
   const configurationHtml = await configuration.text();
-  assert.match(configurationHtml, /Household policy|Loading policy configuration/);
+  assert.match(configurationHtml, /Settings|Monarch connector/);
   assert.match(configurationHtml, /independent and unofficial/);
 
   for (const path of ["/settings", "/triage", "/kids", "/bills", "/chat", "/transactions"]) {
