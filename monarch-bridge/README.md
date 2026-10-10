@@ -311,13 +311,20 @@ when exactly one recent matched receipt has one bounded downloadable PDF attachm
 It lists the manual candidate, then directly preflights its linked transaction once
 through the same Bridge-owned pinned client with `redirect_posted=False`. A missing,
 pending, redirected/mismatched, malformed, or unavailable target stops before
-synthetic creation. The runner then reads and downloads the candidate without
-mutating it and retains the verified posted identity only in memory as the opaque
-target for an invented PNG receipt created under the OS temporary directory. It uses
-the protected routes for create, upload/capped poll, bounded download with exact MIME
-and byte comparison, explicit confirmed match, and normalized read-back. In `finally`,
-it internally unmatches and deletes every synthetic receipt through the same
-Bridge-owned client; no deletion route or DTO is added.
+synthetic creation. The runner reads and downloads the candidate, retains the verified
+posted identity only in memory, and creates an invented PNG receipt under the OS
+temporary directory. Immediately before the protected match call, it uses the same
+Bridge-owned internal adapter to unmatch only the manual candidate's relationship and
+authoritatively verifies that the candidate is unlinked. It then uses the protected
+route for the explicit confirmed synthetic match and normalized read-back.
+
+In `finally`, the runner internally unmatches and deletes every synthetic receipt
+first, then rematches the manual candidate to its exact original posted transaction
+and authoritatively verifies restoration under an independently reserved timeout.
+These steps are idempotent when an unmatch/rematch mutation succeeded despite an
+ambiguous failure or when the manual relationship is already restored. The runner
+never changes the manual receipt's metadata or content, never changes the transaction,
+and adds no public unmatch or deletion route or DTO.
 
 Discovery is capped at 50 receipts, uploads at 2 MiB, route JSON at 64 KiB, downloads
 at 2 MiB, adapter polling at eight attempts/120 seconds, and the complete run at 180
@@ -326,11 +333,22 @@ manual-inspection statuses. Do not redirect it or enable request/client logging.
 Each route failure names the scenario. Match HTTP failures include only an allowlisted
 HTTP status class and stable public Bridge error code; response text and unknown codes
 are discarded. `protected_receipt_route_cleanup_failed` takes precedence over every
-other result and requires stopping for manual inspection before retrying or restarting
-normal callers. A 2026-10-10 deployed run of the earlier runner passed list, detail,
-both downloads, create, and upload/poll, then failed at match with the old generic
-request code; cleanup passed. That is partial evidence only. The corrected full
-preflight/match/read-back smoke is **unrun**.
+other result when either synthetic cleanup or exact manual restoration is unconfirmed.
+The fixed `manual_unmatch` and `manual_restore` scenarios expose only safe status
+values. This stop requires manual inspection before retrying or restarting normal
+callers.
+
+The sanitized deployed result from 2026-10-10 passed list, exact posted-identity
+preflight, detail, both downloads, create, upload/poll, and cleanup. Match returned
+`protected_receipt_route_match_http_5xx_receipt_upstream_error`; read-back did not run.
+No synthetic receipt remained, and the Bridge and UI were restored. Because the
+manual receipt was still matched when the runner tried to match the synthetic receipt
+to the same transaction, the bounded root-cause hypothesis is Monarch's
+one-receipt-per-transaction constraint. The adapter matrix had already proved
+reversible unmatch/rematch and exact restoration of this same candidate. Neither the
+reference mutation signature nor the sanitized 5xx proves a stable upstream error
+classification, so the production route mapping is unchanged. The revised
+unmatch/match/read-back/restore flow remains **unrun**.
 
 For Dockhand, pull and verify the intended immutable Bridge image, then stop both
 `tyrion-operations-ui` and `tyrion-monarch-bridge`. Create one ephemeral one-shot
@@ -339,8 +357,9 @@ existing server-only environment, and existing outbound network; publish no port
 override only the command to `python route_receipt_smoke.py`. Add the two route-smoke
 gate values above as ephemeral environment entries, run once, and retain only the
 safe scenario/result codes shown by Dockhand. Remove the one-shot container after a
-successful cleanup, start the Bridge, wait for health, and then start the UI. If the
-cleanup stop code appears, leave normal callers stopped and inspect Monarch manually.
+successful cleanup and confirmed `manual_restore`, start the Bridge, wait for health,
+and then start the UI. If the cleanup stop code appears or manual restoration is not
+`passed`, leave normal callers stopped and inspect Monarch manually.
 
 See [`docs/MONARCH-INTEGRATION-VALIDATION.md`](../docs/MONARCH-INTEGRATION-VALIDATION.md)
 for the evidence matrix, limitations, and safe refresh procedure.

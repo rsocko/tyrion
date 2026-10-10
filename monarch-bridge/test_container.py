@@ -80,6 +80,7 @@ def test_operator_docs_define_safe_protected_receipt_route_smoke():
         assert "route_receipt_smoke.py" in document
         assert "I_ACCEPT_PROTECTED_RECEIPT_ROUTE_SMOKE_MUTATIONS" in document
         assert "protected_receipt_route_cleanup_failed" in document
+        assert "manual_restore" in document
         assert "Dockhand" in document
         assert "unrun" in document
     assert "adds no browser proxy" in architecture

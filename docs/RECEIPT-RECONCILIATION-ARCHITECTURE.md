@@ -422,14 +422,27 @@ restore or remove synthetic state in `finally`.
 
 Post-deployment validation also includes the separately gated protected-route smoke.
 It runs the deployed FastAPI app in one process with the Bridge-owned client and
-unchanged session lease, keeps the bounded manual matched candidate read-only, uses
-its posted transaction only as an opaque synthetic-match target after an exact
-non-redirecting posted-transaction preflight, and reserves direct adapter access for
-that preflight and `finally` cleanup. It adds no browser proxy, connector-gateway
-allowlist, or deletion endpoint. Normal Bridge/UI callers must be stopped while the
-one-shot owns the lease. A 2026-10-10 deployed attempt passed through synthetic
-download and cleaned up, but stopped at match under the earlier generic failure code.
-That is partial evidence only; the corrected full match/read-back smoke remains unrun.
+unchanged session lease, uses the bounded manual candidate's posted transaction only
+as an opaque synthetic-match target after an exact non-redirecting posted-transaction
+preflight, and reserves direct adapter access for that preflight plus reversible
+relationship cleanup. Immediately before the protected synthetic match, it temporarily
+unmatches only the manual relationship and verifies authoritative unlinked read-back.
+In `finally`, it unmatches/deletes all synthetic receipts first, then exactly rematches
+and verifies the original manual relationship under an independently reserved timeout.
+It changes no manual metadata, content, or transaction and adds no browser proxy,
+connector-gateway allowlist, public unmatch, or deletion endpoint. Normal Bridge/UI
+callers must be stopped while the one-shot owns the lease and remain stopped whenever
+cleanup or restoration is unconfirmed.
+
+The sanitized 2026-10-10 deployed attempt passed through synthetic download and
+cleanup, but match returned
+`protected_receipt_route_match_http_5xx_receipt_upstream_error` and read-back did not
+run. The manual receipt remained linked to the target, making an occupied-target,
+one-receipt-per-transaction constraint the bounded hypothesis. The earlier matrix
+proved reversible unmatch/rematch and exact restoration of the candidate, but neither
+the sanitized 5xx nor the reference mutation signature establishes a stable public
+error classification. That is partial evidence only; the revised
+unmatch/match/read-back/restore smoke remains unrun.
 
 ## Non-goals
 
