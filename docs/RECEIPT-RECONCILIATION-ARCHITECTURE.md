@@ -434,15 +434,32 @@ connector-gateway allowlist, public unmatch, or deletion endpoint. Normal Bridge
 callers must be stopped while the one-shot owns the lease and remain stopped whenever
 cleanup or restoration is unconfirmed.
 
-The sanitized 2026-10-10 deployed attempt passed through synthetic download and
+The first sanitized 2026-10-10 deployed attempt passed through synthetic download and
 cleanup, but match returned
 `protected_receipt_route_match_http_5xx_receipt_upstream_error` and read-back did not
 run. The manual receipt remained linked to the target, making an occupied-target,
-one-receipt-per-transaction constraint the bounded hypothesis. The earlier matrix
-proved reversible unmatch/rematch and exact restoration of the candidate, but neither
-the sanitized 5xx nor the reference mutation signature establishes a stable public
-error classification. That is partial evidence only; the revised
-unmatch/match/read-back/restore smoke remains unrun.
+one-receipt-per-transaction constraint the bounded historical hypothesis. The earlier
+matrix proved reversible unmatch/rematch and exact restoration of the candidate, but
+neither the sanitized 5xx nor the reference mutation signature establishes a stable
+public error classification.
+
+After PR #282, the corrected controlled deployed run recorded
+`protected_receipt_route_smoke_ok`. List, exact posted-target preflight, detail,
+existing download, create, upload-poll, synthetic download, manual unmatch, match,
+read-back, cleanup, and exact manual restore all passed. It used the documented
+immutable deployed Bridge image and existing restricted session volume and lease,
+with normal Bridge/UI callers stopped and a fresh process-only route token. No port
+was published and no output was redirected. The synthetic receipt was removed and
+the original manual relationship was authoritatively restored before normal services
+were restarted. Post-run verification found the Bridge and operations UI running and
+no one-shot receipt-route container remaining; it records container state, not a
+separate Bridge health response.
+
+This proves the bounded protected route and reversible relationship lifecycle worked
+end to end with the tested deployed image and pinned client. It does not prove email
+ingestion, pending-to-posted identity, untested size/page or asset-lifetime behavior,
+broader concurrency, stable classification of unobserved failures, or readiness of a
+production Mission Control receipt workflow.
 
 ## Non-goals
 
