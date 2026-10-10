@@ -4,6 +4,7 @@ import {
   ATTRIBUTION_BATCH_PROVENANCE,
   AttributionBatchError,
   AttributionBatchService,
+  AttributionPolicyService,
 } from '../src/attribution-batch-v1.js';
 import { ContractValidationError, type PolicyActorV1 } from '../src/contracts/v1.js';
 import {
@@ -17,6 +18,35 @@ const actor: PolicyActorV1 = {
   householdId: policyFixture.householdId,
   permissions: ['attribution:batch'],
 };
+
+describe('v1 attribution policy discovery service', () => {
+  it('returns the authoritative household policy currency', async () => {
+    const service = new AttributionPolicyService(repository());
+
+    await expect(service.discover(actor)).resolves.toEqual({
+      contractVersion: '2.0',
+      engineVersion: '2.0.0',
+      policyVersion: policyFixture.policyVersion,
+      policyUpdatedAt: policyFixture.updatedAt,
+      householdCurrency: policyFixture.currency,
+    });
+  });
+
+  it('fails closed when household currency is missing or invalid', async () => {
+    for (const currency of [undefined, 'usd', 'ZZZ']) {
+      const invalidPolicy = {
+        ...policyFixture,
+        currency,
+      } as unknown as typeof policyFixture;
+      const service = new AttributionPolicyService(repository(invalidPolicy));
+
+      await expect(service.discover(actor)).rejects.toMatchObject({
+        code: 'policy_unavailable',
+        message: 'Household attribution policy is unavailable',
+      });
+    }
+  });
+});
 
 describe('v1 batch attribution service', () => {
   it('evaluates a bounded batch against one policy version', async () => {

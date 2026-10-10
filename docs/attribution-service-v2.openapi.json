@@ -24,8 +24,8 @@
     "/api/internal/v2/attribution/policy": {
       "get": {
         "operationId": "getAttributionPolicyV2",
-        "summary": "Discover the active attribution policy version",
-        "description": "Returns only the active contract, engine, and policy version metadata. Policy rules, kids, account defaults, merchant rules, and household identity are never exposed. This route uses the same fixed private authority, bearer credential, and service actor as batch attribution.",
+        "summary": "Discover the active attribution policy version and household currency",
+        "description": "Returns only the active contract, engine, policy version metadata, and the authoritative household currency from Tyrion policy configuration. Policy rules, kids, account defaults, merchant rules, and household identity are never exposed. Missing or invalid policy currency fails closed as policy_unavailable. This route uses the same fixed private authority, bearer credential, and service actor as batch attribution.",
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": {
@@ -330,13 +330,19 @@
         "contractVersion",
         "engineVersion",
         "policyVersion",
-        "policyUpdatedAt"
+        "policyUpdatedAt",
+        "householdCurrency"
       ],
       "properties": {
         "contractVersion": { "const": "2.0" },
         "engineVersion": { "const": "2.0.0" },
         "policyVersion": { "type": "integer", "minimum": 1 },
-        "policyUpdatedAt": { "$ref": "#/$defs/Timestamp" }
+        "policyUpdatedAt": { "$ref": "#/$defs/Timestamp" },
+        "householdCurrency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$",
+          "description": "The exact supported uppercase ISO 4217 currency configured on Tyrion's authoritative household policy."
+        }
       }
     },
     "AttributionActionRequestV2": {

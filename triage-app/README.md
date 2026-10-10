@@ -179,8 +179,9 @@ existing server-only
 derives the fixed `mission-control-finance-manager` actor, `homelab-household` scope,
 and least-privilege `attribution:batch` and `attribution:actions` permissions
 internally; request headers and bodies cannot override them. Policy discovery
-returns only contract, engine, positive policy version, and update timestamp with
-`Cache-Control: no-store`; absent policy fails closed with `policy_unavailable`.
+returns only contract, engine, positive policy version, update timestamp, and the
+authoritative Tyrion household currency with `Cache-Control: no-store`; absent policy
+or missing/invalid currency fails closed with `policy_unavailable`.
 Mission Control fetches it once per operation and sends that exact version as
 `expectedPolicyVersion` on each batch. Mission Control must
 treat any non-200 response as an
