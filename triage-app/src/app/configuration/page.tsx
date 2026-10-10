@@ -55,6 +55,50 @@ const SIGNALS: Array<{ value: ExceptionSignalV1; label: string }> = [
   { value: "attribution-review", label: "Attribution needs review" },
   { value: "connector-degraded", label: "Connector degraded" },
 ];
+const POLICY_SECTIONS = [
+  {
+    id: "policy-basics",
+    title: "Policy basics",
+    description: "Timezone and currency",
+    keywords: "locale money currency timezone",
+  },
+  {
+    id: "kid-profiles",
+    title: "Kid profiles",
+    description: "Household policy subjects",
+    keywords: "children names active profile",
+  },
+  {
+    id: "account-defaults",
+    title: "Account defaults",
+    description: "Fallback attribution",
+    keywords: "monarch account child shared rule",
+  },
+  {
+    id: "merchant-attribution",
+    title: "Merchant attribution",
+    description: "Deterministic matching rules",
+    keywords: "pattern confidence rule",
+  },
+  {
+    id: "household-limits",
+    title: "Household limits",
+    description: "Daily, weekly, and monthly amounts",
+    keywords: "spending amount currency threshold",
+  },
+  {
+    id: "exception-policy",
+    title: "Exceptions & notifications",
+    description: "Review and alert eligibility",
+    keywords: "warning signals mission control likely attribution",
+  },
+  {
+    id: "reattribution",
+    title: "Controlled re-attribution",
+    description: "Preview and apply bounded changes",
+    keywords: "opaque record references preview impact",
+  },
+] as const;
 
 export default function ConfigurationPage() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -81,6 +125,7 @@ export default function ConfigurationPage() {
   const [sourceRefs, setSourceRefs] = useState("");
   const [preview, setPreview] = useState<ReattributionPreviewSummary | null>(null);
   const [applyConfirmed, setApplyConfirmed] = useState(false);
+  const [settingsQuery, setSettingsQuery] = useState("");
   const alertRef = useRef<HTMLDivElement>(null);
 
   const refreshCatalog = useCallback(async () => {
@@ -361,12 +406,19 @@ export default function ConfigurationPage() {
         missing: true,
       })),
   ];
+  const normalizedQuery = settingsQuery.trim().toLocaleLowerCase();
+  const visibleSections = POLICY_SECTIONS.filter((section) =>
+    `${section.title} ${section.description} ${section.keywords}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery)
+  );
+  const sectionIsVisible = (id: (typeof POLICY_SECTIONS)[number]["id"]) =>
+    visibleSections.some((section) => section.id === id);
 
   return (
     <ConfigurationShell>
-      <header className="mb-8 border-b border-hair pb-6">
+      <header className="mb-8 border-b border-hair pb-7">
         <div className="flex flex-wrap items-center gap-3">
-          <p className="eyebrow">Tyrion configuration</p>
           <span className="rounded border border-border bg-elevated px-2 py-1 text-xs text-muted">
             {mode} mode
           </span>
@@ -414,7 +466,33 @@ export default function ConfigurationPage() {
         </p>
       )}
 
-      <Section title="Policy basics" description="Timezone and currency apply to every configured limit.">
+      <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start lg:gap-8">
+        <SettingsNavigation
+          query={settingsQuery}
+          onQueryChange={setSettingsQuery}
+          visibleSections={visibleSections}
+        />
+        <div className="min-w-0">
+      {visibleSections.length === 0 && (
+        <div className="rounded-xl border border-dashed border-border bg-elevated p-8 text-center">
+          <h2 className="font-serif text-2xl font-semibold text-parchment">
+            No settings found
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">
+            Try a broader term, or clear the search to browse every policy section.
+          </p>
+          <button
+            className="button-secondary mt-5"
+            type="button"
+            onClick={() => setSettingsQuery("")}
+          >
+            Clear search
+          </button>
+        </div>
+      )}
+
+      {sectionIsVisible("policy-basics") && (
+      <Section id="policy-basics" title="Policy basics" description="Timezone and currency apply to every configured limit.">
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             id="timezone"
@@ -443,8 +521,10 @@ export default function ConfigurationPage() {
           />
         </div>
       </Section>
+      )}
 
-      <Section title="Kid profiles" description="Profiles are household policy subjects, not copies of Monarch users.">
+      {sectionIsVisible("kid-profiles") && (
+      <Section id="kid-profiles" title="Kid profiles" description="Profiles are household policy subjects, not copies of Monarch users.">
         <div className="space-y-3">
           {draft.kids.length === 0 && <EmptyText>No kid profiles configured.</EmptyText>}
           {draft.kids.map((kid) => (
@@ -511,8 +591,11 @@ export default function ConfigurationPage() {
           </button>
         </form>
       </Section>
+      )}
 
+      {sectionIsVisible("account-defaults") && (
       <Section
+        id="account-defaults"
         title="Account defaults"
         description="Choose the fallback attribution for each Monarch account. Manual decisions and specific merchant rules always take precedence."
       >
@@ -612,8 +695,10 @@ export default function ConfigurationPage() {
           </div>
         )}
       </Section>
+      )}
 
-      <Section title="Merchant attribution" description="Merchant patterns are deterministic household rules; likely matches remain reviewable.">
+      {sectionIsVisible("merchant-attribution") && (
+      <Section id="merchant-attribution" title="Merchant attribution" description="Merchant patterns are deterministic household rules; likely matches remain reviewable.">
         <div className="space-y-3">
           {draft.merchantRules.length === 0 && <EmptyText>No merchant rules configured.</EmptyText>}
           {draft.merchantRules.map((rule) => (
@@ -649,8 +734,10 @@ export default function ConfigurationPage() {
           </button>
         </form>
       </Section>
+      )}
 
-      <Section title="Household limits" description="Set optional daily, weekly, and monthly amounts for each active profile.">
+      {sectionIsVisible("household-limits") && (
+      <Section id="household-limits" title="Household limits" description="Set optional daily, weekly, and monthly amounts for each active profile.">
         {draft.kids.length === 0 ? (
           <EmptyText>Add a profile before configuring limits.</EmptyText>
         ) : (
@@ -682,8 +769,10 @@ export default function ConfigurationPage() {
           </div>
         )}
       </Section>
+      )}
 
-      <Section title="Exception and notification policy" description="Choose which deterministic exception signals Tyrion makes eligible for Mission Control notification.">
+      {sectionIsVisible("exception-policy") && (
+      <Section id="exception-policy" title="Exception and notification policy" description="Choose which deterministic exception signals Tyrion makes eligible for Mission Control notification.">
         <TextField
           id="warning-percent"
           label="Limit warning percentage"
@@ -749,6 +838,7 @@ export default function ConfigurationPage() {
           </div>
         </fieldset>
       </Section>
+      )}
 
       <div className="sticky bottom-3 z-10 mb-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gold-deep bg-elevated p-4 shadow-xl">
         <p className="text-sm text-muted">
@@ -759,7 +849,8 @@ export default function ConfigurationPage() {
         </button>
       </div>
 
-      <Section title="Controlled re-attribution" description="Preview an explicit bounded set of opaque record references. Only deterministic impact counts leave the server.">
+      {sectionIsVisible("reattribution") && (
+      <Section id="reattribution" title="Controlled re-attribution" description="Preview an explicit bounded set of opaque record references. Only deterministic impact counts leave the server.">
         {!policy ? (
           <EmptyText>Save the policy before creating a preview.</EmptyText>
         ) : (
@@ -822,43 +913,165 @@ export default function ConfigurationPage() {
           </div>
         )}
       </Section>
+      )}
+        </div>
+      </div>
     </ConfigurationShell>
+  );
+}
+
+function SettingsNavigation({
+  query,
+  onQueryChange,
+  visibleSections,
+}: {
+  query: string;
+  onQueryChange: (value: string) => void;
+  visibleSections: (typeof POLICY_SECTIONS)[number][];
+}) {
+  return (
+    <aside className="mb-7 lg:sticky lg:top-6 lg:mb-0" aria-label="Policy settings">
+      <label className="block" htmlFor="settings-search">
+        <span className="text-sm font-medium text-parchment">Find a setting</span>
+        <span className="relative mt-2 block">
+          <SearchIcon />
+          <input
+            id="settings-search"
+            className="input w-full pl-10 pr-10"
+            type="search"
+            placeholder="Search policy settings"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+          {query && (
+            <button
+              className="absolute right-1 top-1 flex size-8 items-center justify-center rounded text-muted hover:bg-card hover:text-parchment"
+              type="button"
+              onClick={() => onQueryChange("")}
+              aria-label="Clear settings search"
+            >
+              <CloseIcon />
+            </button>
+          )}
+        </span>
+      </label>
+      <p className="mt-3 text-xs text-dim" aria-live="polite">
+        {visibleSections.length} of {POLICY_SECTIONS.length} sections
+      </p>
+      <nav className="mt-4 overflow-x-auto lg:overflow-visible" aria-label="Policy sections">
+        <ul className="flex min-w-max gap-2 pb-2 lg:min-w-0 lg:flex-col lg:gap-1 lg:pb-0">
+          {visibleSections.map((section) => (
+            <li key={section.id}>
+              <a
+                className="group block rounded-lg border border-border bg-elevated px-3 py-2.5 transition-colors hover:border-gold-deep hover:bg-card lg:border-transparent lg:bg-transparent"
+                href={`#${section.id}`}
+              >
+                <span className="block text-sm font-medium text-parchment group-hover:text-gold-hi">
+                  {section.title}
+                </span>
+                <span className="mt-0.5 hidden text-xs leading-5 text-muted lg:block">
+                  {section.description}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </aside>
+  );
+}
+
+function TyrionMark() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-11 shrink-0 transition-transform duration-300 ease-out group-hover:-rotate-3 group-hover:scale-105"
+      viewBox="0 0 64 64"
+    >
+      <defs>
+        <radialGradient id="tyrion-coin" cx="34%" cy="28%" r="80%">
+          <stop offset="0" stopColor="#f0d585" />
+          <stop offset=".55" stopColor="#c9a24a" />
+          <stop offset="1" stopColor="#8a6b27" />
+        </radialGradient>
+      </defs>
+      <rect width="64" height="64" rx="15" fill="#15171c" />
+      <circle cx="32" cy="32" r="24" fill="url(#tyrion-coin)" stroke="#6b5220" strokeWidth="2" />
+      <circle cx="32" cy="32" r="18.5" fill="none" stroke="#6f541f" opacity=".75" />
+      <path d="M20 18.5h24v7h-7.8v21h-8.4v-21H20z" fill="#302307" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" className="pointer-events-none absolute left-3 top-3 size-4 text-muted" viewBox="0 0 24 24" fill="none">
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg aria-hidden="true" className="size-4" viewBox="0 0 24 24" fill="none">
+      <path d="m7 7 10 10M17 7 7 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   );
 }
 
 function ConfigurationShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="mx-auto min-h-screen max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
-      <nav aria-label="Tyrion operations" className="mb-6 flex gap-4 text-sm">
-        <Link className="text-muted underline hover:text-parchment" href="/">
-          Monarch connector
-        </Link>
-        <Link aria-current="page" className="text-gold-hi underline" href="/configuration">
-          Household policy
-        </Link>
-      </nav>
-      {children}
-      <footer className="mt-8 border-t border-hair pt-4 text-xs leading-5 text-dim">
+    <div className="min-h-screen">
+      <header className="border-b border-hair bg-elevated">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:flex-nowrap sm:gap-6 sm:px-6 lg:px-8">
+          <Link className="group flex items-center gap-3" href="/" aria-label="Tyrion home">
+            <TyrionMark />
+            <span>
+              <span className="block font-serif text-xl font-bold leading-none text-parchment">
+                Tyrion
+              </span>
+              <span className="mt-1 block text-[0.68rem] uppercase tracking-[0.14em] text-muted">
+                Household finance
+              </span>
+            </span>
+          </Link>
+          <nav aria-label="Tyrion operations" className="flex w-full items-center gap-1 rounded-lg bg-background p-1 text-sm sm:w-auto">
+            <Link className="flex-1 rounded-md px-3 py-2 text-center text-muted hover:bg-card hover:text-parchment sm:flex-none" href="/">
+              Connector
+            </Link>
+            <Link aria-current="page" className="flex-1 rounded-md bg-card px-3 py-2 text-center font-medium text-gold-hi sm:flex-none" href="/configuration">
+              Policy
+            </Link>
+          </nav>
+        </div>
+      </header>
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+        {children}
+      </main>
+      <footer className="mx-auto max-w-7xl border-t border-hair px-4 py-6 text-xs leading-5 text-dim sm:px-6 lg:px-8">
         The Monarch connector is independent and unofficial. It is not affiliated with,
         endorsed by, sponsored by, or supported by Monarch Money, Inc.
       </footer>
-    </main>
+    </div>
   );
 }
 
 function Section({
+  id,
   title,
   description,
   children,
 }: {
+  id: string;
   title: string;
   description: string;
   children: React.ReactNode;
 }) {
-  const id = `section-${title.toLowerCase().replaceAll(" ", "-")}`;
+  const headingId = `${id}-heading`;
   return (
-    <section aria-labelledby={id} className="mb-6 rounded-xl border border-border bg-card p-5 sm:p-6">
-      <h2 id={id} className="text-xl font-semibold">{title}</h2>
+    <section id={id} aria-labelledby={headingId} className="mb-6 scroll-mt-6 rounded-xl border border-border bg-card p-5 sm:p-6">
+      <h2 id={headingId} className="font-serif text-2xl font-semibold text-parchment">{title}</h2>
       <p className="mb-5 mt-1 text-sm leading-6 text-muted">{description}</p>
       {children}
     </section>
