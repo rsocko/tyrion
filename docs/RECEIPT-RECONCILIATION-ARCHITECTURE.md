@@ -420,6 +420,15 @@ Live tests remain excluded from normal CI, use process-only credentials, create 
 invented temporary artifacts outside repositories, emit stable result codes, and
 restore or remove synthetic state in `finally`.
 
+Post-deployment validation also includes the separately gated protected-route smoke.
+It runs the deployed FastAPI app in one process with the Bridge-owned client and
+unchanged session lease, keeps the bounded manual matched candidate read-only, uses
+its posted transaction only as an opaque synthetic-match target, and reserves direct
+adapter access for `finally` cleanup. It adds no browser proxy, connector-gateway
+allowlist, or deletion endpoint. Normal Bridge/UI callers must be stopped while the
+one-shot owns the lease. This protected-route smoke is implemented but remains unrun;
+the 2026-10-10 evidence applies only to the earlier adapter-level matrix.
+
 ## Non-goals
 
 - Making Monarch a second canonical receipt archive.

@@ -283,6 +283,54 @@ raw failures. Do not run the probe in CI or redirect its output. Treat
 `receipt_attachment_cleanup_failed` as a manual-inspection stop condition.
 Deterministic coverage runs with `python -m pytest test_receipt_probe.py`.
 
+The adapter evidence above does not prove the protected FastAPI receipt routes. A
+second one-shot runner exercises the deployed Bridge code through an in-process ASGI
+client while retaining one Bridge-owned Monarch client for every route and cleanup
+operation:
+
+```powershell
+$env:BRIDGE_LOAD_DOTENV = "false"
+$env:TYRION_LIVE_ROUTE_RECEIPT_SMOKE = "1"
+$env:TYRION_LIVE_ROUTE_RECEIPT_MUTATION_CONFIRM = "I_ACCEPT_PROTECTED_RECEIPT_ROUTE_SMOKE_MUTATIONS"
+python route_receipt_smoke.py
+```
+
+`SESSION_FILE` and `BRIDGE_API_TOKEN` must already be present in the operator process;
+do not enter, print, persist, or copy their values for the run. Stop the normal Bridge
+and operations UI before invoking the runner because the Bridge session lease permits
+one owning process. The runner does not weaken or bypass that lease. It acquires the
+Bridge-owned client once, calls the protected routes from a non-loopback ASGI client
+with the service token, and uses that exact client for internal cleanup.
+
+The route smoke examines at most two 25-item uploaded-receipt pages and proceeds only
+when exactly one recent matched receipt has one bounded downloadable PDF attachment.
+It lists, reads, and downloads that manual candidate without mutating it. Its already
+posted linked transaction is retained only in memory as the opaque target for an
+invented PNG receipt created under the OS temporary directory. The runner then uses
+the protected routes for create, upload/capped poll, bounded download with exact MIME
+and byte comparison, explicit confirmed match, and normalized read-back. In `finally`,
+it internally unmatches and deletes every synthetic receipt through the same
+Bridge-owned client; no deletion route or DTO is added.
+
+Discovery is capped at 50 receipts, uploads at 2 MiB, route JSON at 64 KiB, downloads
+at 2 MiB, adapter polling at eight attempts/120 seconds, and the complete run at 180
+seconds. Output contains only the fixed result shape and safe `passed`, `not_run`, or
+manual-inspection statuses. Do not redirect it or enable request/client logging.
+`protected_receipt_route_cleanup_failed` takes precedence over every other result and
+requires stopping for manual inspection before retrying or restarting normal callers.
+The controlled-live route smoke is **unrun** and has not yet produced deployed
+evidence.
+
+For Dockhand, pull and verify the intended immutable Bridge image, then stop both
+`tyrion-operations-ui` and `tyrion-monarch-bridge`. Create one ephemeral one-shot
+container from that exact Bridge image with the existing restricted session volume,
+existing server-only environment, and existing outbound network; publish no port and
+override only the command to `python route_receipt_smoke.py`. Add the two route-smoke
+gate values above as ephemeral environment entries, run once, and retain only the
+safe scenario/result codes shown by Dockhand. Remove the one-shot container after a
+successful cleanup, start the Bridge, wait for health, and then start the UI. If the
+cleanup stop code appears, leave normal callers stopped and inspect Monarch manually.
+
 See [`docs/MONARCH-INTEGRATION-VALIDATION.md`](../docs/MONARCH-INTEGRATION-VALIDATION.md)
 for the evidence matrix, limitations, and safe refresh procedure.
 

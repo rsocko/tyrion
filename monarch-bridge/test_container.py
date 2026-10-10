@@ -65,7 +65,25 @@ def test_image_contains_internal_receipt_probe_runtime():
     )
 
     assert "monarch-bridge/live_receipt_probe.py" in probe_copy
+    assert "monarch-bridge/route_receipt_smoke.py" in probe_copy
     assert probe_copy[-1] == "/app/"
+
+
+def test_operator_docs_define_safe_protected_receipt_route_smoke():
+    readme = read_repository_file("monarch-bridge/README.md")
+    validation = read_repository_file("docs/MONARCH-INTEGRATION-VALIDATION.md")
+    architecture = read_repository_file(
+        "docs/RECEIPT-RECONCILIATION-ARCHITECTURE.md"
+    )
+
+    for document in (readme, validation):
+        assert "route_receipt_smoke.py" in document
+        assert "I_ACCEPT_PROTECTED_RECEIPT_ROUTE_SMOKE_MUTATIONS" in document
+        assert "protected_receipt_route_cleanup_failed" in document
+        assert "Dockhand" in document
+        assert "unrun" in document
+    assert "adds no browser proxy" in architecture
+    assert "remains unrun" in architecture
 
 
 def test_image_runs_non_root_with_external_session_storage():
