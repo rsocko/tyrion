@@ -125,6 +125,133 @@ describe('v1 deterministic attribution', () => {
     });
   });
 
+  it('lets an account-scoped parent/shared rule override a global kid rule', () => {
+    const policy: PolicySnapshotV1 = {
+      ...policyFixture,
+      merchantRules: [
+        policyFixture.merchantRules[0],
+        {
+          id: 'rule-shared-account-override',
+          outcome: 'parent-shared',
+          kidId: null,
+          pattern: 'SYNTHETIC SHOP',
+          businessEntityPattern: null,
+          scope: 'accounts',
+          accountRefs: ['bridge-account-shared'],
+          confidence: 'definite',
+          enabled: true,
+        },
+      ],
+    };
+    const result = attributeTransactionV1(inputFixture, policy, { evaluatedAt });
+    expect(result).toMatchObject({
+      status: 'unassigned',
+      kidId: null,
+      confidence: 'definite',
+      method: 'merchant-rule',
+      review: { status: 'not-required', reasons: [] },
+      provenance: { ruleIds: ['rule-shared-account-override'] },
+    });
+  });
+
+  it('supports an account-scoped rule that always routes a merchant to review', () => {
+    const policy: PolicySnapshotV1 = {
+      ...policyFixture,
+      merchantRules: [
+        {
+          id: 'rule-review-account-override',
+          outcome: 'review',
+          kidId: null,
+          pattern: 'SYNTHETIC SHOP',
+          businessEntityPattern: null,
+          scope: 'accounts',
+          accountRefs: ['bridge-account-shared'],
+          confidence: 'definite',
+          enabled: true,
+        },
+      ],
+    };
+    const result = attributeTransactionV1(inputFixture, policy, { evaluatedAt });
+    expect(result).toMatchObject({
+      status: 'pending',
+      kidId: null,
+      method: 'merchant-rule',
+      confidence: 'definite',
+      review: { status: 'pending', reasons: ['merchant-rule-review'] },
+    });
+  });
+
+  it('keeps same-specificity override disagreements reviewable', () => {
+    const policy: PolicySnapshotV1 = {
+      ...policyFixture,
+      merchantRules: [
+        {
+          id: 'rule-account-kid',
+          outcome: 'kid',
+          kidId: 'kid-alpha',
+          pattern: 'SYNTHETIC SHOP',
+          businessEntityPattern: null,
+          scope: 'accounts',
+          accountRefs: ['bridge-account-shared'],
+          confidence: 'definite',
+          enabled: true,
+        },
+        {
+          id: 'rule-account-parent',
+          outcome: 'parent-shared',
+          kidId: null,
+          pattern: 'SYNTHETIC SHOP',
+          businessEntityPattern: null,
+          scope: 'accounts',
+          accountRefs: ['bridge-account-shared'],
+          confidence: 'definite',
+          enabled: true,
+        },
+      ],
+    };
+    const result = attributeTransactionV1(inputFixture, policy, { evaluatedAt });
+    expect(result).toMatchObject({
+      status: 'pending',
+      kidId: null,
+      review: { reasons: ['merchant-rule-conflict'] },
+      provenance: {
+        ruleIds: ['rule-account-kid', 'rule-account-parent'],
+      },
+    });
+  });
+
+  it('uses an optional business-entity pattern as an additional discriminator', () => {
+    const entityRule = {
+      ...policyFixture.merchantRules[0],
+      businessEntityPattern: 'HOLDINGS NORTH',
+    };
+    const policy: PolicySnapshotV1 = {
+      ...policyFixture,
+      merchantRules: [entityRule],
+    };
+    const withoutEntity = attributeTransactionV1(inputFixture, policy, {
+      evaluatedAt,
+    });
+    expect(withoutEntity.review.reasons).toEqual(['no-match']);
+
+    const withEntity = attributeTransactionV1(
+      {
+        ...inputFixture,
+        transaction: {
+          ...inputFixture.transaction,
+          businessEntityName: 'Synthetic Holdings North LLC',
+        },
+      },
+      policy,
+      { evaluatedAt }
+    );
+    expect(withEntity).toMatchObject({
+      kidId: 'kid-beta',
+      method: 'merchant-rule',
+      provenance: { ruleIds: ['rule-merchant-beta'] },
+    });
+  });
+
   it('uses history then no-match for a rule-based account', () => {
     const policy: PolicySnapshotV1 = {
       ...policyFixture,

@@ -155,6 +155,76 @@ describe('durable file policy repository', () => {
     ).toBe(30);
   });
 
+  it('persists specialized merchant-rule audit records', async () => {
+    const directory = await temporaryDirectory();
+    const path = resolve(directory, 'policies.json');
+    const repository = new FilePolicyRepository(path);
+    await repository.save(policyFixture, null, {
+      contractVersion: '2.0',
+      eventId: 'audit-event-created',
+      householdId: policyFixture.householdId,
+      actorId: writer.actorId,
+      action: 'policy-created',
+      previousPolicyVersion: null,
+      policyVersion: 1,
+      occurredAt: policyFixture.updatedAt,
+    });
+
+    const updatedAt = '2026-08-08T14:00:00.000Z';
+    const createdRule = {
+      ...policyFixture.merchantRules[0],
+      id: 'rule-merchant-created',
+      pattern: 'INVENTED MARKET',
+    };
+    await repository.save(
+      {
+        ...policyFixture,
+        policyVersion: 2,
+        updatedAt,
+        merchantRules: [...policyFixture.merchantRules, createdRule],
+      },
+      1,
+      {
+        contractVersion: '2.0',
+        eventId: 'audit-event-merchant-rule',
+        householdId: policyFixture.householdId,
+        actorId: writer.actorId,
+        action: 'merchant-rule-created',
+        previousPolicyVersion: 1,
+        policyVersion: 2,
+        occurredAt: updatedAt,
+      }
+    );
+
+    expect(await repository.listAudit(policyFixture.householdId)).toMatchObject([
+      { action: 'policy-created', policyVersion: 1 },
+      { action: 'merchant-rule-created', policyVersion: 2 },
+    ]);
+
+    const invalidUpdatedAt = '2026-08-08T15:00:00.000Z';
+    await expect(
+      repository.save(
+        {
+          ...policyFixture,
+          policyVersion: 3,
+          updatedAt: invalidUpdatedAt,
+          merchantRules: [...policyFixture.merchantRules, createdRule],
+        },
+        2,
+        {
+          contractVersion: '2.0',
+          eventId: 'audit-event-invalid-merchant-rule',
+          householdId: policyFixture.householdId,
+          actorId: writer.actorId,
+          action: 'merchant-rule-created',
+          previousPolicyVersion: 2,
+          policyVersion: 3,
+          occurredAt: invalidUpdatedAt,
+        }
+      )
+    ).rejects.toBeInstanceOf(PolicyStoreCorruptError);
+  });
+
   it('atomically adopts a sole legacy policy into the canonical household', async () => {
     const directory = await temporaryDirectory();
     const path = resolve(directory, 'policies.json');

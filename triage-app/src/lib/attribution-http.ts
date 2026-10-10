@@ -4,6 +4,7 @@ import {
   AttributionActionError,
   AttributionEvaluationError,
   ContractValidationError,
+  MerchantRuleCreationError,
   PolicyAuthorizationError,
   PolicyStoreBusyError,
   PolicyStoreCapacityError,
@@ -119,7 +120,13 @@ export function attributionJson(value: unknown, status = 200) {
   });
 }
 
-export function handleAttributionError(error: unknown) {
+export function handleAttributionError(
+  error: unknown,
+  fallback: { code: string; message: string } = {
+    code: "attribution_operation_failed",
+    message: "Attribution operation failed",
+  }
+) {
   if (
     error instanceof AttributionRequestError ||
     error instanceof AttributionAuthError
@@ -152,6 +159,18 @@ export function handleAttributionError(error: unknown) {
               error.code === "action_not_available"
             ? 409
             : 503;
+    return jsonError(status, error.code, error.message);
+  }
+  if (error instanceof MerchantRuleCreationError) {
+    const status =
+      error.code === "policy_version_conflict" ||
+      error.code === "merchant_rule_idempotency_conflict"
+        ? 409
+        : error.code === "merchant_rule_confirmation_required" ||
+            error.code === "merchant_rule_confirmation_expired" ||
+            error.code === "merchant_rule_account_not_found"
+          ? 422
+          : 503;
     return jsonError(status, error.code, error.message);
   }
   if (error instanceof TagProjectionError) {
@@ -203,8 +222,8 @@ export function handleAttributionError(error: unknown) {
   }
   return jsonError(
     500,
-    "attribution_operation_failed",
-    "Attribution operation failed"
+    fallback.code,
+    fallback.message
   );
 }
 

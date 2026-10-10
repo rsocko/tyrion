@@ -29,6 +29,7 @@ export interface AttributionBatchItemV1 {
   sourceRef: string;
   occurredOn: string;
   merchantName: string;
+  businessEntityName: string | null;
   accountRef: string;
   observedAt: string;
   existingManualDecision: AttributionBatchManualDecisionV1 | null;
@@ -235,14 +236,19 @@ function parseBatchItem(
   _index: number,
   actor: PolicyActorV1
 ): AttributionBatchItemV1 {
-  const item = strictObject(value, [
-    'sourceRef',
-    'occurredOn',
-    'merchantName',
-    'accountRef',
-    'observedAt',
-    'existingManualDecision',
-  ]);
+  const raw = plainObject(value);
+  const item = strictObject(
+    value,
+    [
+      'sourceRef',
+      'occurredOn',
+      'merchantName',
+      ...('businessEntityName' in raw ? ['businessEntityName'] : []),
+      'accountRef',
+      'observedAt',
+      'existingManualDecision',
+    ]
+  );
   if (
     typeof item.sourceRef !== 'string' ||
     item.sourceRef !== item.sourceRef.trim()
@@ -274,6 +280,8 @@ function parseBatchItem(
     },
     transaction: {
       merchantName: item.merchantName,
+      businessEntityName:
+        'businessEntityName' in item ? item.businessEntityName : null,
       accountRef: item.accountRef,
       occurredOn: item.occurredOn,
     },
@@ -284,6 +292,7 @@ function parseBatchItem(
     sourceRef: parsed.source.recordRef,
     occurredOn: parsed.transaction.occurredOn,
     merchantName: parsed.transaction.merchantName,
+    businessEntityName: parsed.transaction.businessEntityName,
     accountRef: parsed.transaction.accountRef,
     observedAt: parsed.source.observedAt,
     existingManualDecision:
@@ -311,6 +320,7 @@ function toAttributionInput(
     },
     transaction: {
       merchantName: item.merchantName,
+      businessEntityName: item.businessEntityName,
       accountRef: item.accountRef,
       occurredOn: item.occurredOn,
     },
@@ -354,10 +364,7 @@ function strictObject(
   value: unknown,
   keys: readonly string[]
 ): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    invalid('request values must be objects');
-  }
-  const record = value as Record<string, unknown>;
+  const record = plainObject(value);
   const allowed = new Set(keys);
   if (
     Object.keys(record).some((key) => !allowed.has(key)) ||
@@ -366,6 +373,13 @@ function strictObject(
     invalid('request has missing or unexpected fields');
   }
   return record;
+}
+
+function plainObject(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    invalid('request values must be objects');
+  }
+  return value as Record<string, unknown>;
 }
 
 function positiveInteger(value: unknown, field: string): number {

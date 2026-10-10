@@ -182,11 +182,49 @@ describe('merchant rule suggestion v1', () => {
       contractVersion: '1.0',
       suggestion: {
         kind: 'merchant',
+        outcome: 'kid',
         merchantPattern: 'INVENTED MARKET',
+        businessEntityPattern: null,
+        scope: 'global',
+        accountRefs: [],
         kidId: 'kid-invented',
         confidence: 'likely',
         requiresConfirmation: true,
       },
+    });
+  });
+
+  it('prefills account and business-entity context when explicitly supplied', () => {
+    expect(
+      suggestMerchantRuleV1({
+        contractVersion: '1.0',
+        merchantName: 'Invented Market',
+        businessEntityName: 'Invented Holdings',
+        accountRef: 'account-invented',
+        scope: 'accounts',
+        kidId: 'kid-invented',
+        suggestReusableRule: true,
+      }).suggestion
+    ).toMatchObject({
+      businessEntityPattern: 'INVENTED HOLDINGS',
+      scope: 'accounts',
+      accountRefs: ['account-invented'],
+    });
+  });
+
+  it('accepts optional business-entity context for a global suggestion', () => {
+    expect(
+      suggestMerchantRuleV1({
+        contractVersion: '1.0',
+        merchantName: 'Invented Market',
+        businessEntityName: 'Invented Holdings',
+        kidId: 'kid-invented',
+        suggestReusableRule: true,
+      }).suggestion
+    ).toMatchObject({
+      businessEntityPattern: 'INVENTED HOLDINGS',
+      scope: 'global',
+      accountRefs: [],
     });
   });
 });

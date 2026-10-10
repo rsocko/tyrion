@@ -14,6 +14,7 @@ import {
   parseAttributionJson,
   readAttributionBody,
 } from "@/lib/attribution-http";
+import { getPolicyRuntime } from "@/lib/policy-runtime";
 
 export type QuickReviewOperation = "rank" | "research" | "rule-suggestion";
 
@@ -22,7 +23,7 @@ export async function handleQuickReviewRequest(
   operation: string
 ) {
   try {
-    resolveAttributionServiceActor(request);
+    const actor = resolveAttributionServiceActor(request);
     const body = parseAttributionJson(await readAttributionBody(request));
     const response =
       operation === "rank"
@@ -30,7 +31,12 @@ export async function handleQuickReviewRequest(
         : operation === "research"
           ? prepareVendorResearchV1(body)
           : operation === "rule-suggestion"
-            ? suggestMerchantRuleV1(body)
+            ? {
+                ...suggestMerchantRuleV1(body),
+                policyVersion: (
+                  await getPolicyRuntime().attributionPolicyService.discover(actor)
+                ).policyVersion,
+              }
             : null;
     if (response === null) {
       return jsonError(

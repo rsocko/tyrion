@@ -14,6 +14,8 @@ import type {
   ExceptionSignalV1,
   KidProfileV1,
   LimitPeriodV1,
+  MerchantRuleOutcomeV1,
+  MerchantRuleScopeV1,
   PolicyDraftV1,
   PolicySnapshotV1,
 } from "@rsocko/tyrion-kid-engine/contracts/v2";
@@ -120,6 +122,12 @@ export default function ConfigurationPage() {
   const [newKidName, setNewKidName] = useState("");
   const [newMerchantKid, setNewMerchantKid] = useState("");
   const [newMerchantPattern, setNewMerchantPattern] = useState("");
+  const [newMerchantBusinessEntity, setNewMerchantBusinessEntity] = useState("");
+  const [newMerchantOutcome, setNewMerchantOutcome] =
+    useState<MerchantRuleOutcomeV1>("kid");
+  const [newMerchantScope, setNewMerchantScope] =
+    useState<MerchantRuleScopeV1>("accounts");
+  const [newMerchantAccounts, setNewMerchantAccounts] = useState<string[]>([]);
   const [newMerchantConfidence, setNewMerchantConfidence] =
     useState<RuleConfidence>("likely");
   const [sourceRefs, setSourceRefs] = useState("");
@@ -159,6 +167,7 @@ export default function ConfigurationPage() {
       setDraft(result.draft);
       setCapabilities(result.capabilities);
       setNewMerchantKid(result.draft.kids[0]?.id ?? "");
+      setNewMerchantAccounts([]);
       setPreview(null);
       setApplyConfirmed(false);
       setLoadState("ready");
@@ -229,7 +238,9 @@ export default function ConfigurationPage() {
           ? { ...accountDefault, mode: "rule-based", kidId: null }
           : accountDefault
       ),
-      merchantRules: draft.merchantRules.filter((rule) => rule.kidId !== kidId),
+      merchantRules: draft.merchantRules.filter(
+        (rule) => rule.outcome !== "kid" || rule.kidId !== kidId
+      ),
       limits: draft.limits.filter((limit) => limit.kidId !== kidId),
     });
   };
@@ -259,21 +270,43 @@ export default function ConfigurationPage() {
 
   const addMerchantRule = (event: FormEvent) => {
     event.preventDefault();
-    if (!draft || !newMerchantKid || !newMerchantPattern.trim()) return;
+    if (
+      !draft ||
+      !newMerchantPattern.trim() ||
+      (newMerchantOutcome === "kid" && !newMerchantKid) ||
+      (newMerchantScope === "accounts" && newMerchantAccounts.length === 0)
+    ) {
+      return;
+    }
     replaceDraft({
       ...draft,
       merchantRules: [
         ...draft.merchantRules,
         {
           id: `rule-merchant-${crypto.randomUUID()}`,
-          kidId: newMerchantKid,
+          outcome: newMerchantOutcome,
+          kidId: newMerchantOutcome === "kid" ? newMerchantKid : null,
           pattern: newMerchantPattern.trim(),
+          businessEntityPattern:
+            newMerchantBusinessEntity.trim() || null,
+          scope: newMerchantScope,
+          accountRefs:
+            newMerchantScope === "accounts" ? newMerchantAccounts : [],
           confidence: newMerchantConfidence,
           enabled: true,
         },
       ],
     });
     setNewMerchantPattern("");
+    setNewMerchantBusinessEntity("");
+  };
+
+  const toggleMerchantAccount = (accountRef: string, selected: boolean) => {
+    setNewMerchantAccounts((current) =>
+      selected
+        ? Array.from(new Set([...current, accountRef]))
+        : current.filter((item) => item !== accountRef)
+    );
   };
 
   const setLimit = (
@@ -698,14 +731,27 @@ export default function ConfigurationPage() {
       )}
 
       {sectionIsVisible("merchant-attribution") && (
-      <Section id="merchant-attribution" title="Merchant attribution" description="Merchant patterns are deterministic household rules; likely matches remain reviewable.">
+      <Section id="merchant-attribution" title="Merchant attribution" description="Combine merchant, business entity, and account context to create deterministic household attribution rules.">
+        <div className="mb-5 rounded-lg bg-background p-4 text-sm leading-6 text-muted">
+          <p className="font-medium text-parchment">How overrides work</p>
+          <p className="mt-1">
+            Account-scoped rules override global rules for the same transaction.
+            Equally specific rules that disagree are sent to review instead of choosing
+            silently. Manual transaction decisions always remain highest priority.
+          </p>
+        </div>
         <div className="space-y-3">
-          {draft.merchantRules.length === 0 && <EmptyText>No merchant rules configured.</EmptyText>}
+          {draft.merchantRules.length === 0 && (
+            <EmptyText>
+              No merchant rules yet. Add an account-scoped rule for the safest starting
+              point, or choose all accounts when the merchant is consistently attributable.
+            </EmptyText>
+          )}
           {draft.merchantRules.map((rule) => (
             <RuleRow
               key={rule.id}
-              title={`${kidName(draft, rule.kidId)} · ${rule.pattern}`}
-              detail={`${rule.confidence} confidence`}
+              title={`${merchantOutcomeLabel(rule.outcome, rule.kidId, draft)} · ${rule.pattern}`}
+              detail={merchantRuleDescription(rule, accounts)}
               enabled={rule.enabled}
               disabled={disabled}
               onToggle={(enabled) =>
@@ -725,13 +771,129 @@ export default function ConfigurationPage() {
             />
           ))}
         </div>
-        <form onSubmit={addMerchantRule} className="mt-4 grid gap-3 sm:grid-cols-2">
-          <SelectField id="merchant-kid" label="Profile" value={newMerchantKid} disabled={disabled} onChange={setNewMerchantKid} options={draft.kids.map((kid) => ({ value: kid.id, label: kid.displayName }))} />
-          <SelectField id="merchant-confidence" label="Confidence" value={newMerchantConfidence} disabled={disabled} onChange={(value) => setNewMerchantConfidence(readConfidence(value))} options={[{ value: "definite", label: "Definite" }, { value: "likely", label: "Likely" }]} />
-          <TextField id="merchant-pattern" label="Merchant pattern" value={newMerchantPattern} disabled={disabled} onChange={setNewMerchantPattern} />
-          <button className="button-secondary self-end" type="submit" disabled={disabled || !newMerchantKid || newMerchantPattern.trim().length < 2}>
-            Add merchant rule
-          </button>
+        <form onSubmit={addMerchantRule} className="mt-5 grid gap-4 sm:grid-cols-2">
+          <SelectField
+            id="merchant-outcome"
+            label="When the rule matches"
+            value={newMerchantOutcome}
+            disabled={disabled}
+            onChange={(value) => setNewMerchantOutcome(readMerchantOutcome(value))}
+            options={[
+              { value: "kid", label: "Attribute to a profile" },
+              { value: "parent-shared", label: "Classify as parent/shared" },
+              { value: "review", label: "Leave unassigned for review" },
+            ]}
+          />
+          {newMerchantOutcome === "kid" ? (
+            <SelectField
+              id="merchant-kid"
+              label="Profile"
+              value={newMerchantKid}
+              disabled={disabled}
+              onChange={setNewMerchantKid}
+              options={draft.kids
+                .filter((kid) => kid.active)
+                .map((kid) => ({ value: kid.id, label: kid.displayName }))}
+            />
+          ) : (
+            <div className="hidden sm:block" aria-hidden="true" />
+          )}
+          <TextField
+            id="merchant-pattern"
+            label="Merchant name contains"
+            value={newMerchantPattern}
+            disabled={disabled}
+            maxLength={160}
+            onChange={setNewMerchantPattern}
+          />
+          <div>
+            <TextField
+              id="merchant-business-entity"
+              label="Business entity contains (optional)"
+              value={newMerchantBusinessEntity}
+              disabled={disabled}
+              maxLength={160}
+              onChange={setNewMerchantBusinessEntity}
+            />
+            <p className="mt-2 text-xs leading-5 text-muted">
+              Use this only when Monarch supplies a stable business-entity label that
+              distinguishes otherwise similar merchant names.
+            </p>
+          </div>
+          <SelectField
+            id="merchant-scope"
+            label="Applies to"
+            value={newMerchantScope}
+            disabled={disabled}
+            onChange={(value) => setNewMerchantScope(readMerchantScope(value))}
+            options={[
+              { value: "accounts", label: "Selected accounts" },
+              { value: "global", label: "All accounts" },
+            ]}
+          />
+          <SelectField
+            id="merchant-confidence"
+            label="Confidence"
+            value={newMerchantConfidence}
+            disabled={disabled}
+            onChange={(value) => setNewMerchantConfidence(readConfidence(value))}
+            options={[
+              { value: "definite", label: "Definite — apply automatically" },
+              { value: "likely", label: "Likely — follow review policy" },
+            ]}
+          />
+          {newMerchantScope === "accounts" && (
+            <fieldset className="sm:col-span-2">
+              <legend className="text-sm text-muted">Accounts</legend>
+              {catalogState === "ready" && accounts.length > 0 ? (
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {accounts
+                    .filter((account) => account.isActive)
+                    .map((account) => (
+                      <label
+                        key={account.accountRef}
+                        className="flex min-h-11 items-center gap-3 rounded-md bg-elevated px-3 py-2 text-sm text-parchment"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={newMerchantAccounts.includes(account.accountRef)}
+                          disabled={disabled}
+                          onChange={(event) =>
+                            toggleMerchantAccount(
+                              account.accountRef,
+                              event.target.checked
+                            )
+                          }
+                        />
+                        <span>
+                          {account.displayName}
+                          {account.maskHint ? ` · ${account.maskHint}` : ""}
+                        </span>
+                      </label>
+                    ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-muted">
+                  Accounts must be available before adding an account-scoped rule.
+                </p>
+              )}
+            </fieldset>
+          )}
+          <div className="sm:col-span-2">
+            <button
+              className="button-secondary"
+              type="submit"
+              disabled={
+                disabled ||
+                newMerchantPattern.trim().length < 2 ||
+                (newMerchantOutcome === "kid" && !newMerchantKid) ||
+                (newMerchantScope === "accounts" &&
+                  newMerchantAccounts.length === 0)
+              }
+            >
+              Add merchant rule
+            </button>
+          </div>
         </form>
       </Section>
       )}
@@ -1196,6 +1358,36 @@ function kidName(draft: PolicyDraftV1, kidId: string): string {
   return draft.kids.find((kid) => kid.id === kidId)?.displayName ?? "Unknown profile";
 }
 
+function merchantOutcomeLabel(
+  outcome: MerchantRuleOutcomeV1,
+  kidId: string | null,
+  draft: PolicyDraftV1
+): string {
+  if (outcome === "parent-shared") return "Parent/shared";
+  if (outcome === "review") return "Review required";
+  return kidId ? kidName(draft, kidId) : "Unknown profile";
+}
+
+function merchantRuleDescription(
+  rule: PolicyDraftV1["merchantRules"][number],
+  accounts: AccountCatalogItem[]
+): string {
+  const scope =
+    rule.scope === "global"
+      ? "All accounts"
+      : rule.accountRefs
+          .map(
+            (accountRef) =>
+              accounts.find((account) => account.accountRef === accountRef)
+                ?.displayName ?? "Unavailable account"
+          )
+          .join(", ");
+  const entity = rule.businessEntityPattern
+    ? ` · business entity contains ${rule.businessEntityPattern}`
+    : "";
+  return `${scope}${entity} · ${capitalize(rule.confidence)} confidence`;
+}
+
 function accountDefaultDescription(
   value: string,
   draft: PolicyDraftV1
@@ -1216,6 +1408,14 @@ function capitalize(value: string): string {
 
 function readConfidence(value: string): RuleConfidence {
   return value === "definite" ? "definite" : "likely";
+}
+
+function readMerchantOutcome(value: string): MerchantRuleOutcomeV1 {
+  return value === "parent-shared" || value === "review" ? value : "kid";
+}
+
+function readMerchantScope(value: string): MerchantRuleScopeV1 {
+  return value === "global" ? "global" : "accounts";
 }
 
 function toApiError(value: unknown): PolicyApiError {

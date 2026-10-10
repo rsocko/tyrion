@@ -412,6 +412,7 @@ filters.
       "date": "2026-08-07",
       "amount": -59.99,
       "merchant": { "name": "Store", "logoUrl": null },
+      "businessContext": "Store Holdings",
       "category": { "id": "cat-shopping", "name": "Shopping" },
       "account": { "id": "acc-1", "displayName": "Checking", "mask": "1234" },
       "isPending": false,
@@ -430,7 +431,10 @@ filters.
 }
 ```
 
-`category` is nullable. `merchant.logoUrl`, `account.mask`, and `notes` are nullable.
+`category` is nullable. `merchant.logoUrl`, `businessContext`, `account.mask`, and
+`notes` are nullable. `businessContext` is only the normalized bounded display
+label supplied by Monarch. Business-entity identifiers, type metadata, and raw
+upstream objects are never exposed.
 The existing `tags` display-name array remains for v1 compatibility.
 `tagReferences` is the additive stable identity used for reference joins and tag
 filters. It is empty when a transaction has no tags.

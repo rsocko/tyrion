@@ -120,6 +120,42 @@
           "503": { "$ref": "#/$defs/UnavailableResponse" }
         }
       }
+    },
+    "/api/internal/v2/attribution/rules": {
+      "post": {
+        "operationId": "createMerchantAttributionRuleV2",
+        "summary": "Create one explicitly confirmed merchant attribution rule",
+        "description": "Creates one enabled rule under an optimistic policy-version fence. The body idempotency key derives a stable rule ID. Exact retries replay; changed reuse and stale new writes conflict. Confirmation must be fresh.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/$defs/MerchantRuleCreationRequestV2" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The rule was created or an exact prior result was replayed.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/$defs/MerchantRuleCreationResponseV2" }
+              }
+            }
+          },
+          "400": { "$ref": "#/$defs/InvalidRequestResponse" },
+          "401": { "$ref": "#/$defs/AuthResponse" },
+          "403": { "$ref": "#/$defs/ForbiddenResponse" },
+          "404": { "$ref": "#/$defs/RouteResponse" },
+          "409": { "$ref": "#/$defs/ConflictResponse" },
+          "413": { "$ref": "#/$defs/SizeResponse" },
+          "415": { "$ref": "#/$defs/MediaTypeResponse" },
+          "422": { "$ref": "#/$defs/ActionValidationResponse" },
+          "500": { "$ref": "#/$defs/OperationFailureResponse" },
+          "503": { "$ref": "#/$defs/UnavailableResponse" }
+        }
+      }
     }
   },
   "$defs": {
@@ -200,6 +236,12 @@
           "minLength": 1,
           "maxLength": 160
         },
+        "businessEntityName": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Optional normalized business-entity display label; never an upstream identifier or raw object."
+        },
         "accountRef": {
           "$ref": "#/$defs/AccountRef"
         },
@@ -229,6 +271,130 @@
           "maxItems": 100,
           "items": { "$ref": "#/$defs/AttributionBatchItemV2" }
         }
+      }
+    },
+    "MerchantRuleDraftV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "kidId",
+        "pattern",
+        "businessEntityPattern",
+        "scope",
+        "accountRefs",
+        "confidence"
+      ],
+      "properties": {
+        "outcome": { "enum": ["kid", "parent-shared", "review"] },
+        "kidId": {
+          "oneOf": [
+            { "$ref": "#/$defs/Identifier" },
+            { "type": "null" }
+          ],
+          "description": "Required only for kid outcome; null otherwise."
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "businessEntityPattern": {
+          "type": ["string", "null"],
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "scope": { "enum": ["global", "accounts"] },
+        "accountRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/AccountRef" },
+          "description": "Empty for global scope; 1-32 references for accounts scope."
+        },
+        "confidence": { "enum": ["definite", "likely"] }
+      }
+    },
+    "MerchantRuleV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outcome",
+        "kidId",
+        "pattern",
+        "businessEntityPattern",
+        "scope",
+        "accountRefs",
+        "confidence",
+        "enabled"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/Identifier" },
+        "outcome": { "enum": ["kid", "parent-shared", "review"] },
+        "kidId": {
+          "oneOf": [
+            { "$ref": "#/$defs/Identifier" },
+            { "type": "null" }
+          ]
+        },
+        "pattern": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "businessEntityPattern": {
+          "type": ["string", "null"],
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "scope": { "enum": ["global", "accounts"] },
+        "accountRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/AccountRef" }
+        },
+        "confidence": { "enum": ["definite", "likely"] },
+        "enabled": { "const": true }
+      }
+    },
+    "MerchantRuleCreationRequestV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "expectedPolicyVersion",
+        "idempotencyKey",
+        "confirmation",
+        "rule"
+      ],
+      "properties": {
+        "contractVersion": { "const": "2.0" },
+        "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "confirmation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["confirmed", "confirmedAt"],
+          "properties": {
+            "confirmed": { "const": true },
+            "confirmedAt": { "$ref": "#/$defs/Timestamp" }
+          }
+        },
+        "rule": { "$ref": "#/$defs/MerchantRuleDraftV2" }
+      }
+    },
+    "MerchantRuleCreationResponseV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "outcome", "policyVersion", "rule"],
+      "properties": {
+        "contractVersion": { "const": "2.0" },
+        "outcome": { "enum": ["created", "replayed"] },
+        "policyVersion": { "type": "integer", "minimum": 1 },
+        "rule": { "$ref": "#/$defs/MerchantRuleV2" }
       }
     },
     "AttributionBatchResultV2": {
@@ -287,6 +453,7 @@
               "no-match",
               "low-confidence",
               "merchant-rule-conflict",
+              "merchant-rule-review",
               "historical-attribution-tie",
               "engine-unavailable",
               "policy-unavailable",
@@ -466,6 +633,7 @@
         "no-match",
         "low-confidence",
         "merchant-rule-conflict",
+        "merchant-rule-review",
         "historical-attribution-tie",
         "engine-unavailable",
         "policy-unavailable",

@@ -17,7 +17,8 @@ export interface AttributionEvaluationOptionsV1 {
 }
 
 interface RuleCandidate {
-  kidId: string;
+  outcome: PolicySnapshotV1['merchantRules'][number]['outcome'];
+  kidId: string | null;
   confidence: Exclude<AttributionConfidenceV1, 'none'>;
   ruleId: string;
 }
@@ -44,14 +45,32 @@ export function attributeTransactionV1(
     policy.kids.filter((kid) => kid.active).map((kid) => kid.id)
   );
   const normalizedMerchant = normalizeMerchant(input.transaction.merchantName);
-  const merchantCandidates = policy.merchantRules
+  const normalizedBusinessEntity = input.transaction.businessEntityName
+    ? normalizeMerchant(input.transaction.businessEntityName)
+    : null;
+  const matchingRules = policy.merchantRules
     .filter(
       (rule) =>
         rule.enabled &&
-        activeKidIds.has(rule.kidId) &&
-        normalizedMerchant.includes(normalizeMerchant(rule.pattern))
-    )
-    .map(toCandidate);
+        (rule.outcome !== 'kid' ||
+          (rule.kidId !== null && activeKidIds.has(rule.kidId))) &&
+        normalizedMerchant.includes(normalizeMerchant(rule.pattern)) &&
+        (rule.businessEntityPattern === null ||
+          (normalizedBusinessEntity !== null &&
+            normalizedBusinessEntity.includes(
+              normalizeMerchant(rule.businessEntityPattern)
+            )))
+    );
+  const accountScopedRules = matchingRules.filter(
+    (rule) =>
+      rule.scope === 'accounts' &&
+      rule.accountRefs.includes(input.transaction.accountRef)
+  );
+  const merchantCandidates = (
+    accountScopedRules.length > 0
+      ? accountScopedRules
+      : matchingRules.filter((rule) => rule.scope === 'global')
+  ).map(toCandidate);
   const merchantResult = evaluateCandidates(
     input,
     policy,
@@ -234,16 +253,22 @@ function evaluateCandidates(
   if (candidates.length === 0) return null;
   const ordered = [...candidates].sort(
     (left, right) =>
-      left.kidId.localeCompare(right.kidId) ||
+      `${left.outcome}:${left.kidId ?? ''}`.localeCompare(
+        `${right.outcome}:${right.kidId ?? ''}`
+      ) ||
       left.ruleId.localeCompare(right.ruleId)
   );
-  if (new Set(ordered.map((candidate) => candidate.kidId)).size > 1) {
+  if (
+    new Set(
+      ordered.map((candidate) => `${candidate.outcome}:${candidate.kidId ?? ''}`)
+    ).size > 1
+  ) {
     return pendingResult(
       input,
       policy,
       evaluatedAt,
       conflictReason,
-      'Multiple attribution rules assign this transaction to different kids.',
+      'Equally specific merchant rules produce different attribution outcomes.',
       ordered.map((candidate) => candidate.ruleId)
     );
   }
@@ -257,11 +282,54 @@ function evaluateCandidates(
     policy.exceptionPolicy.requireReviewForLikelyAttribution
       ? ['low-confidence']
       : [];
+  const candidate = ordered[0];
+  if (candidate.outcome === 'review') {
+    return {
+      contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
+      sourceRef: input.source.recordRef,
+      status: 'pending',
+      kidId: null,
+      confidence,
+      method,
+      explanation: 'A configured merchant rule requires household review.',
+      review: {
+        status: 'pending',
+        reasons: ['merchant-rule-review'],
+      },
+      provenance: provenance(
+        policy.policyVersion,
+        evaluatedAt,
+        'automated',
+        ordered.map((item) => item.ruleId)
+      ),
+    };
+  }
+  if (candidate.outcome === 'parent-shared') {
+    return {
+      contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
+      sourceRef: input.source.recordRef,
+      status: 'unassigned',
+      kidId: null,
+      confidence,
+      method,
+      explanation: 'A configured merchant rule classifies this transaction as parent/shared.',
+      review: {
+        status: reviewReasons.length === 0 ? 'not-required' : 'pending',
+        reasons: reviewReasons,
+      },
+      provenance: provenance(
+        policy.policyVersion,
+        evaluatedAt,
+        'automated',
+        ordered.map((item) => item.ruleId)
+      ),
+    };
+  }
   return automatedResult(
     input,
     policy,
     evaluatedAt,
-    ordered[0].kidId,
+    candidate.kidId!,
     confidence,
     method,
     ordered.map((candidate) => candidate.ruleId),
@@ -335,6 +403,7 @@ function provenance(
 
 function toCandidate(rule: PolicySnapshotV1['merchantRules'][number]): RuleCandidate {
   return {
+    outcome: rule.outcome,
     kidId: rule.kidId,
     confidence: rule.confidence,
     ruleId: rule.id,

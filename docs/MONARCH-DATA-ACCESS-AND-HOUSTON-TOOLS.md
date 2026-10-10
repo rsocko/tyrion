@@ -76,9 +76,11 @@ The bridge transaction DTO includes date, amount, merchant, optional bounded
 tag display names, and additive stable tag references. `businessContext` contains
 only Monarch's business-entity display name; raw objects and identifiers remain
 private. It is available as secondary user context and a low-trust Houston lookup
-hint, never as attribution, canonical payee identity, matching, recurrence, or
-reconciliation evidence. Categories retain their compatible group display name and
-add a stable group ID. The DTO intentionally does not expose raw Monarch payloads.
+hint. It must not drive automatic attribution, canonical payee identity, recurrence,
+or reconciliation evidence, but a parent may explicitly confirm it as an additional
+condition in a deterministic merchant attribution rule. Categories retain their
+compatible group display name and add a stable group ID. The DTO intentionally does
+not expose raw Monarch payloads.
 Mission Control transaction search/detail consumers should render a non-duplicate
 value beneath the merchant as **Business context**. Tyrion's bounded operations UI
 does not add a transaction surface for this metadata.

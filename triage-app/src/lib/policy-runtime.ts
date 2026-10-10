@@ -3,6 +3,7 @@ import {
   AttributionActionService,
   AttributionBatchService,
   AttributionPolicyService,
+  MerchantRuleCreationService,
   PolicyService,
   PolicyVersionConflictError,
   ReattributionService,
@@ -40,6 +41,7 @@ export interface PolicyRuntime {
   policyService: PolicyService;
   attributionPolicyService: AttributionPolicyService;
   attributionBatchService: AttributionBatchService;
+  merchantRuleCreationService: MerchantRuleCreationService;
   getAttributionActionService(): AttributionActionService;
   getReattributionService(): ReattributionService;
 }
@@ -102,6 +104,7 @@ export function getPolicyRuntime(
     policyService: new PolicyService(policyRepository),
     attributionPolicyService: new AttributionPolicyService(policyRepository),
     attributionBatchService: new AttributionBatchService(policyRepository),
+    merchantRuleCreationService: new MerchantRuleCreationService(policyRepository),
     getAttributionActionService() {
       if (!attributionActionService) {
         const repository: AttributionActionRepository = demo

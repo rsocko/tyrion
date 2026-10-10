@@ -3285,8 +3285,12 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
     merchantRules: [
       {
         id: "rule-merchant-synthetic",
+        outcome: "kid",
         kidId: "kid-synthetic",
         pattern: "SYNTHETIC STORE",
+        businessEntityPattern: null,
+        scope: "global",
+        accountRefs: [],
         confidence: "definite",
         enabled: true,
       },
@@ -3398,6 +3402,37 @@ test("Quick Review support is private, bounded, and privacy-safe", async () => {
     }],
   });
 
+  const suggestion = await rawInternalAttributionFetch(
+    uiUrl,
+    "/api/internal/v1/finance/quick-review/rule-suggestion",
+    JSON.stringify({
+      contractVersion: "1.0",
+      merchantName: "Invented Market",
+      businessEntityName: "Invented Holdings",
+      accountRef: "account-synthetic",
+      scope: "accounts",
+      kidId: "kid-synthetic",
+      suggestReusableRule: true,
+    }),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  assert.equal(suggestion.status, 200);
+  assert.deepEqual(await suggestion.json(), {
+    contractVersion: "1.0",
+    policyVersion: activePolicy.policyVersion,
+    suggestion: {
+      kind: "merchant",
+      outcome: "kid",
+      merchantPattern: "INVENTED MARKET",
+      businessEntityPattern: "INVENTED HOLDINGS",
+      scope: "accounts",
+      accountRefs: ["account-synthetic"],
+      kidId: "kid-synthetic",
+      confidence: "likely",
+      requiresConfirmation: true,
+    },
+  });
+
   const undisclosed = await rawInternalAttributionFetch(
     uiUrl,
     "/api/internal/v1/finance/quick-review/research",
@@ -3436,6 +3471,57 @@ test("Quick Review support is private, bounded, and privacy-safe", async () => {
   );
   assert.equal(oversized.status, 413);
   assert.equal((await oversized.json()).error.code, "payload_too_large");
+});
+
+test("Mission Control can explicitly create an idempotent merchant rule", async () => {
+  const confirmedAt = new Date().toISOString();
+  const request = {
+    contractVersion: "2.0",
+    expectedPolicyVersion: activePolicy.policyVersion,
+    idempotencyKey: "merchant-rule-create-test",
+    confirmation: { confirmed: true, confirmedAt },
+    rule: {
+      outcome: "parent-shared",
+      kidId: null,
+      pattern: "INVENTED MARKET",
+      businessEntityPattern: null,
+      scope: "global",
+      accountRefs: [],
+      confidence: "definite",
+    },
+  };
+  const created = await rawInternalAttributionFetch(
+    uiUrl,
+    "/api/internal/v2/attribution/rules",
+    JSON.stringify(request),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  const createdBody = await created.text();
+  assert.equal(created.status, 200, createdBody);
+  const createdPayload = JSON.parse(createdBody);
+  assert.equal(createdPayload.outcome, "created");
+  assert.equal(
+    createdPayload.policyVersion,
+    request.expectedPolicyVersion + 1
+  );
+  assert.match(createdPayload.rule.id, /^rule-merchant-[a-f0-9]{32}$/);
+  assert.equal(createdPayload.rule.enabled, true);
+
+  const replayed = await rawInternalAttributionFetch(
+    uiUrl,
+    "/api/internal/v2/attribution/rules",
+    JSON.stringify(request),
+    { Authorization: ["Bearer", serviceToken].join(" ") }
+  );
+  assert.equal(replayed.status, 200);
+  assert.deepEqual(await replayed.json(), {
+    ...createdPayload,
+    outcome: "replayed",
+  });
+  activePolicy = {
+    ...activePolicy,
+    policyVersion: createdPayload.policyVersion,
+  };
 });
 
 test("batch attribution returns only strict normalized decisions", async () => {

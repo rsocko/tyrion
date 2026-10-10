@@ -118,6 +118,7 @@ function buildAttributionInput(
     },
     transaction: {
       merchantName: transaction.merchant.name,
+      businessEntityName: transaction.businessContext ?? null,
       accountRef: context.accountRef,
       occurredOn: transaction.date,
     },
