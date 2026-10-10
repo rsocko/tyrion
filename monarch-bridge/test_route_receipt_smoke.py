@@ -23,9 +23,14 @@ from receipt_probe import (
 )
 from route_receipt_smoke import (
     MUTATION_CONFIRMATION,
+    RouteSmokeError,
+    SERVICE_TOKEN_ENV,
     SUCCESS_CODE,
     _SCENARIOS,
+    _http_failure_code,
     _invented_receipt_png,
+    _preflight_posted_transaction,
+    _required_receipt,
     run,
     run_route_smoke,
 )
@@ -274,7 +279,10 @@ async def test_route_smoke_rejects_wrong_service_token_before_any_mutation(
 ):
     result = await execute(route_state, token="wrong-token-value-0000000000000000")
 
-    assert result["result"] == "protected_receipt_route_request_failed"
+    assert (
+        result["result"]
+        == "protected_receipt_route_list_http_4xx_bridge_auth_required"
+    )
     assert result["cleanup"] == "not_run"
     assert route_state.cleanup_calls == []
 
@@ -315,6 +323,7 @@ async def test_route_smoke_gates_are_exact_and_do_not_load_dotenv(
         "TYRION_LIVE_ROUTE_RECEIPT_MUTATION_CONFIRM",
         "SESSION_FILE",
         "BRIDGE_API_TOKEN",
+        SERVICE_TOKEN_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():
@@ -327,6 +336,199 @@ async def test_route_smoke_gates_are_exact_and_do_not_load_dotenv(
         **{scenario: "not_run" for scenario in _SCENARIOS},
     }
     assert PRIVATE_DETAIL not in json.dumps(result)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("transaction_result", "side_effect", "code"),
+    (
+        (
+            {"getTransaction": None},
+            None,
+            "protected_receipt_route_match_preflight_not_found",
+        ),
+        (
+            {
+                "getTransaction": {
+                    "id": "transaction-opaque",
+                    "pending": True,
+                }
+            },
+            None,
+            "protected_receipt_route_match_preflight_pending",
+        ),
+        (
+            {
+                "getTransaction": {
+                    "id": "transaction-redirected",
+                    "pending": False,
+                }
+            },
+            None,
+            "protected_receipt_route_match_preflight_identity_mismatch",
+        ),
+        (
+            {"getTransaction": {"id": "transaction-opaque"}},
+            None,
+            "protected_receipt_route_match_preflight_malformed",
+        ),
+        (
+            {},
+            None,
+            "protected_receipt_route_match_preflight_malformed",
+        ),
+        (
+            None,
+            RuntimeError(PRIVATE_DETAIL),
+            "protected_receipt_route_match_preflight_unavailable",
+        ),
+    ),
+)
+async def test_match_preflight_fails_before_synthetic_mutation(
+    route_state,
+    transaction_result,
+    side_effect,
+    code,
+):
+    route_state.owner.get_transaction_details.reset_mock()
+    route_state.owner.get_transaction_details.return_value = transaction_result
+    route_state.owner.get_transaction_details.side_effect = side_effect
+
+    result = await execute(route_state)
+
+    assert result["result"] == code
+    assert result["match_preflight"] == "not_run"
+    assert result["create"] == "not_run"
+    assert result["cleanup"] == "not_run"
+    assert "synthetic-receipt" not in route_state.records
+    assert PRIVATE_DETAIL not in json.dumps(result)
+    route_state.owner.get_transaction_details.assert_awaited_once_with(
+        "transaction-opaque",
+        redirect_posted=False,
+    )
+
+
+@pytest.mark.anyio
+async def test_match_preflight_accepts_exact_posted_transaction_contract():
+    client = AsyncMock()
+    client.get_transaction_details.return_value = {
+        "getTransaction": {
+            "id": "transaction-invented",
+            "pending": False,
+        }
+    }
+
+    await _preflight_posted_transaction(client, "transaction-invented")
+
+    client.get_transaction_details.assert_awaited_once_with(
+        "transaction-invented",
+        redirect_posted=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "media_type", "expected"),
+    (
+        (
+            409,
+            b'{"error":{"code":"pending_transaction_not_supported",'
+            b'"message":"private detail"}}',
+            "application/json",
+            (
+                "protected_receipt_route_match_http_"
+                "4xx_pending_transaction_not_supported"
+            ),
+        ),
+        (
+            502,
+            b'{"error":{"code":"receipt_upstream_error",'
+            b'"message":"private detail"}}',
+            "application/json",
+            (
+                "protected_receipt_route_match_http_"
+                "5xx_receipt_upstream_error"
+            ),
+        ),
+        (
+            418,
+            b'{"error":{"code":"private-upstream-id"}}',
+            "application/json",
+            "protected_receipt_route_match_http_4xx_unrecognized_error",
+        ),
+        (
+            302,
+            b"https://private.invalid/redirect",
+            "text/plain",
+            "protected_receipt_route_match_http_other_unrecognized_error",
+        ),
+    ),
+)
+def test_match_http_failure_classification_is_allowlisted_and_sanitized(
+    status,
+    body,
+    media_type,
+    expected,
+):
+    result = _http_failure_code("match", status, body, media_type)
+
+    assert result == expected
+    assert "private" not in result
+    assert "message" not in result
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ("detail", "create", "upload_poll", "match", "read_back"),
+)
+def test_malformed_receipt_dto_failure_names_route_scenario(scenario):
+    payload = {
+        "receipt": {
+            "id": PRIVATE_DETAIL,
+            "attachments": "private-response-shape",
+        }
+    }
+
+    with pytest.raises(RouteSmokeError) as raised:
+        _required_receipt(payload, scenario=scenario)
+
+    assert raised.value.code == (
+        f"protected_receipt_route_{scenario}_response_malformed"
+    )
+    assert PRIVATE_DETAIL not in raised.value.code
+
+
+@pytest.mark.anyio
+async def test_route_smoke_preserves_sanitized_match_4xx_and_cleans_up(
+    route_state,
+):
+    posted = {
+        "getTransaction": {
+            "id": "transaction-opaque",
+            "pending": False,
+        }
+    }
+    pending = {
+        "getTransaction": {
+            "id": "transaction-opaque",
+            "pending": True,
+        }
+    }
+    route_state.owner.get_transaction_details.side_effect = [posted, pending]
+
+    result = await execute(route_state)
+
+    assert (
+        result["result"]
+        == (
+            "protected_receipt_route_match_http_"
+            "4xx_pending_transaction_not_supported"
+        )
+    )
+    assert result["match_preflight"] == "passed"
+    assert result["match"] == "not_run"
+    assert result["cleanup"] == "passed"
+    assert "synthetic-receipt" not in route_state.records
+    assert set(result) == {"result", *_SCENARIOS}
 
 
 @pytest.mark.anyio
@@ -377,13 +579,19 @@ async def test_route_smoke_candidate_discovery_pagination_is_hard_capped(
 @pytest.mark.parametrize(
     ("fail_at", "expected"),
     (
-        ("detail", "protected_receipt_route_request_failed"),
+        ("detail", "protected_receipt_route_detail_http_5xx_internal_error"),
         ("existing_download", "protected_receipt_route_download_mismatch"),
         ("create", "protected_receipt_route_cleanup_failed"),
-        ("upload", "protected_receipt_route_request_failed"),
-        ("poll", "protected_receipt_route_request_failed"),
+        (
+            "upload",
+            "protected_receipt_route_upload_poll_http_5xx_internal_error",
+        ),
+        (
+            "poll",
+            "protected_receipt_route_upload_poll_http_5xx_internal_error",
+        ),
         ("synthetic_download", "protected_receipt_route_download_mismatch"),
-        ("match", "protected_receipt_route_request_failed"),
+        ("match", "protected_receipt_route_match_http_5xx_upstream_error"),
         ("read_back", "protected_receipt_route_read_back_mismatch"),
     ),
 )
@@ -467,8 +675,8 @@ async def test_route_smoke_rejects_malformed_and_oversized_route_responses():
         unmatch_receipt_func=noop,
     )
 
-    assert first["result"] == "protected_receipt_route_response_malformed"
-    assert second["result"] == "protected_receipt_route_response_too_large"
+    assert first["result"] == "protected_receipt_route_list_response_malformed"
+    assert second["result"] == "protected_receipt_route_list_response_too_large"
     assert first["cleanup"] == second["cleanup"] == "not_run"
 
 
@@ -520,7 +728,7 @@ async def test_complete_run_timeout_includes_bridge_client_acquisition(
         MUTATION_CONFIRMATION,
     )
     monkeypatch.setenv("SESSION_FILE", "invented-external-path")
-    monkeypatch.setenv("BRIDGE_API_TOKEN", TOKEN)
+    monkeypatch.setenv(SERVICE_TOKEN_ENV, TOKEN)
     monkeypatch.setattr(route_receipt_smoke, "MAX_TOTAL_SECONDS", 0.03)
     monkeypatch.setattr(route_receipt_smoke, "run_route_smoke", delayed_routes)
     monkeypatch.setattr(bridge, "get_client", delayed_client)

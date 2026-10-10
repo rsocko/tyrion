@@ -64,7 +64,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Merchant/payee write-back | Normalized 1-120 character input, unknown-field/control-character rejection, exact mutation-response verification, deterministic demo response, connector body allowlisting, and sanitized failures | Controlled live validation required with explicit confirmation, read-back, and restoration |
 | Transaction review | Pinned-client `needsReview`, `reviewStatus`, `needsReviewByUser`, household directory, `needs_review` filter, and `reviewed=True` mutation inspected; normalized status/assignee, strict mark-reviewed body, exact mutation verification, missing-capability failure, deterministic demo response, and connector allowlisting | Controlled live validation required on a dedicated needs-review transaction; do not run without accepting that the authoritative review action is not safely reversible |
-| Receipts and attachment retrieval | The internal adapter covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; safe recent matched-PDF candidate selection; exact unmatch/rematch restoration; bounded transaction-attachment list/get/upload/download/delete; PNG/PDF generation and byte comparison; duplicate classification; failed-receipt deletion; immediate/delayed asset reuse classification; capped pagination and polling; strict malformed/oversized rejection; independent cleanup; and stable sanitized output. The protected production DTO maps this to `processing`, `awaiting_match`, `matched`, or `failed`; omits filenames and signed URLs; uses two-step create/upload; proxies bounded attachment bytes; and requires explicit confirmation, expected unmatched revision, posted transaction state, and read-back for matching. The separate route smoke drives list/detail/download/create/upload-poll/download/confirmed-match/read-back through the protected FastAPI app and reserves the internal adapter for same-client synthetic cleanup only. | Adapter base create/upload/process/list/get/download/delete and the separately gated expanded adapter matrix completed 2026-10-10 with stable success codes, exit 0, and empty stderr. The matrix restored the manual match; preserved transaction-attachment and PNG/PDF bytes; classified duplicate uploads as distinct; found immediate/two-second asset reuse identical; verified failed-receipt deletion; and completed cleanup. UI startup succeeded after the run. Email ingestion and pending-to-posted identity remained explicit skips. **The protected-route smoke is implemented but unrun; no deployed-route compatibility is claimed yet.** |
+| Receipts and attachment retrieval | The internal adapter covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; safe recent matched-PDF candidate selection; exact unmatch/rematch restoration; bounded transaction-attachment list/get/upload/download/delete; PNG/PDF generation and byte comparison; duplicate classification; failed-receipt deletion; immediate/delayed asset reuse classification; capped pagination and polling; strict malformed/oversized rejection; independent cleanup; and stable sanitized output. The protected production DTO maps this to `processing`, `awaiting_match`, `matched`, or `failed`; omits filenames and signed URLs; uses two-step create/upload; proxies bounded attachment bytes; and requires explicit confirmation, expected unmatched revision, posted transaction state, and read-back for matching. The separate route smoke preflights the exact posted transaction through the Bridge-owned pinned client, drives list/detail/download/create/upload-poll/download/confirmed-match/read-back through the protected FastAPI app, and reserves the internal adapter for same-client synthetic cleanup only. | Adapter base create/upload/process/list/get/download/delete and the separately gated expanded adapter matrix completed 2026-10-10 with stable success codes, exit 0, and empty stderr. The matrix restored the manual match; preserved transaction-attachment and PNG/PDF bytes; classified duplicate uploads as distinct; found immediate/two-second asset reuse identical; verified failed-receipt deletion; and completed cleanup. UI startup succeeded after the run. Email ingestion and pending-to-posted identity remained explicit skips. A deployed protected-route attempt on 2026-10-10 passed list/detail/download/create/upload-poll/download and cleanup but stopped at match under the old generic request code; it is partial evidence only. **The corrected full match/read-back smoke remains unrun; no full deployed-route compatibility is claimed yet.** |
 | Kids tag projection | Stable kid-to-tag mapping; collision/deletion/rename handling; reassignment, shared purchase, parent expense, retry/idempotency, partial failure, unrelated-tag preservation, optimistic drift refusal, exact read-back, action replay recovery, and re-attribution convergence use invented deterministic state only | Controlled live tag-set validation requires `TYRION_TEST_TRANSACTION_ID`, a pre-created `TYRION_TEST_TAG_ID`, and the reversible mutation confirmation; the test restores and verifies the complete original tag set. Managed-tag creation is not performed live because the pinned client exposes no verified deletion contract |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB general response bounds; composed health with one 4 KiB `/auth/status` verification, explicit v1 shape/version validation, derived status/reachability, no auth-field leakage, and sanitized non-success failures; status/body/safe-header preservation for passthrough operations; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
@@ -313,12 +313,20 @@ public contract.
 The independent gates are
 `TYRION_LIVE_ROUTE_RECEIPT_SMOKE=1` and
 `TYRION_LIVE_ROUTE_RECEIPT_MUTATION_CONFIRM=I_ACCEPT_PROTECTED_RECEIPT_ROUTE_SMOKE_MUTATIONS`.
-`SESSION_FILE` and the server-only `BRIDGE_API_TOKEN` must already be process
-environment values. Dotenv loading is forced off. The runner caps discovery at 50
-items, upload at 2 MiB, JSON at 64 KiB, downloads at 2 MiB, polling at eight
+`SESSION_FILE` must already be a process environment value. The operator injects a
+random minimum-32-character `TYRION_LIVE_ROUTE_RECEIPT_SERVICE_TOKEN` only into the
+one-shot process; the runner installs it as the in-process app's service token before
+Bridge import. It does not require or expose the production Bridge token. Dotenv
+loading is forced off. Before synthetic creation, the runner uses the same
+Bridge-owned pinned client as the route to require an exact non-redirected posted
+transaction identity. Missing, pending, redirected/mismatched, malformed, and
+unavailable targets have distinct sanitized stop codes. Discovery remains capped at
+50 items, upload at 2 MiB, JSON at 64 KiB, downloads at 2 MiB, polling at eight
 attempts/120 seconds, and total runtime at 180 seconds. It suppresses Bridge and
 transport request logging and emits exactly one fixed-shape JSON result containing no
 identifiers, URLs, filenames, response bodies, exception text, or session paths.
+Every protected-route HTTP failure is scenario-specific; match failures retain only
+an allowlisted HTTP status class and stable public Bridge error code.
 
 In Dockhand, stop the UI and Bridge, create an ephemeral one-shot container from the
 same verified immutable Bridge image, reuse only the restricted session volume,
@@ -327,7 +335,10 @@ server-only environment, and outbound network, publish no port, set the command 
 only the displayed safe result/status codes. Remove the one-shot after successful
 cleanup, restart the Bridge and wait for health, then restart the UI. On
 `protected_receipt_route_cleanup_failed`, keep normal callers stopped and inspect
-Monarch manually. This route smoke remains **unrun** until that procedure records
+Monarch manually. The 2026-10-10 deployed attempt passed list, detail, existing
+download, create, upload/poll, synthetic download, and cleanup, but match returned the
+old generic request failure and read-back did not run. This evidence is partial. The
+corrected full route smoke remains **unrun** until that procedure records
 `protected_receipt_route_smoke_ok`.
 
 ## Contract refresh
