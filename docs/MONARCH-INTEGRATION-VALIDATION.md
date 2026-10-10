@@ -64,7 +64,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Merchant/payee write-back | Normalized 1-120 character input, unknown-field/control-character rejection, exact mutation-response verification, deterministic demo response, connector body allowlisting, and sanitized failures | Controlled live validation required with explicit confirmation, read-back, and restoration |
 | Transaction review | Pinned-client `needsReview`, `reviewStatus`, `needsReviewByUser`, household directory, `needs_review` filter, and `reviewed=True` mutation inspected; normalized status/assignee, strict mark-reviewed body, exact mutation verification, missing-capability failure, deterministic demo response, and connector allowlisting | Controlled live validation required on a dedicated needs-review transaction; do not run without accepting that the authoritative review action is not safely reversible |
-| Receipts and attachment retrieval | The internal adapter covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; safe recent matched-PDF candidate selection; exact unmatch/rematch restoration; bounded transaction-attachment list/get/upload/download/delete; PNG/PDF generation and byte comparison; duplicate classification; failed-receipt deletion; immediate/delayed asset reuse classification; capped pagination and polling; strict malformed/oversized rejection; independent cleanup; and stable sanitized output. The protected production DTO maps this to `processing`, `awaiting_match`, `matched`, or `failed`; omits filenames and signed URLs; uses two-step create/upload; proxies bounded attachment bytes; and requires explicit confirmation, expected unmatched revision, posted transaction state, and read-back for matching. | Base create/upload/process/list/get/download/delete and the separately gated expanded matrix completed 2026-10-10 with stable success codes, exit 0, and empty stderr. The matrix restored the manual match; preserved transaction-attachment and PNG/PDF bytes; classified duplicate uploads as distinct; found immediate/two-second asset reuse identical; verified failed-receipt deletion; and completed cleanup. UI startup succeeded after the run. Email ingestion and pending-to-posted identity remained explicit skips. |
+| Receipts and attachment retrieval | The internal adapter covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; safe recent matched-PDF candidate selection; exact unmatch/rematch restoration; bounded transaction-attachment list/get/upload/download/delete; PNG/PDF generation and byte comparison; duplicate classification; failed-receipt deletion; immediate/delayed asset reuse classification; capped pagination and polling; strict malformed/oversized rejection; independent cleanup; and stable sanitized output. The protected production DTO maps this to `processing`, `awaiting_match`, `matched`, or `failed`; omits filenames and signed URLs; uses two-step create/upload; proxies bounded attachment bytes; and requires explicit confirmation, expected unmatched revision, posted transaction state, and read-back for matching. The separate route smoke drives list/detail/download/create/upload-poll/download/confirmed-match/read-back through the protected FastAPI app and reserves the internal adapter for same-client synthetic cleanup only. | Adapter base create/upload/process/list/get/download/delete and the separately gated expanded adapter matrix completed 2026-10-10 with stable success codes, exit 0, and empty stderr. The matrix restored the manual match; preserved transaction-attachment and PNG/PDF bytes; classified duplicate uploads as distinct; found immediate/two-second asset reuse identical; verified failed-receipt deletion; and completed cleanup. UI startup succeeded after the run. Email ingestion and pending-to-posted identity remained explicit skips. **The protected-route smoke is implemented but unrun; no deployed-route compatibility is claimed yet.** |
 | Kids tag projection | Stable kid-to-tag mapping; collision/deletion/rename handling; reassignment, shared purchase, parent expense, retry/idempotency, partial failure, unrelated-tag preservation, optimistic drift refusal, exact read-back, action replay recovery, and re-attribution convergence use invented deterministic state only | Controlled live tag-set validation requires `TYRION_TEST_TRANSACTION_ID`, a pre-created `TYRION_TEST_TAG_ID`, and the reversible mutation confirmation; the test restores and verifies the complete original tag set. Managed-tag creation is not performed live because the pinned client exposes no verified deletion contract |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB general response bounds; composed health with one 4 KiB `/auth/status` verification, explicit v1 shape/version validation, derived status/reachability, no auth-field leakage, and sanitized non-success failures; status/body/safe-header preservation for passthrough operations; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
@@ -286,6 +286,49 @@ deletion, and completed cleanup. The following questions remain:
 This slice now establishes observed compatibility only for the completed controlled
 path above. It does not establish the remaining behaviors or authorize a production
 Mission Control receipt workflow.
+
+### Protected receipt route smoke
+
+`route_receipt_smoke.py` is a distinct post-deployment check, not a replacement for
+the adapter matrix and not a browser or connector-gateway surface. It imports the
+deployed Bridge app only after forcing dotenv loading and demo mode off, acquires the
+session-manager client once, and uses an authenticated non-loopback in-process ASGI
+transport. All route calls and direct cleanup therefore share one owning process and
+client. The normal Bridge and UI must be stopped first; a competing process remains
+blocked by the unchanged cross-process lease.
+
+The runner accepts no identifiers or paths. It reads at most two 25-item uploaded
+receipt pages and requires exactly one recent matched receipt with one downloadable
+PDF no larger than 2 MiB. The manual candidate is never unmatched, edited, or deleted;
+its posted linked transaction is used only as an opaque target. The candidate covers
+protected list, detail, and bounded attachment download. A standard-library readable
+PNG generated in the OS temporary directory covers protected create, raw upload,
+bounded processing poll, normalized attachment metadata, bounded proxy download,
+exact MIME/byte fidelity, separately confirmed match, and normalized detail read-back.
+Every synthetic receipt is internally unmatched when necessary and deleted in
+`finally` with the same Bridge-owned client. Cleanup failure overrides the primary
+result and is a manual-inspection stop condition; deletion remains absent from the
+public contract.
+
+The independent gates are
+`TYRION_LIVE_ROUTE_RECEIPT_SMOKE=1` and
+`TYRION_LIVE_ROUTE_RECEIPT_MUTATION_CONFIRM=I_ACCEPT_PROTECTED_RECEIPT_ROUTE_SMOKE_MUTATIONS`.
+`SESSION_FILE` and the server-only `BRIDGE_API_TOKEN` must already be process
+environment values. Dotenv loading is forced off. The runner caps discovery at 50
+items, upload at 2 MiB, JSON at 64 KiB, downloads at 2 MiB, polling at eight
+attempts/120 seconds, and total runtime at 180 seconds. It suppresses Bridge and
+transport request logging and emits exactly one fixed-shape JSON result containing no
+identifiers, URLs, filenames, response bodies, exception text, or session paths.
+
+In Dockhand, stop the UI and Bridge, create an ephemeral one-shot container from the
+same verified immutable Bridge image, reuse only the restricted session volume,
+server-only environment, and outbound network, publish no port, set the command to
+`python route_receipt_smoke.py`, and add the two ephemeral gates. Run once and retain
+only the displayed safe result/status codes. Remove the one-shot after successful
+cleanup, restart the Bridge and wait for health, then restart the UI. On
+`protected_receipt_route_cleanup_failed`, keep normal callers stopped and inspect
+Monarch manually. This route smoke remains **unrun** until that procedure records
+`protected_receipt_route_smoke_ok`.
 
 ## Contract refresh
 

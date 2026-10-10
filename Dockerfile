@@ -48,6 +48,7 @@ COPY --chown=tyrion:tyrion monarch-bridge/bridge_runtime.py \
     monarch-bridge/live_receipt_probe.py \
     monarch-bridge/main.py \
     monarch-bridge/receipt_probe.py \
+    monarch-bridge/route_receipt_smoke.py \
     /app/
 
 WORKDIR /app
