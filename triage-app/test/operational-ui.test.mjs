@@ -2028,7 +2028,10 @@ test("finance insight service publishes current and generation-addressed OWL pro
   );
   assert.equal(receivedRequests.length, beforeConnectorRead + 2);
   assert.deepEqual(
-    receivedRequests.slice(-2).map(({ path, authorized }) => ({ path, authorized })),
+    receivedRequests
+      .slice(-2)
+      .map(({ path, authorized }) => ({ path, authorized }))
+      .sort((left, right) => left.path.localeCompare(right.path)),
     [
       { path: "/accounts", authorized: true },
       { path: "/recurring", authorized: true },
