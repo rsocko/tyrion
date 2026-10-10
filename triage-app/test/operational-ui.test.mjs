@@ -3583,8 +3583,20 @@ test("attribution policy discovery returns active metadata and authoritative hou
     policyVersion: activePolicy.policyVersion,
     policyUpdatedAt: activePolicy.updatedAt,
     householdCurrency: activePolicy.currency,
+    subjects: [
+      {
+        kidId: "kid-synthetic",
+        name: "Synthetic Kid",
+      },
+    ],
   });
   assert.match(payload.householdCurrency, /^[A-Z]{3}$/);
+  assert.deepEqual(payload.subjects, [
+    {
+      kidId: activePolicy.kids[0].id,
+      name: activePolicy.kids[0].displayName,
+    },
+  ]);
   assert.equal(Number.isSafeInteger(payload.policyVersion), true);
   assert.ok(payload.policyVersion > 0);
   assert.match(
