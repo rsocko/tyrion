@@ -11,6 +11,7 @@ import {
   PolicyStoreConfigurationError,
   PolicyStoreCorruptError,
   PolicyStoreUnavailableError,
+  TagProjectionError,
 } from "@rsocko/tyrion-kid-engine";
 import { AttributionAuthError } from "@/lib/attribution-auth";
 import {
@@ -169,6 +170,17 @@ export function handleAttributionError(
             error.code === "merchant_rule_confirmation_expired" ||
             error.code === "merchant_rule_account_not_found"
           ? 422
+          : 503;
+    return jsonError(status, error.code, error.message);
+  }
+  if (error instanceof TagProjectionError) {
+    const status =
+      error.code === "kid_not_projectable"
+        ? 422
+        : error.code === "kid_tag_collision" ||
+            error.code === "kid_tag_mapping_deleted" ||
+            error.code === "transaction_tag_drift"
+          ? 409
           : 503;
     return jsonError(status, error.code, error.message);
   }

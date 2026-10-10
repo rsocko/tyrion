@@ -16,6 +16,7 @@ import {
   authorizeAttributionActions,
   type PolicyRepository,
 } from './policy/service.js';
+import type { AttributionTagProjectorV1 } from './tag-projection-v1.js';
 
 export const ATTRIBUTION_ACTION_PROVENANCE =
   'mission-control-normalized-v2' as const;
@@ -170,11 +171,13 @@ export interface AttributionActionResponseV1 {
 export interface AttributionActionServiceOptions {
   now?: () => Date;
   actionRef?: () => string;
+  tagProjector?: AttributionTagProjectorV1;
 }
 
 export class AttributionActionService {
   private readonly now: () => Date;
   private readonly actionRef: () => string;
+  private readonly tagProjector: AttributionTagProjectorV1 | undefined;
 
   constructor(
     private readonly policyRepository: PolicyRepository,
@@ -183,6 +186,7 @@ export class AttributionActionService {
   ) {
     this.now = options.now ?? (() => new Date());
     this.actionRef = options.actionRef ?? randomUUID;
+    this.tagProjector = options.tagProjector;
   }
 
   async act(
@@ -238,17 +242,15 @@ export class AttributionActionService {
       request.idempotencyKey
     );
     if (replay) {
-      return response(
-        validateAppliedResult(
-          replay,
-          actor,
-          request,
-          policy.policyVersion,
-          requestFingerprint
-        ),
+      const replayed = validateAppliedResult(
+        replay,
+        actor,
+        request,
         policy.policyVersion,
-        policy.kids
+        requestFingerprint
       );
+      await this.projectConfirmed(actor, request, current, policy.kids);
+      return response(replayed, policy.policyVersion, policy.kids);
     }
     if (current.stateVersion !== request.expectedStateVersion) {
       throw new AttributionActionError(
@@ -307,7 +309,29 @@ export class AttributionActionService {
       policy.policyVersion,
       requestFingerprint
     );
+    await this.projectConfirmed(actor, request, normalized, policy.kids);
     return response(normalized, policy.policyVersion, policy.kids);
+  }
+
+  private async projectConfirmed(
+    actor: PolicyActorV1,
+    request: Exclude<AttributionActionRequestV1, ExplainAttributionRequestV1>,
+    record: AttributionActionRecordV1,
+    kids: Array<{ id: string; displayName: string; active: boolean }>
+  ): Promise<void> {
+    if (!this.tagProjector || request.action === 'defer-exception') return;
+    await this.tagProjector.projectConfirmed({
+      householdId: actor.householdId,
+      sourceRef: record.attribution.sourceRef,
+      decisionVersion:
+        `${record.attribution.provenance.evaluatedAt}|state:${record.stateVersion}`,
+      kidIds:
+        record.attribution.status === 'attributed' &&
+        record.attribution.kidId !== null
+          ? [record.attribution.kidId]
+          : [],
+      kids,
+    });
   }
 }
 

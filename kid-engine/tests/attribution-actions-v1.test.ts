@@ -19,6 +19,11 @@ import {
   type PolicyRepository,
 } from '../src/policy/service.js';
 import { inputFixture, policyFixture } from './fixtures.js';
+import {
+  TagProjectionError,
+  type AttributionTagProjectorV1,
+  type ConfirmedTagProjectionV1,
+} from '../src/tag-projection-v1.js';
 
 const now = '2026-08-08T13:00:00.000Z';
 const actor: PolicyActorV1 = {
@@ -266,6 +271,35 @@ describe('v1 attribution correction and exception actions', () => {
     expect(actions.applyCalls).toBe(1);
   });
 
+  it('retries one projection service after an authoritative action was persisted', async () => {
+    const actions = new MemoryActionRepository(record());
+    const projector = new RecordingProjector();
+    projector.failNext = true;
+    const service = createService(actions, projector);
+    const request = mutationRequest('assign-kid', { kidId: 'kid-alpha' });
+
+    await expect(service.act(actor, request)).rejects.toMatchObject({
+      code: 'tag_projection_unavailable',
+    });
+    expect(actions.applyCalls).toBe(1);
+    const replay = await service.act(actor, request);
+
+    expect(replay.audit?.outcome).toBe('replayed');
+    expect(actions.applyCalls).toBe(1);
+    expect(projector.inputs).toEqual([
+      expect.objectContaining({
+        sourceRef: inputFixture.source.recordRef,
+        kidIds: ['kid-alpha'],
+        decisionVersion: `${now}|state:2`,
+      }),
+      expect.objectContaining({
+        sourceRef: inputFixture.source.recordRef,
+        kidIds: ['kid-alpha'],
+        decisionVersion: `${now}|state:2`,
+      }),
+    ]);
+  });
+
   it('rejects idempotency-key reuse with different action parameters', async () => {
     const actions = new MemoryActionRepository(record());
     const service = createService(actions);
@@ -285,7 +319,8 @@ describe('v1 attribution correction and exception actions', () => {
 
   it('replays an earlier action after newer action history exists', async () => {
     const actions = new MemoryActionRepository(record());
-    const service = createService(actions);
+    const projector = new RecordingProjector();
+    const service = createService(actions, projector);
     const firstRequest = mutationRequest('unassign');
     const first = await service.act(actor, firstRequest);
     await service.act(actor, {
@@ -301,6 +336,8 @@ describe('v1 attribution correction and exception actions', () => {
       outcome: 'replayed',
     });
     expect(actions.applyCalls).toBe(2);
+    expect(projector.inputs.at(-1)?.kidIds).toEqual(['kid-alpha']);
+    expect(projector.inputs.at(-1)?.decisionVersion).toBe(`${now}|state:3`);
   });
 
   it('requires the dedicated least-privilege permission', async () => {
@@ -360,10 +397,14 @@ describe('v1 attribution correction and exception actions', () => {
   });
 });
 
-function createService(actions: AttributionActionRepository) {
+function createService(
+  actions: AttributionActionRepository,
+  tagProjector?: AttributionTagProjectorV1
+) {
   return new AttributionActionService(policyRepository(), actions, {
     now: () => new Date(now),
     actionRef: () => 'action-demo',
+    tagProjector,
   });
 }
 
@@ -492,5 +533,30 @@ class MemoryActionRepository implements AttributionActionRepository {
     };
     this.replays.set(mutation.request.idempotencyKey, structuredClone(result));
     return result;
+  }
+}
+
+class RecordingProjector implements AttributionTagProjectorV1 {
+  inputs: ConfirmedTagProjectionV1[] = [];
+  failNext = false;
+
+  async projectConfirmed(input: ConfirmedTagProjectionV1) {
+    this.inputs.push(structuredClone(input));
+    if (this.failNext) {
+      this.failNext = false;
+      throw new TagProjectionError(
+        'tag_projection_unavailable',
+        'Synthetic projection failure'
+      );
+    }
+    return {
+      sourceRef: input.sourceRef,
+      decisionVersion: input.decisionVersion,
+      kidIds: [...input.kidIds],
+      managedTagIds: [],
+      status: 'projected' as const,
+      errorCode: null,
+      updatedAt: now,
+    };
   }
 }

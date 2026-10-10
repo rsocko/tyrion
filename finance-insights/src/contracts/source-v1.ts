@@ -147,6 +147,7 @@ export const transactionSourceFactSchema = z.strictObject({
   occurredOn: calendarDateSchema,
   amountMinor: amountMinorSchema,
   merchantName: normalizedMerchantNameSchema,
+  businessContext: normalizedDisplayNameSchema.nullable().optional(),
   categoryRef: nullableSourceRefSchema,
   accountRef: nullableSourceRefSchema,
   isPending: z.boolean(),

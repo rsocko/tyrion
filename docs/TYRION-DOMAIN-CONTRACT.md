@@ -108,7 +108,11 @@ assignment and is not evidence of the physical spender. The review mutation acce
 Transaction tags are independent household labels managed by
 `get_transaction_tags()` and `set_transaction_tags(transaction_id, tag_ids)`.
 The client can read complete transaction rules but has no rule mutation API that
-establishes spender identity.
+establishes spender identity. Tyrion does not import or compare those rules: Monarch's
+priority-ordered transaction-management criteria and actions do not map safely to a
+Tyrion kid, confidence, or conflict outcome. The bounded product-fit analysis and
+reconsideration gate are recorded in
+[`MONARCH-TRANSACTION-RULE-EVALUATION.md`](MONARCH-TRANSACTION-RULE-EVALUATION.md).
 
 Therefore no verified upstream field says which child made a purchase. Account
 ownership identifies a Monarch household owner, review assignment identifies who
@@ -171,9 +175,13 @@ Mission Control discovers the active policy metadata through
 operation. The route uses the same private authority, bearer credential, and fixed
 service actor as batch attribution. A successful response is non-cacheable and
 contains exactly `contractVersion`, `engineVersion`, the positive `policyVersion`,
-and `policyUpdatedAt`. It never exposes rules, kids, account defaults, merchant
-rules, household identity, or other policy contents. Missing or unreadable policy
-state returns the existing `policy_unavailable` error rather than a default version.
+`policyUpdatedAt`, and the required `householdCurrency` sourced from the same
+Tyrion-owned policy configuration used by the operations UI. The currency is an
+exact supported uppercase ISO-4217 code; missing or invalid currency fails closed
+with `policy_unavailable` rather than being normalized or defaulted. It never exposes
+rules, kids, account defaults, merchant rules, household identity, or other policy
+contents. Missing or unreadable policy state returns the existing
+`policy_unavailable` error rather than a default version.
 Mission Control sends the discovered version as `expectedPolicyVersion` on every
 batch in that operation; a later policy change therefore fails the operation's next
 batch with `policy_conflict`.

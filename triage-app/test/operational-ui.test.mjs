@@ -20,6 +20,8 @@ import {
   parseCategoryMutation,
   parseMerchantMutation,
   parseReviewMutation,
+  parseTagCreateMutation,
+  parseTagMutation,
   resolveConnectorBridgeUrl,
 } from "../src/lib/connector-gateway-policy.mjs";
 import {
@@ -76,8 +78,15 @@ let authStatusPayloadOverride;
 let bridgeAccounts;
 let bridgeRecurring;
 let previews = new Map();
+let appliedPreviews = new Map();
 let attributionActionRecords = new Map();
 let attributionActionReplays = new Map();
+let tagProjectionMappings = new Map();
+let tagProjectionRecords = new Map();
+let bridgeTagCatalog = [
+  { id: "tag-household", name: "Household", isActive: true },
+];
+let bridgeTransactionTags = new Map();
 let expireNextPreview = false;
 let reattributionResponseMode = "normal";
 let activePolicy;
@@ -220,6 +229,118 @@ before(async () => {
         return;
       }
 
+      const requestBody = chunks.length
+        ? JSON.parse(Buffer.concat(chunks).toString("utf8"))
+        : null;
+      const transactionMatch = /^\/transactions\/([^/]+)$/.exec(request.url);
+      const transactionTagsMatch =
+        /^\/transactions\/([^/]+)\/tags$/.exec(request.url);
+      if (request.url === "/tags" && request.method === "POST") {
+        const tag = {
+          id: `tag-created-${bridgeTagCatalog.length}`,
+          name: requestBody.name,
+          isActive: true,
+        };
+        bridgeTagCatalog.push(tag);
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          status: "created",
+          tag,
+        }));
+        return;
+      }
+      if (request.url === "/tags") {
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          provenance: {
+            provider: "live",
+            fetchedAt: "2026-08-11T14:00:00.000Z",
+          },
+          tags: bridgeTagCatalog,
+        }));
+        return;
+      }
+      if (transactionTagsMatch && request.method === "PATCH") {
+        const sourceRef = decodeURIComponent(transactionTagsMatch[1]);
+        const current = bridgeTransactionTags.get(sourceRef) ?? ["tag-household"];
+        if (
+          JSON.stringify([...current].sort()) !==
+          JSON.stringify([...requestBody.expectedTagIds].sort())
+        ) {
+          response.writeHead(409, {
+            "Content-Type": "application/json",
+            "X-Monarch-Contract-Version": "1.0",
+          });
+          response.end(JSON.stringify({
+            contractVersion: "1.0",
+            error: {
+              code: "transaction_tag_drift",
+              message: "Synthetic drift",
+            },
+          }));
+          return;
+        }
+        bridgeTransactionTags.set(sourceRef, [...requestBody.tagIds]);
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          status: "updated",
+          transactionId: sourceRef,
+          tagReferences: requestBody.tagIds.map((id) => ({
+            id,
+            name: bridgeTagCatalog.find((tag) => tag.id === id)?.name ?? "Tag",
+          })),
+        }));
+        return;
+      }
+      if (transactionMatch && request.method === "GET") {
+        const sourceRef = decodeURIComponent(transactionMatch[1]);
+        const tagIds = bridgeTransactionTags.get(sourceRef) ?? ["tag-household"];
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          provenance: {
+            provider: "live",
+            fetchedAt: "2026-08-11T14:00:00.000Z",
+          },
+          transaction: {
+            id: sourceRef,
+            date: "2026-08-11",
+            amount: -1,
+            merchant: { name: "Synthetic", logoUrl: null },
+            category: null,
+            account: { id: "account-demo", displayName: "Demo", mask: null },
+            isPending: false,
+            isRecurring: false,
+            reviewStatus: "reviewed",
+            reviewAssignee: null,
+            notes: null,
+            tags: tagIds.map(
+              (id) => bridgeTagCatalog.find((tag) => tag.id === id)?.name ?? "Tag"
+            ),
+            tagReferences: tagIds.map((id) => ({
+              id,
+              name: bridgeTagCatalog.find((tag) => tag.id === id)?.name ?? "Tag",
+            })),
+          },
+        }));
+        return;
+      }
+
       const common = { contractVersion: "1.0", mode: "live" };
       const payload =
         request.url === "/health"
@@ -305,7 +426,16 @@ before(async () => {
       } else if (request.url === "/v1/reattribution/previews:resolve") {
         payload = { preview: previews.get(body.previewId) ?? null };
       } else if (request.url === "/v1/reattribution/previews:apply") {
-        payload = { counts: impactCounts(body.preview) };
+        const counts = impactCounts(body.preview);
+        appliedPreviews.set(body.preview.previewId, {
+          counts,
+          appliedAt: body.appliedAt,
+        });
+        payload = { counts };
+      } else if (request.url === "/v1/reattribution/previews:applied") {
+        payload = {
+          applied: appliedPreviews.get(body.previewId) ?? null,
+        };
       } else if (
         request.url === "/v1/attribution-actions/records:resolve"
       ) {
@@ -369,6 +499,21 @@ before(async () => {
               ? { ...replay, replayed: true }
               : null,
         }
+      } else if (request.url === "/v1/tag-projection/mappings:resolve") {
+        payload = { mappings: [...tagProjectionMappings.values()] };
+      } else if (request.url === "/v1/tag-projection/mappings:save") {
+        tagProjectionMappings.set(body.mapping.kidId, body.mapping);
+        payload = { stored: true };
+      } else if (request.url === "/v1/tag-projection/records:resolve") {
+        payload = {
+          projection: tagProjectionRecords.get(body.sourceRef) ?? null,
+        };
+      } else if (request.url === "/v1/tag-projection/records:save") {
+        tagProjectionRecords.set(
+          body.projection.sourceRef,
+          body.projection
+        );
+        payload = { stored: true };
       } else {
         response.writeHead(404, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ error: "not_found" }));
@@ -2127,10 +2272,12 @@ test("connector policy exposes exactly the backend connector operations", () => 
     ["PATCH", "transactions/invented-transaction/category"],
     ["PATCH", "transactions/invented-transaction/merchant"],
     ["PATCH", "transactions/invented-transaction/review"],
+    ["PATCH", "transactions/invented-transaction/tags"],
     ["GET", "accounts"],
     ["GET", "category-groups"],
     ["GET", "categories"],
     ["GET", "tags"],
+    ["POST", "tags"],
     ["GET", "recurring"],
     ["GET", "budgets"],
     ["GET", "document-expectation-signals"],
@@ -2177,8 +2324,8 @@ test("connector policy exposes exactly the backend connector operations", () => 
     422
   );
 
-  for (const [method, path] of allowed) {
-    const wrongMethod = method === "GET" ? "POST" : "GET";
+  for (const [, path] of allowed) {
+    const wrongMethod = "DELETE";
     const result = evaluateConnectorRequest(
       wrongMethod,
       path.split("/"),
@@ -2342,6 +2489,34 @@ test("connector policy bounds sync, identifiers, category bodies, and bridge URL
     { reviewed: true, extra: true },
   ]) {
     assert.equal(parseReviewMutation(body).allowed, false);
+  }
+  assert.deepEqual(
+    parseTagCreateMutation({ name: " Kid:   Synthetic ", color: "#19D2A5" }),
+    {
+      allowed: true,
+      body: '{"name":"Kid: Synthetic","color":"#19D2A5"}',
+    }
+  );
+  assert.deepEqual(
+    parseTagMutation({
+      tagIds: ["tag-household", "tag-kid"],
+      expectedTagIds: ["tag-household"],
+    }),
+    {
+      allowed: true,
+      body:
+        '{"tagIds":["tag-household","tag-kid"],"expectedTagIds":["tag-household"]}',
+    }
+  );
+  for (const body of [
+    null,
+    {},
+    { tagIds: [], expectedTagIds: [], extra: true },
+    { tagIds: ["duplicate", "duplicate"], expectedTagIds: [] },
+    { tagIds: [" unsafe "], expectedTagIds: [] },
+    { tagIds: new Array(17).fill("tag"), expectedTagIds: [] },
+  ]) {
+    assert.equal(parseTagMutation(body).allowed, false);
   }
 
   assert.equal(resolveConnectorBridgeUrl("http://bridge:8100").configured, true);
@@ -2596,6 +2771,11 @@ test("public connector gateway forwards every allowlisted operation with caller 
     ["GET", "/api/connector/v1/category-groups"],
     ["GET", "/api/connector/v1/categories"],
     ["GET", "/api/connector/v1/tags"],
+    [
+      "POST",
+      "/api/connector/v1/tags",
+      { name: "Kid: Synthetic", color: "#19D2A5" },
+    ],
     ["GET", "/api/connector/v1/recurring"],
     ["GET", "/api/connector/v1/budgets"],
     ["POST", "/api/connector/v1/sync?days=365"],
@@ -2613,6 +2793,14 @@ test("public connector gateway forwards every allowlisted operation with caller 
       "PATCH",
       "/api/connector/v1/transactions/invented-transaction/review",
       { reviewed: true },
+    ],
+    [
+      "PATCH",
+      "/api/connector/v1/transactions/invented-transaction/tags",
+      {
+        tagIds: ["tag-household", "tag-kid"],
+        expectedTagIds: ["tag-household"],
+      },
     ],
   ];
 
@@ -2644,6 +2832,15 @@ test("public connector gateway forwards every allowlisted operation with caller 
     receivedRequests.findLast((request) => request.path?.endsWith("/review"))
       ?.body,
     '{"reviewed":true}'
+  );
+  assert.equal(
+    receivedRequests.findLast((request) => request.path === "/tags")?.body,
+    '{"name":"Kid: Synthetic","color":"#19D2A5"}'
+  );
+  assert.equal(
+    receivedRequests.findLast((request) => request.path?.endsWith("/tags"))
+      ?.body,
+    '{"tagIds":["tag-household","tag-kid"],"expectedTagIds":["tag-household"]}'
   );
 });
 
@@ -3136,7 +3333,7 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
   assert.equal((await stale.json()).error.code, "policy_version_conflict");
 });
 
-test("attribution policy discovery returns only active version metadata", async () => {
+test("attribution policy discovery returns active metadata and authoritative household currency", async () => {
   const response = await rawAttributionPolicyFetch(uiUrl, {
     Authorization: ["Bearer", serviceToken].join(" "),
   });
@@ -3148,7 +3345,9 @@ test("attribution policy discovery returns only active version metadata", async 
     engineVersion: "2.0.0",
     policyVersion: activePolicy.policyVersion,
     policyUpdatedAt: activePolicy.updatedAt,
+    householdCurrency: activePolicy.currency,
   });
+  assert.match(payload.householdCurrency, /^[A-Z]{3}$/);
   assert.equal(Number.isSafeInteger(payload.policyVersion), true);
   assert.ok(payload.policyVersion > 0);
   assert.match(

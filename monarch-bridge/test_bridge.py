@@ -126,8 +126,8 @@ async def test_transactions(client):
         assert "category" in tx
         assert "account" in tx
         assert set(tx) == {
-            "id", "date", "amount", "merchant", "category", "account",
-            "businessEntityName",
+            "id", "date", "amount", "merchant", "businessContext",
+            "category", "account",
             "isPending", "isRecurring", "reviewStatus", "reviewAssignee",
             "notes", "tags", "tagReferences",
         }
@@ -502,6 +502,85 @@ async def test_transaction_tags(client):
 
 
 @pytest.mark.anyio
+async def test_create_transaction_tag_is_verified_and_rejects_collisions(client):
+    created = await client.post(
+        "/tags",
+        json={"name": "Kid: Synthetic", "color": "#19D2A5"},
+    )
+    try:
+        assert created.status_code == 200
+        assert created.json()["status"] == "created"
+        assert created.json()["tag"]["name"] == "Kid: Synthetic"
+        assert_contract(created)
+
+        listed = await client.get("/tags")
+        assert created.json()["tag"] in listed.json()["tags"]
+
+        collision = await client.post(
+            "/tags",
+            json={"name": "Kid: Synthetic", "color": "#19D2A5"},
+        )
+        assert collision.status_code == 409
+        assert collision.json()["error"]["code"] == "transaction_tag_collision"
+        assert_contract(collision)
+    finally:
+        main_module.DemoProvider.TRANSACTION_TAGS = [
+            tag
+            for tag in main_module.DemoProvider.TRANSACTION_TAGS
+            if tag["name"] != "Kid: Synthetic"
+        ]
+
+
+@pytest.mark.anyio
+async def test_update_transaction_tags_preserves_complete_set_and_verifies_readback(
+    client,
+):
+    main_module.DemoProvider.TRANSACTION_TAG_OVERRIDES.pop("tx-1000", None)
+    response = await client.patch(
+        "/transactions/tx-1000/tags",
+        json={
+            "tagIds": ["tag-household", "tag-reimbursable"],
+            "expectedTagIds": ["tag-household"],
+        },
+    )
+    try:
+        assert response.status_code == 200
+        assert response.json()["status"] == "updated"
+        assert response.json()["tagReferences"] == [
+            {"id": "tag-household", "name": "Household"},
+            {"id": "tag-reimbursable", "name": "Reimbursable"},
+        ]
+        assert_contract(response)
+
+        detail = await client.get("/transactions/tx-1000")
+        assert detail.json()["transaction"]["tagReferences"] == response.json()[
+            "tagReferences"
+        ]
+    finally:
+        main_module.DemoProvider.TRANSACTION_TAG_OVERRIDES.pop("tx-1000", None)
+
+
+@pytest.mark.anyio
+async def test_update_transaction_tags_surfaces_drift_without_mutating(client):
+    main_module.DemoProvider.TRANSACTION_TAG_OVERRIDES.pop("tx-1000", None)
+    response = await client.patch(
+        "/transactions/tx-1000/tags",
+        json={
+            "tagIds": ["tag-reimbursable"],
+            "expectedTagIds": [],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "transaction_tag_drift"
+    assert_contract(response)
+    detail = await client.get("/transactions/tx-1000")
+    assert detail.json()["transaction"]["tagReferences"] == [
+        {"id": "tag-household", "name": "Household"}
+    ]
+
+
+@pytest.mark.anyio
 async def test_recurring(client):
     resp = await client.get("/recurring")
     assert resp.status_code == 200
@@ -564,17 +643,57 @@ async def test_openapi_json(client):
     assert "/sync" in schema["paths"]
     assert "/transactions" in schema["paths"]
     assert "/contract" in schema["paths"]
-    for path in (
+    public_paths = {
         "/contract", "/health", "/auth/login", "/auth/login-with-cookies",
         "/auth/status", "/auth/logout", "/sync", "/transactions",
         "/transactions/{transaction_id}", "/transactions/{transaction_id}/splits",
         "/transactions/{transaction_id}/category",
         "/transactions/{transaction_id}/merchant",
         "/transactions/{transaction_id}/review",
+        "/transactions/{transaction_id}/tags",
         "/categories", "/category-groups", "/tags", "/accounts", "/recurring",
         "/cashflow", "/budgets",
+    }
+    assert set(schema["paths"]) == public_paths
+    assert not any(
+        "TransactionRule" in model_name
+        for model_name in schema["components"]["schemas"]
+    )
+    serialized_schema = repr(schema)
+    for upstream_field in (
+        "merchantCriteriaUseOriginalStatement",
+        "merchantCriteria",
+        "originalStatementCriteria",
+        "merchantNameCriteria",
+        "amountCriteria",
+        "categoryIds",
+        "accountIds",
+        "criteriaOwnerIsJoint",
+        "criteriaOwnerUserIds",
+        "criteriaOwnerUsers",
+        "criteriaBusinessEntityIds",
+        "criteriaBusinessEntityIsUnassigned",
+        "criteriaBusinessEntities",
+        "setMerchantAction",
+        "setCategoryAction",
+        "addTagsAction",
+        "linkGoalAction",
+        "linkSavingsGoalAction",
+        "needsReviewByUserAction",
+        "unassignNeedsReviewByUserAction",
+        "sendNotificationAction",
+        "setHideFromReportsAction",
+        "setLinkToPaydownBudgetAction",
+        "reviewStatusAction",
+        "actionSetOwnerIsJoint",
+        "actionSetOwner",
+        "actionSetBusinessEntity",
+        "actionSetBusinessEntityIsUnassigned",
+        "recentApplicationCount",
+        "lastAppliedAt",
+        "splitTransactionsAction",
     ):
-        assert path in schema["paths"]
+        assert upstream_field not in serialized_schema
     response_bounds = {
         "AccountsResponse": ("accounts", MAX_ACCOUNTS),
         "CategoryGroupsResponse": ("categoryGroups", MAX_CATEGORY_GROUPS),
@@ -590,6 +709,9 @@ async def test_openapi_json(client):
             ]
             == maximum
         )
+    transaction_schema = schema["components"]["schemas"]["Transaction"]["properties"]
+    assert transaction_schema["businessContext"]["anyOf"][0]["maxLength"] == 120
+    assert "businessEntity" not in transaction_schema
 
 
 def test_live_and_demo_normalizers_produce_identical_dtos():
@@ -599,6 +721,7 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
             "date": "2026-08-01",
             "amount": -12.5,
             "merchant": {"name": "Store"},
+            "businessEntity": {"id": "demo-entity", "name": "Store Holdings"},
             "category": {"id": "cat-1", "name": "Shopping"},
             "account": {"id": "acc-1", "displayName": "Checking"},
             "needsReview": False,
@@ -611,6 +734,7 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
                 "postedDate": "2026-08-01T08:00:00Z",
                 "amount": "-12.50",
                 "merchant": {"name": "Store"},
+                "businessEntity": {"id": "live-entity", "name": "Store Holdings"},
                 "category": {"id": "cat-1", "name": "Shopping"},
                 "account": {"id": "acc-1", "displayName": "Checking"},
                 "needsReview": False,
@@ -816,7 +940,23 @@ def test_pinned_client_inquiry_signatures_are_supported():
     } <= set(inspect.signature(MonarchMoney.get_budgets).parameters)
 
 
-def test_transaction_normalizer_exposes_only_normalized_business_entity_name():
+@pytest.mark.parametrize(
+    "business_entity",
+    [
+        {"id": {"nested": "identifier"}, "name": ["not", "text"]},
+        "malformed",
+        None,
+        {},
+        {"id": "entity-1", "name": "   "},
+        {"id": "entity-1", "name": 123},
+        {"id": "entity-1", "name": "unsafe\u0000context"},
+        {"id": "entity-1", "name": "unsafe\u0080context"},
+        {"id": "entity-1", "name": "x" * 121},
+    ],
+)
+def test_transaction_normalizer_omits_invalid_business_entity_metadata(
+    business_entity,
+):
     baseline = {
         "id": "tx-1",
         "date": "2026-08-01",
@@ -826,45 +966,52 @@ def test_transaction_normalizer_exposes_only_normalized_business_entity_name():
         "account": {"id": "acc-1", "displayName": "Checking"},
         "needsReview": False,
     }
-    normalized = normalize_transaction({
+    with_upstream_additions = {
         **baseline,
-        "businessEntity": {
-            "id": "entity-1",
-            "name": "  Invented   Holdings  ",
-            "__typename": "BusinessEntity",
-        },
-    })
-    assert normalized.merchant.name == "Invented Store"
-    assert normalized.business_entity_name == "Invented Holdings"
-    serialized = normalized.model_dump_json(by_alias=True)
-    assert '"businessEntityName":"Invented Holdings"' in serialized
+        "businessEntity": business_entity,
+    }
+
+    normalized = normalize_transaction(with_upstream_additions)
+    assert normalized == normalize_transaction(baseline)
+    assert normalized.business_context is None
+    assert "businessEntity" not in normalized.model_dump_json(by_alias=True)
     assert "entity-1" not in normalized.model_dump_json(by_alias=True)
 
 
 @pytest.mark.parametrize(
-    "business_entity",
+    ("name", "expected"),
     [
-        {"id": {"nested": "identifier"}, "name": ["not", "text"]},
-        {"name": "unsafe\u0000label"},
-        {"name": "x" * 161},
-        "malformed",
-        None,
+        ("Conflicting Entity", "Conflicting Entity"),
+        ("Invented Store", "Invented Store"),
+        ("  Invented   Parent  ", "Invented Parent"),
     ],
 )
-def test_transaction_normalizer_omits_invalid_business_entity_names(
-    business_entity,
+def test_transaction_normalizer_exposes_only_bounded_business_context_name(
+    name,
+    expected,
 ):
-    normalized = normalize_transaction({
+    transaction = normalize_transaction({
         "id": "tx-1",
         "date": "2026-08-01",
         "amount": -12.5,
         "merchant": {"name": "Invented Store"},
-        "businessEntity": business_entity,
+        "businessEntity": {
+            "id": "private-entity-identifier",
+            "name": name,
+            "__typename": "BusinessEntity",
+        },
         "category": {"id": "cat-1", "name": "Shopping"},
         "account": {"id": "acc-1", "displayName": "Checking"},
         "needsReview": False,
     })
-    assert normalized.business_entity_name is None
+
+    serialized = transaction.model_dump_json(by_alias=True)
+    assert transaction.business_context == expected
+    assert transaction.merchant.name == "Invented Store"
+    assert '"businessContext":' in serialized
+    assert "businessEntity" not in serialized
+    assert "private-entity-identifier" not in serialized
+    assert "__typename" not in serialized
 
 
 def test_transaction_normalizer_does_not_expose_upstream_identity_additions():
@@ -1545,6 +1692,139 @@ async def test_live_category_update_requires_confirmed_mutation(client, monkeypa
 
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "upstream_error"
+
+
+@pytest.mark.anyio
+async def test_live_transaction_tag_update_compares_and_verifies(client, monkeypatch):
+    provider = AsyncMock()
+    provider.get_transaction_details.side_effect = [
+        {
+            "getTransaction": {
+                "id": "tx-1",
+                "date": "2026-08-08",
+                "amount": -10,
+                "merchant": {"name": "Synthetic"},
+                "account": {"id": "account-1", "displayName": "Demo"},
+                "needsReview": False,
+                "tags": [{"id": "tag-household", "name": "Household"}],
+            }
+        },
+        {
+            "getTransaction": {
+                "id": "tx-1",
+                "date": "2026-08-08",
+                "amount": -10,
+                "merchant": {"name": "Synthetic"},
+                "account": {"id": "account-1", "displayName": "Demo"},
+                "needsReview": False,
+                "tags": [
+                    {"id": "tag-household", "name": "Household"},
+                    {"id": "tag-kid", "name": "Kid: Synthetic"},
+                ],
+            }
+        },
+    ]
+    provider.set_transaction_tags.return_value = {
+        "setTransactionTags": {
+            "errors": [],
+            "transaction": {
+                "tags": [{"id": "tag-household"}, {"id": "tag-kid"}],
+            },
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.patch(
+        "/transactions/tx-1/tags",
+        json={
+            "tagIds": ["tag-household", "tag-kid"],
+            "expectedTagIds": ["tag-household"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [tag["id"] for tag in response.json()["tagReferences"]] == [
+        "tag-household",
+        "tag-kid",
+    ]
+    provider.set_transaction_tags.assert_awaited_once_with(
+        "tx-1",
+        ["tag-household", "tag-kid"],
+    )
+
+
+@pytest.mark.anyio
+async def test_live_transaction_tag_update_refuses_drift_before_mutation(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.get_transaction_details.return_value = {
+        "getTransaction": {
+            "id": "tx-1",
+            "date": "2026-08-08",
+            "amount": -10,
+            "merchant": {"name": "Synthetic"},
+            "account": {"id": "account-1", "displayName": "Demo"},
+            "needsReview": False,
+            "tags": [{"id": "tag-external", "name": "External"}],
+        }
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.patch(
+        "/transactions/tx-1/tags",
+        json={
+            "tagIds": ["tag-kid"],
+            "expectedTagIds": ["tag-household"],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "transaction_tag_drift"
+    provider.set_transaction_tags.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_live_transaction_tag_creation_requires_catalog_readback(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.create_transaction_tag.return_value = {
+        "createTransactionTag": {
+            "errors": [],
+            "tag": {
+                "id": "tag-kid",
+                "name": "Kid: Synthetic",
+            },
+        }
+    }
+    provider.get_transaction_tags.return_value = {
+        "householdTransactionTags": [
+            {"id": "tag-kid", "name": "Kid: Synthetic"},
+        ]
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.post(
+        "/tags",
+        json={"name": "Kid: Synthetic", "color": "#19D2A5"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tag"] == {
+        "id": "tag-kid",
+        "name": "Kid: Synthetic",
+        "isActive": True,
+    }
+    provider.create_transaction_tag.assert_awaited_once_with(
+        "Kid: Synthetic",
+        "#19D2A5",
+    )
 
 
 @pytest.mark.anyio

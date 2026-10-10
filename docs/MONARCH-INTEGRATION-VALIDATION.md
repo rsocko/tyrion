@@ -47,6 +47,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Merchant/payee write-back | Normalized 1-120 character input, unknown-field/control-character rejection, exact mutation-response verification, deterministic demo response, connector body allowlisting, and sanitized failures | Controlled live validation required with explicit confirmation, read-back, and restoration |
 | Transaction review | Pinned-client `needsReview`, `reviewStatus`, `needsReviewByUser`, household directory, `needs_review` filter, and `reviewed=True` mutation inspected; normalized status/assignee, strict mark-reviewed body, exact mutation verification, missing-capability failure, deterministic demo response, and connector allowlisting | Controlled live validation required on a dedicated needs-review transaction; do not run without accepting that the authoritative review action is not safely reversible |
+| Kids tag projection | Stable kid-to-tag mapping; collision/deletion/rename handling; reassignment, shared purchase, parent expense, retry/idempotency, partial failure, unrelated-tag preservation, optimistic drift refusal, exact read-back, action replay recovery, and re-attribution convergence use invented deterministic state only | Controlled live tag-set validation requires `TYRION_TEST_TRANSACTION_ID`, a pre-created `TYRION_TEST_TAG_ID`, and the reversible mutation confirmation; the test restores and verifies the complete original tag set. Managed-tag creation is not performed live because the pinned client exposes no verified deletion contract |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB general response bounds; composed health with one 4 KiB `/auth/status` verification, explicit v1 shape/version validation, derived status/reachability, no auth-field leakage, and sanitized non-success failures; status/body/safe-header preservation for passthrough operations; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
 | Production images | Separate non-root bridge/UI runtimes, route allowlist, loopback health checks, external session mount, no auth state in build contexts | Pull immutable images, mount restricted state, and smoke test private bridge plus TLS UI ingress |
@@ -69,10 +70,12 @@ Mission Control authenticates with the existing server-only
 `BRIDGE_API_TOKEN`/finance-manager bearer credential on the private Docker network.
 Tyrion derives the fixed `mission-control-finance-manager` actor and
 `homelab-household` scope internally, loads the current policy snapshot server-side,
-and returns only contract, engine, policy version, and policy update timestamp from
-discovery. Mission Control sends that exact positive version on every batch in the
-operation, and Tyrion evaluates each whole batch under one policy-version fence.
-Discovery never returns policy contents and fails closed when no policy is available.
+and returns only contract, engine, policy version, policy update timestamp, and the
+exact supported uppercase ISO-4217 household currency from Tyrion's authoritative
+policy configuration. Mission Control sends that exact positive version on every
+batch in the operation, and Tyrion evaluates each whole batch under one policy-version
+fence. Discovery never returns other policy contents and fails closed with
+`policy_unavailable` when policy or currency configuration is missing or invalid.
 Attribution failure
 does not change bridge sync success: Mission Control persists the transaction with
 pending attribution review and retries later. No controlled live Monarch validation
@@ -105,8 +108,8 @@ and resumes its projections after return.
    files, shell transcripts, CI variables with broad access, or command arguments.
 4. Run `test_live_integration.py` without output capture or fixture-generation tools.
 5. Enable mutation only after reviewing the dedicated transaction and confirmation
-   phrase. Category and merchant/payee tests must verify and restore the original
-   value.
+   phrase. Category, merchant/payee, and transaction-tag tests must verify and restore
+   the original value or complete tag set.
 6. Inspect logs for event codes only. Stop if any upstream body, filesystem path,
    account identifier, email, cookie, authorization value, or credential appears.
 7. Revoke the controlled session after testing when it is not needed.
@@ -173,15 +176,15 @@ The 1.6.0 source and wheel were reviewed on 2026-10-09. Existing Bridge calls re
 signature-compatible, and deterministic tests pin the installed version, required
 signatures, synthetic upstream shapes, normalized DTO equality, auth/session
 lifecycle, pagination, sync, category mutation, and sanitized failure behavior.
-The optional normalized `businessEntityName` transaction field is additive. It carries
+The optional normalized `businessContext` transaction field is additive. It carries
 only a bounded display label and omits upstream IDs, types, and raw objects. Controlled
 live validation remains required before claiming that Monarch supplies it consistently.
 
 | Addition | Decision |
 | --- | --- |
 | `get_all_holdings` | Defer. Investments remain in Monarch under the product boundary; the Bridge does not need a holdings DTO or concurrent fan-out. |
-| `get_transaction_rules` | Defer from the Bridge contract. Read access may inform a future Tyrion policy-import workflow, but raw rule criteria and actions must not cross the DTO boundary. |
-| Transaction `businessEntity` | Defer and ignore during normalization. The 1.6.0 query returns only `id`, `name`, and GraphQL type, with no source, confidence, provenance, or verification semantics. The editable normalized merchant name already supplies Tyrion's canonical payee display value, so this object adds ambiguous identity rather than receipt-level enrichment for #161. It must not influence spender attribution, payee identity, recurrence, matching, or reconciliation confidence. Deterministic fixtures cover conflicting, matching, malformed, and null values and prove that neither the raw object nor its identifier expands the Transaction DTO. Reconsider only if upstream documents stable semantics and a future use case can define a provenance-aware normalized signal without exposing the object or identifier. |
+| `get_transaction_rules` | Defer from the Bridge contract and from Tyrion policy import/comparison. The priority-ordered Monarch criteria/action model has no safe mapping to kid attribution, ownership/review state is not spender identity, and a partial projection would be misleading. The invented-fixture analysis and reconsideration gate are documented in [`MONARCH-TRANSACTION-RULE-EVALUATION.md`](MONARCH-TRANSACTION-RULE-EVALUATION.md). |
+| Transaction `businessEntity` | Adopt only its bounded display name as optional transaction `businessContext`. Never expose the raw object, identifier, or GraphQL type. The context is secondary display metadata and a low-trust Houston lookup hint. It must not drive automatic inference, canonical payee identity, recurrence, or reconciliation confidence, but a parent may explicitly confirm it as an additional discriminator in a deterministic merchant attribution rule. Malformed, blank, control-character, and oversized names normalize to `null` without failing the transaction. Deterministic fixtures prove the raw fields and identifier cannot cross the DTO boundary. |
 | Household-member lookup and transaction ownership updates | Do not expose. Monarch ownership is distinct from review assignment and physical-spender attribution; exposing the mutation would add an unapproved, non-reversible write surface. |
 | Typed budgets | Keep the raw client plus Tyrion's strict `normalize_budgets` boundary. The typed helper is a convenience API, not a replacement for complete-or-error bounds and stable public DTOs. |
 | Proxy-aware aiohttp sessions | Adopt through 1.6.0. `trust_env=True` improves operator-controlled proxy compatibility without changing Bridge request or response contracts. aiohttp may discover proxy settings from process environment and proxy credentials from those URLs or the bridge OS account's netrc; deployments must review that ambient configuration. Tyrion does not configure, persist, or log proxy credentials. |
@@ -194,6 +197,9 @@ password and cookie auth, saved-session restart, expiry recovery, logout, transa
 accounts, categories, tags, recurring data, budgets, sync, reversible category
 mutation, and sanitized timeout/rate-limit/upstream failures. Do not exercise deferred
 holdings, rule, ownership, typed-client, or aggregate-snapshot capabilities.
+Transaction rules remain outside both deterministic live-contract claims and the
+controlled live matrix; no credentialed rule read is needed for the documented defer
+decision.
 
 For the issue #140 controlled read refresh, run the opt-in read contract against a
 dedicated connected bridge. Confirm bounded search parameters are accepted by the

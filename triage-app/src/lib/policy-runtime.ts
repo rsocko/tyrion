@@ -7,6 +7,8 @@ import {
   PolicyService,
   PolicyVersionConflictError,
   ReattributionService,
+  TagProjectionError,
+  TagProjectionServiceV1,
   parseAttributionInputV1,
   parseAttributionActionRecordV1,
   parseAttributionResultV1,
@@ -20,9 +22,15 @@ import {
   type PolicyRepository,
   type PolicySnapshotV1,
   type ReattributionApplyCountsV1,
+  type ReattributionAppliedStateV1,
   type ReattributionPreviewV1,
   type ReattributionRecordV1,
   type ReattributionRepository,
+  type KidTagMappingV1,
+  type MonarchTagProjectionBridgeV1,
+  type MonarchTagV1,
+  type TagProjectionRecordV1,
+  type TagProjectionRepositoryV1,
 } from "@rsocko/tyrion-kid-engine";
 import { HOMELAB_HOUSEHOLD_ID } from "@/lib/homelab-identity";
 
@@ -74,9 +82,22 @@ export function getPolicyRuntime(
   let reattributionService: ReattributionService | undefined;
   let attributionActionService: AttributionActionService | undefined;
   let integrationClient: AttributionStateIntegrationClient | undefined;
+  let tagProjectionService: TagProjectionServiceV1 | undefined;
   const getIntegrationClient = () => {
     integrationClient ??= new AttributionStateIntegrationClient(environment);
     return integrationClient;
+  };
+  const getTagProjectionService = () => {
+    tagProjectionService ??= demo
+      ? new TagProjectionServiceV1(
+          new DemoTagProjectionRepository(),
+          new DemoMonarchTagProjectionBridge()
+        )
+      : new TagProjectionServiceV1(
+          new HttpTagProjectionRepository(getIntegrationClient()),
+          new HttpMonarchTagProjectionBridge(environment)
+        );
+    return tagProjectionService;
   };
   cachedRuntime = {
     mode: demo ? "demo" : "production",
@@ -91,7 +112,8 @@ export function getPolicyRuntime(
           : new HttpAttributionActionRepository(getIntegrationClient());
         attributionActionService = new AttributionActionService(
           policyRepository,
-          repository
+          repository,
+          { tagProjector: getTagProjectionService() }
         );
       }
       return attributionActionService;
@@ -103,7 +125,8 @@ export function getPolicyRuntime(
           : new HttpReattributionRepository(getIntegrationClient());
         reattributionService = new ReattributionService(
           policyRepository,
-          repository
+          repository,
+          { tagProjector: getTagProjectionService() }
         );
       }
       return reattributionService;
@@ -190,6 +213,7 @@ class DemoReattributionRepository implements ReattributionRepository {
       }),
     ],
   ]);
+  private readonly applied = new Map<string, ReattributionAppliedStateV1>();
 
   async loadRecords(
     householdId: string,
@@ -214,13 +238,26 @@ class DemoReattributionRepository implements ReattributionRepository {
     return preview?.householdId === householdId ? structuredClone(preview) : null;
   }
 
+  async loadAppliedState(
+    householdId: string,
+    previewId: string
+  ): Promise<ReattributionAppliedStateV1 | null> {
+    const preview = this.previews.get(previewId);
+    const state = this.applied.get(previewId);
+    return preview?.householdId === householdId && state
+      ? structuredClone(state)
+      : null;
+  }
+
   async applyPreviewIfPolicyVersion(
     preview: ReattributionPreviewV1,
     _appliedAt: string,
     expectedPolicyVersion: number
   ): Promise<ReattributionApplyCountsV1 | null> {
     if (preview.policyVersion !== expectedPolicyVersion) return null;
-    return summarizePreview(preview);
+    const counts = summarizePreview(preview);
+    this.applied.set(preview.previewId, { counts, appliedAt: _appliedAt });
+    return counts;
   }
 }
 
@@ -273,6 +310,39 @@ class HttpReattributionRepository implements ReattributionRepository {
     } catch {
       throw new ReattributionIntegrationError();
     }
+  }
+
+  async loadAppliedState(
+    householdId: string,
+    previewId: string
+  ): Promise<ReattributionAppliedStateV1 | null> {
+    const value = exactObject(
+      await this.client.request("v1/reattribution/previews:applied", {
+        householdId,
+        previewId,
+      }),
+      ["applied"]
+    );
+    if (value.applied === null) return null;
+    const applied = exactObject(value.applied, ["counts", "appliedAt"]);
+    const counts = exactObject(applied.counts, [
+      "applied",
+      "unchanged",
+      "manualPreserved",
+      "pendingReview",
+    ]);
+    if (typeof applied.appliedAt !== "string") {
+      throw new ReattributionIntegrationError();
+    }
+    return {
+      counts: {
+        applied: count(counts.applied),
+        unchanged: count(counts.unchanged),
+        manualPreserved: count(counts.manualPreserved),
+        pendingReview: count(counts.pendingReview),
+      },
+      appliedAt: applied.appliedAt,
+    };
   }
 
   async applyPreviewIfPolicyVersion(
@@ -488,6 +558,315 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
   }
 }
 
+    class DemoTagProjectionRepository implements TagProjectionRepositoryV1 {
+      private readonly mappings = new Map<string, KidTagMappingV1>();
+      private readonly projections = new Map<string, TagProjectionRecordV1>();
+
+      async listMappings(): Promise<KidTagMappingV1[]> {
+        return [...this.mappings.values()].map((mapping) => structuredClone(mapping));
+      }
+
+      async saveMapping(
+        _householdId: string,
+        mapping: KidTagMappingV1
+      ): Promise<void> {
+        this.mappings.set(mapping.kidId, structuredClone(mapping));
+      }
+
+      async loadProjection(
+        _householdId: string,
+        sourceRef: string
+      ): Promise<TagProjectionRecordV1 | null> {
+        const projection = this.projections.get(sourceRef);
+        return projection ? structuredClone(projection) : null;
+      }
+
+      async saveProjection(
+        _householdId: string,
+        projection: TagProjectionRecordV1
+      ): Promise<void> {
+        this.projections.set(projection.sourceRef, structuredClone(projection));
+      }
+    }
+
+    class DemoMonarchTagProjectionBridge implements MonarchTagProjectionBridgeV1 {
+      private readonly tags: MonarchTagV1[] = [
+        { id: "demo-household-tag", name: "Household", isActive: true },
+      ];
+      private readonly transactionTags = new Map<string, string[]>();
+
+      async listTags(): Promise<MonarchTagV1[]> {
+        return structuredClone(this.tags);
+      }
+
+      async createTag(name: string): Promise<MonarchTagV1> {
+        const tag = {
+          id: `demo-kid-tag-${this.tags.length}`,
+          name,
+          isActive: true,
+        };
+        this.tags.push(tag);
+        return structuredClone(tag);
+      }
+
+      async readTransactionTagIds(sourceRef: string): Promise<string[]> {
+        return [...(this.transactionTags.get(sourceRef) ?? ["demo-household-tag"])];
+      }
+
+      async replaceTransactionTags(
+        sourceRef: string,
+        tagIds: string[],
+        expectedTagIds: string[]
+      ): Promise<string[]> {
+        const current = await this.readTransactionTagIds(sourceRef);
+        if (!sameStringSet(current, expectedTagIds)) {
+          throw new TagProjectionError(
+            "transaction_tag_drift",
+            "Managed Monarch tags changed; reconcile before retrying"
+          );
+        }
+        this.transactionTags.set(sourceRef, [...tagIds]);
+        return [...tagIds];
+      }
+    }
+
+    class HttpTagProjectionRepository implements TagProjectionRepositoryV1 {
+      constructor(private readonly client: AttributionStateIntegrationClient) {}
+
+      async listMappings(householdId: string): Promise<KidTagMappingV1[]> {
+        const value = exactObject(
+          await this.client.request("v1/tag-projection/mappings:resolve", {
+            householdId,
+          }),
+          ["mappings"]
+        );
+        if (!Array.isArray(value.mappings)) throw new ReattributionIntegrationError();
+        return value.mappings.map(parseKidTagMapping);
+      }
+
+      async saveMapping(
+        householdId: string,
+        mapping: KidTagMappingV1
+      ): Promise<void> {
+        const value = exactObject(
+          await this.client.request("v1/tag-projection/mappings:save", {
+            householdId,
+            mapping,
+          }),
+          ["stored"]
+        );
+        if (value.stored !== true) throw new ReattributionIntegrationError();
+      }
+
+      async loadProjection(
+        householdId: string,
+        sourceRef: string
+      ): Promise<TagProjectionRecordV1 | null> {
+        const value = exactObject(
+          await this.client.request("v1/tag-projection/records:resolve", {
+            householdId,
+            sourceRef,
+          }),
+          ["projection"]
+        );
+        return value.projection === null
+          ? null
+          : parseTagProjectionRecord(value.projection);
+      }
+
+      async saveProjection(
+        householdId: string,
+        projection: TagProjectionRecordV1
+      ): Promise<void> {
+        const value = exactObject(
+          await this.client.request("v1/tag-projection/records:save", {
+            householdId,
+            projection,
+          }),
+          ["stored"]
+        );
+        if (value.stored !== true) throw new ReattributionIntegrationError();
+      }
+    }
+
+    class HttpMonarchTagProjectionBridge implements MonarchTagProjectionBridgeV1 {
+      private readonly baseUrl: URL;
+      private readonly token: string;
+
+      constructor(environment: NodeJS.ProcessEnv) {
+        const token = environment.BRIDGE_API_TOKEN;
+        if (!token || token.length < 32) throw new ReattributionIntegrationError();
+        this.token = token;
+        try {
+          this.baseUrl = new URL(environment.BRIDGE_URL ?? "");
+        } catch {
+          throw new ReattributionIntegrationError();
+        }
+        if (
+          !["http:", "https:"].includes(this.baseUrl.protocol) ||
+          this.baseUrl.username ||
+          this.baseUrl.password ||
+          (this.baseUrl.pathname !== "/" && this.baseUrl.pathname !== "") ||
+          this.baseUrl.search ||
+          this.baseUrl.hash
+        ) {
+          throw new ReattributionIntegrationError();
+        }
+      }
+
+      async listTags(): Promise<MonarchTagV1[]> {
+        const value = exactObject(await this.request("GET", "tags"), [
+          "contractVersion",
+          "provenance",
+          "tags",
+        ]);
+        if (!Array.isArray(value.tags)) throw new ReattributionIntegrationError();
+        return value.tags.map(parseMonarchTag);
+      }
+
+      async createTag(name: string, color: string): Promise<MonarchTagV1> {
+        const value = exactObject(
+          await this.request("POST", "tags", { name, color }),
+          ["contractVersion", "status", "tag"]
+        );
+        if (value.status !== "created") throw new ReattributionIntegrationError();
+        return parseMonarchTag(value.tag);
+      }
+
+      async readTransactionTagIds(sourceRef: string): Promise<string[]> {
+        const value = exactObject(
+          await this.request(
+            "GET",
+            `transactions/${encodeURIComponent(sourceRef)}`
+          ),
+          ["contractVersion", "provenance", "transaction"]
+        );
+        const transaction = exactObject(value.transaction, [
+          "id",
+          "date",
+          "amount",
+          "merchant",
+          "category",
+          "account",
+          "isPending",
+          "isRecurring",
+          "reviewStatus",
+          "reviewAssignee",
+          "notes",
+          "tags",
+          "tagReferences",
+        ]);
+        if (!Array.isArray(transaction.tagReferences)) {
+          throw new ReattributionIntegrationError();
+        }
+        return transaction.tagReferences.map((value) => {
+          const tag = exactObject(value, ["id", "name"]);
+          if (typeof tag.id !== "string" || typeof tag.name !== "string") {
+            throw new ReattributionIntegrationError();
+          }
+          return tag.id;
+        });
+      }
+
+      async replaceTransactionTags(
+        sourceRef: string,
+        tagIds: string[],
+        expectedTagIds: string[]
+      ): Promise<string[]> {
+        let value: unknown;
+        try {
+          value = await this.request(
+            "PATCH",
+            `transactions/${encodeURIComponent(sourceRef)}/tags`,
+            { tagIds, expectedTagIds }
+          );
+        } catch (error) {
+          if (
+            error instanceof BridgeProjectionRequestError &&
+            error.status === 409
+          ) {
+            throw new TagProjectionError(
+              "transaction_tag_drift",
+              "Managed Monarch tags changed; reconcile before retrying"
+            );
+          }
+          throw error;
+        }
+        const response = exactObject(value, [
+          "contractVersion",
+          "status",
+          "transactionId",
+          "tagReferences",
+        ]);
+        if (
+          response.status !== "updated" ||
+          response.transactionId !== sourceRef ||
+          !Array.isArray(response.tagReferences)
+        ) {
+          throw new ReattributionIntegrationError();
+        }
+        return response.tagReferences.map((value) => {
+          const tag = exactObject(value, ["id", "name"]);
+          if (typeof tag.id !== "string" || typeof tag.name !== "string") {
+            throw new ReattributionIntegrationError();
+          }
+          return tag.id;
+        });
+      }
+
+      private async request(
+        method: "GET" | "POST" | "PATCH",
+        path: string,
+        body?: unknown
+      ): Promise<unknown> {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), INTEGRATION_TIMEOUT_MS);
+        try {
+          const response = await fetch(new URL(path, this.baseUrl), {
+            method,
+            headers: {
+              Accept: "application/json",
+              Authorization: `Bearer ${this.token}`,
+              ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+            },
+            body: body === undefined ? undefined : JSON.stringify(body),
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new BridgeProjectionRequestError(response.status);
+          const declaredLength = Number(response.headers.get("content-length") || "0");
+          if (
+            !Number.isSafeInteger(declaredLength) ||
+            declaredLength > MAX_INTEGRATION_RESPONSE_BYTES
+          ) {
+            throw new ReattributionIntegrationError();
+          }
+          const payload = new Uint8Array(await response.arrayBuffer());
+          if (payload.byteLength > MAX_INTEGRATION_RESPONSE_BYTES) {
+            throw new ReattributionIntegrationError();
+          }
+          return JSON.parse(new TextDecoder().decode(payload));
+        } catch (error) {
+          if (
+            error instanceof ReattributionIntegrationError ||
+            error instanceof BridgeProjectionRequestError
+          ) {
+            throw error;
+          }
+          throw new ReattributionIntegrationError();
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+    }
+
+    class BridgeProjectionRequestError extends Error {
+      constructor(readonly status: number) {
+        super("Monarch tag projection request failed");
+        this.name = "BridgeProjectionRequestError";
+      }
+    }
+
 function demoRecord(
   sourceRef: string,
   current: AttributionResultV1 | null
@@ -621,4 +1000,93 @@ function count(value: unknown): number {
     throw new ReattributionIntegrationError();
   }
   return value as number;
+}
+
+function parseKidTagMapping(value: unknown): KidTagMappingV1 {
+  const mapping = exactObject(value, [
+    "kidId",
+    "tagId",
+    "label",
+    "retiredTagIds",
+  ]);
+  if (
+    typeof mapping.kidId !== "string" ||
+    typeof mapping.tagId !== "string" ||
+    typeof mapping.label !== "string" ||
+    !Array.isArray(mapping.retiredTagIds) ||
+    !mapping.retiredTagIds.every((tagId) => typeof tagId === "string")
+  ) {
+    throw new ReattributionIntegrationError();
+  }
+  return {
+    kidId: mapping.kidId,
+    tagId: mapping.tagId,
+    label: mapping.label,
+    retiredTagIds: [...mapping.retiredTagIds] as string[],
+  };
+}
+
+function parseTagProjectionRecord(value: unknown): TagProjectionRecordV1 {
+  const projection = exactObject(value, [
+    "sourceRef",
+    "decisionVersion",
+    "kidIds",
+    "managedTagIds",
+    "status",
+    "errorCode",
+    "updatedAt",
+  ]);
+  const statuses = new Set(["pending", "projected", "failed", "drift"]);
+  const errorCodes = new Set([
+    "kid_tag_collision",
+    "kid_tag_mapping_deleted",
+    "kid_not_projectable",
+    "transaction_tag_drift",
+    "tag_projection_unavailable",
+    "tag_projection_unverified",
+  ]);
+  if (
+    typeof projection.sourceRef !== "string" ||
+    typeof projection.decisionVersion !== "string" ||
+    !Array.isArray(projection.kidIds) ||
+    !projection.kidIds.every((kidId) => typeof kidId === "string") ||
+    !Array.isArray(projection.managedTagIds) ||
+    !projection.managedTagIds.every((tagId) => typeof tagId === "string") ||
+    typeof projection.status !== "string" ||
+    !statuses.has(projection.status) ||
+    (projection.errorCode !== null &&
+      (typeof projection.errorCode !== "string" ||
+        !errorCodes.has(projection.errorCode))) ||
+    typeof projection.updatedAt !== "string"
+  ) {
+    throw new ReattributionIntegrationError();
+  }
+  return {
+    sourceRef: projection.sourceRef,
+    decisionVersion: projection.decisionVersion,
+    kidIds: [...projection.kidIds],
+    managedTagIds: [...projection.managedTagIds],
+    status: projection.status,
+    errorCode: projection.errorCode,
+    updatedAt: projection.updatedAt,
+  } as TagProjectionRecordV1;
+}
+
+function parseMonarchTag(value: unknown): MonarchTagV1 {
+  const tag = exactObject(value, ["id", "name", "isActive"]);
+  if (
+    typeof tag.id !== "string" ||
+    typeof tag.name !== "string" ||
+    typeof tag.isActive !== "boolean"
+  ) {
+    throw new ReattributionIntegrationError();
+  }
+  return { id: tag.id, name: tag.name, isActive: tag.isActive };
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    [...left].sort().every((value, index) => value === [...right].sort()[index])
+  );
 }

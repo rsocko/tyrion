@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Literal, Mapping, Optional
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 CONTRACT_VERSION = "1.0"
 MAX_ACCOUNTS = 1_000
@@ -104,7 +104,7 @@ class Transaction(ApiModel):
     date: date
     amount: float
     merchant: Merchant
-    business_entity_name: Optional[str] = Field(default=None, max_length=160)
+    business_context: Optional[str] = Field(default=None, max_length=120)
     category: Optional[CategoryRef] = None
     account: AccountRef
     is_pending: bool = False
@@ -174,6 +174,44 @@ class TransactionTag(ApiModel):
 
 class TransactionTagsResponse(DataResponse):
     tags: list[TransactionTag] = Field(max_length=MAX_TRANSACTION_TAGS)
+
+
+class TransactionTagCreate(ApiModel):
+    name: str = Field(
+        min_length=1,
+        max_length=80,
+        pattern=r"^[^\x00-\x1f\x7f]+$",
+    )
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class TransactionTagCreateResponse(ContractResponse):
+    status: Literal["created"]
+    tag: TransactionTag
+
+
+class TransactionTagsUpdate(ApiModel):
+    tag_ids: list[str] = Field(min_length=0, max_length=100)
+    expected_tag_ids: list[str] = Field(min_length=0, max_length=100)
+
+    @field_validator("tag_ids", "expected_tag_ids")
+    @classmethod
+    def tag_ids_must_be_bounded(cls, values: list[str]) -> list[str]:
+        if any(
+            not value
+            or value != value.strip()
+            or len(value) > 512
+            or any(ord(character) < 32 or ord(character) == 127 for character in value)
+            for value in values
+        ):
+            raise ValueError("Transaction tag IDs are invalid")
+        return values
+
+
+class TransactionTagsUpdateResponse(ContractResponse):
+    status: Literal["updated"]
+    transaction_id: str
+    tag_references: list[TransactionTagRef] = Field(max_length=100)
 
 
 class Account(ApiModel):
@@ -349,6 +387,23 @@ def _optional_text(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _optional_business_context(value: Any) -> Optional[str]:
+    if not isinstance(value, Mapping):
+        return None
+    name = value.get("name")
+    if not isinstance(name, str):
+        return None
+    if any(
+        ord(character) < 32 or 127 <= ord(character) <= 159
+        for character in name
+    ):
+        return None
+    normalized = " ".join(name.split())
+    if not normalized or len(normalized) > 120:
+        return None
+    return normalized
+
+
 def _optional_http_url(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -445,19 +500,6 @@ def normalize_transaction(raw: Any) -> Transaction:
     )
     review_assignee_id = _pick(review_assignee, "id")
     review_assignee_name = _pick(review_assignee, "name")
-    business_entity = _mapping(_pick(value, "businessEntity", default={}))
-    business_entity_value = _pick(business_entity, "name", "displayName")
-    business_entity_name = (
-        " ".join(business_entity_value.split())
-        if isinstance(business_entity_value, str)
-        else None
-    )
-    if (
-        not business_entity_name
-        or len(business_entity_name) > 160
-        or any(ord(character) < 32 for character in business_entity_name)
-    ):
-        business_entity_name = None
     return Transaction(
         id=_identifier(_pick(value, "id")),
         date=_date(_pick(value, "date", "postedDate", "createdAt")),
@@ -466,7 +508,7 @@ def normalize_transaction(raw: Any) -> Transaction:
             name=_text(_pick(merchant, "name", default=_pick(value, "merchantName")), "Unknown merchant"),
             logo_url=_optional_http_url(_pick(merchant, "logoUrl", "logo_url")),
         ),
-        business_entity_name=business_entity_name,
+        business_context=_optional_business_context(value.get("businessEntity")),
         category=normalize_category_ref(_pick(value, "category", default={})),
         account=normalize_account_ref(_pick(value, "account", default={})),
         is_pending=bool(_pick(value, "isPending", "pending", default=False)),

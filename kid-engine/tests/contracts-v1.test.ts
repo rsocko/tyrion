@@ -208,7 +208,10 @@ describe('v1 domain contract validation', () => {
     ).toThrow('IANA timezone');
     expect(() =>
       parsePolicySnapshotV1({ ...policyFixture, currency: '123' })
-    ).toThrow('ISO 4217 currency');
+    ).toThrow('uppercase ISO 4217 currency');
+    expect(() =>
+      parsePolicySnapshotV1({ ...policyFixture, currency: 'usd' })
+    ).toThrow('uppercase ISO 4217 currency');
     expect(() =>
       parsePolicySnapshotV1({
         ...policyFixture,

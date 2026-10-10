@@ -3,6 +3,7 @@ import {
   TYRION_DOMAIN_CONTRACT_VERSION,
   ContractValidationError,
   parseAttributionInputV1,
+  parseIsoCurrencyV1,
   parsePolicyActorV1,
   type AttributionInputV1,
   type AttributionResultV1,
@@ -69,6 +70,7 @@ export interface AttributionPolicyResponseV1 {
   engineVersion: typeof KID_ATTRIBUTION_ENGINE_VERSION;
   policyVersion: number;
   policyUpdatedAt: string;
+  householdCurrency: string;
 }
 
 export interface AttributionBatchServiceOptions {
@@ -90,11 +92,22 @@ export class AttributionPolicyService {
         'Household attribution policy is unavailable'
       );
     }
+    let householdCurrency: string;
+    try {
+      householdCurrency = parseIsoCurrencyV1(policy.currency);
+    } catch (error) {
+      if (!(error instanceof ContractValidationError)) throw error;
+      throw new AttributionBatchError(
+        'policy_unavailable',
+        'Household attribution policy is unavailable'
+      );
+    }
     return {
       contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
       engineVersion: KID_ATTRIBUTION_ENGINE_VERSION,
       policyVersion: policy.policyVersion,
       policyUpdatedAt: policy.updatedAt,
+      householdCurrency,
     };
   }
 }

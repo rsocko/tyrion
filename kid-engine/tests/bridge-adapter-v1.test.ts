@@ -11,7 +11,7 @@ const bridgeTransaction: NormalizedBridgeTransactionV1 = {
   date: '2026-08-08',
   amount: -12.34,
   merchant: { name: 'Synthetic Shop', logoUrl: null },
-  businessEntityName: 'Synthetic Holdings',
+  businessContext: 'Synthetic Holdings',
   category: { id: 'category-demo', name: 'Synthetic Category' },
   account: {
     id: 'account-demo',
@@ -127,6 +127,14 @@ describe('normalized bridge v1 attribution adapter', () => {
       [mappingContext]
     );
     expect(JSON.stringify(inputs)).not.toContain('future-value');
+  });
+
+  it('treats omitted business context from an older v1 response as unavailable', () => {
+    const { businessContext: _businessContext, ...legacyTransaction } =
+      bridgeTransaction;
+    expect(
+      parseNormalizedBridgeTransactionV1(legacyTransaction).businessContext
+    ).toBeNull();
   });
 
   it('rejects non-finite bridge amounts', () => {

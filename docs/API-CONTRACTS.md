@@ -68,10 +68,12 @@ Insights projection:
 | `PATCH` | `/transactions/{id}/category` | JSON `{ "categoryId": "..." }` only; 1 KiB maximum |
 | `PATCH` | `/transactions/{id}/merchant` | JSON `{ "merchantName": "..." }` only; normalized 1-120 characters; 1 KiB maximum |
 | `PATCH` | `/transactions/{id}/review` | Exact JSON `{ "reviewed": true }`; 1 KiB maximum |
+| `PATCH` | `/transactions/{id}/tags` | Complete desired and expected tag-ID arrays; optimistic drift check; 1 KiB gateway maximum |
 | `GET` | `/accounts` | No query or body |
 | `GET` | `/category-groups` | No query or body |
 | `GET` | `/categories` | No query or body |
 | `GET` | `/tags` | No query or body |
+| `POST` | `/tags` | JSON `{ "name": "...", "color": "#RRGGBB" }`; verified creation; 1 KiB maximum |
 | `GET` | `/recurring` | No query or body |
 | `GET` | `/budgets` | No query or body |
 | `POST` | `/sync?days=1..365` | One optional `days` value; no body; default 90 |
@@ -410,7 +412,7 @@ filters.
       "date": "2026-08-07",
       "amount": -59.99,
       "merchant": { "name": "Store", "logoUrl": null },
-      "businessEntityName": "Store Holdings",
+      "businessContext": "Store Holdings",
       "category": { "id": "cat-shopping", "name": "Shopping" },
       "account": { "id": "acc-1", "displayName": "Checking", "mask": "1234" },
       "isPending": false,
@@ -429,8 +431,8 @@ filters.
 }
 ```
 
-`category` is nullable. `merchant.logoUrl`, `businessEntityName`, `account.mask`, and
-`notes` are nullable. `businessEntityName` is only the normalized bounded display
+`category` is nullable. `merchant.logoUrl`, `businessContext`, `account.mask`, and
+`notes` are nullable. `businessContext` is only the normalized bounded display
 label supplied by Monarch. Business-entity identifiers, type metadata, and raw
 upstream objects are never exposed.
 The existing `tags` display-name array remains for v1 compatibility.
@@ -616,6 +618,38 @@ The returned reference set supplies the stable IDs used by transaction
 `tagReferences` and by bounded tag filters. A returned group or tag is active unless
 Monarch explicitly marks it disabled; disappearance from a later complete response is
 handled by the consumer's reference-deactivation policy.
+
+`POST /tags` creates one normalized 1-80 character tag with a six-digit hexadecimal
+color. Success is returned only after the created ID and exact name appear in a fresh
+bounded catalog read. A duplicate name returns a stable collision response in demo
+mode; live rejection remains sanitized.
+
+`PATCH /transactions/{transaction_id}/tags` accepts:
+
+```json
+{
+  "tagIds": ["tag-household", "tag-kid-alex"],
+  "expectedTagIds": ["tag-household", "tag-kid-blair"]
+}
+```
+
+Both arrays contain unique IDs and are bounded to 100 at the private Bridge (16
+through the public connector gateway). `expectedTagIds` is the caller's complete
+read state, not only Tyrion-managed tags. A mismatch returns
+`409 transaction_tag_drift` without mutation. The Bridge replaces the complete tag
+set, reads the transaction back, and returns `updated` only when the exact requested
+IDs are verified. This compare-and-verify contract lets Tyrion preserve unrelated
+tags while refusing to silently overwrite external changes.
+
+Tyrion's tag projection stores the stable `kidId` to Monarch tag-ID mapping and never
+derives identity from the `Kid: <display name>` label. Existing unmapped `Kid:` labels,
+deleted or disabled mapped tags, and post-projection changes are reconciliation
+exceptions. Kid renames create a replacement mapping and retire the former managed
+ID; reassignment and parent-expense attribution remove all known managed IDs while
+preserving every unrelated tag. Explicit shared attribution projects multiple managed
+Kid tags. Retries reuse authoritative attribution state and remain idempotent.
+Monarch tags are only an interoperable projection: confidence, provenance, policy
+version, ambiguity, and audit history remain authoritative in Tyrion.
 
 ### Recurring obligations
 
