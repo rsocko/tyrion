@@ -166,6 +166,53 @@ async def test_live_merchant_mutation_is_verified_and_restored(live_bridge):
 
 
 @pytest.mark.anyio
+async def test_live_transaction_tag_mutation_is_verified_and_restored(live_bridge):
+    if os.getenv("TYRION_LIVE_MUTATION_CONFIRM") != MUTATION_CONFIRMATION:
+        pytest.skip("Explicit reversible mutation confirmation is required")
+    transaction_id = os.getenv("TYRION_TEST_TRANSACTION_ID")
+    replacement_tag_id = os.getenv("TYRION_TEST_TAG_ID")
+    if not transaction_id or not replacement_tag_id:
+        pytest.skip("Dedicated test transaction and tag IDs are required")
+
+    before = await live_bridge.get(f"/transactions/{transaction_id}")
+    assert_success(before)
+    original_ids = [
+        tag["id"] for tag in before.json()["transaction"]["tagReferences"]
+    ]
+    if replacement_tag_id in original_ids:
+        pytest.skip("The replacement tag must not already be on the transaction")
+    replacement_ids = [*original_ids, replacement_tag_id]
+
+    try:
+        changed = await live_bridge.patch(
+            f"/transactions/{transaction_id}/tags",
+            json={
+                "tagIds": replacement_ids,
+                "expectedTagIds": original_ids,
+            },
+        )
+        assert_success(changed)
+        assert sorted(
+            tag["id"] for tag in changed.json()["tagReferences"]
+        ) == sorted(replacement_ids)
+    finally:
+        restored = await live_bridge.patch(
+            f"/transactions/{transaction_id}/tags",
+            json={
+                "tagIds": original_ids,
+                "expectedTagIds": replacement_ids,
+            },
+        )
+        assert_success(restored)
+
+    final = await live_bridge.get(f"/transactions/{transaction_id}")
+    assert_success(final)
+    assert sorted(
+        tag["id"] for tag in final.json()["transaction"]["tagReferences"]
+    ) == sorted(original_ids)
+
+
+@pytest.mark.anyio
 async def test_z_live_authentication_flow_and_logout(live_bridge):
     method = os.getenv("TYRION_LIVE_AUTH_METHOD")
     if method not in {"password", "cookies"}:

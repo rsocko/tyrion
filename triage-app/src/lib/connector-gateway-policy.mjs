@@ -10,7 +10,6 @@ const noQueryRoutes = new Map([
   ["accounts", "GET"],
   ["category-groups", "GET"],
   ["categories", "GET"],
-  ["tags", "GET"],
   ["recurring", "GET"],
   ["budgets", "GET"],
 ]);
@@ -83,6 +82,11 @@ export function isBrowserConnectorRequest(headers) {
 
 export function evaluateConnectorRequest(method, segments, searchParams) {
   const path = Array.isArray(segments) ? segments.join("/") : "";
+  if (path === "tags") {
+    if (method !== "GET" && method !== "POST") return methodNotAllowed();
+    if ([...searchParams.keys()].length > 0) return queryNotAccepted();
+    return allowed("/tags", method === "POST");
+  }
   const fixedMethod = noQueryRoutes.get(path);
   if (fixedMethod) {
     if (method !== fixedMethod) return methodNotAllowed();
@@ -159,7 +163,8 @@ export function evaluateConnectorRequest(method, segments, searchParams) {
     if (
       operation === "category" ||
       operation === "merchant" ||
-      operation === "review"
+      operation === "review" ||
+      operation === "tags"
     ) {
       if (method !== "PATCH") return methodNotAllowed();
     } else if (method !== "GET") {
@@ -171,7 +176,8 @@ export function evaluateConnectorRequest(method, segments, searchParams) {
       `/transactions/${encodeURIComponent(transactionId)}${suffix}`,
       operation === "category" ||
         operation === "merchant" ||
-        operation === "review"
+        operation === "review" ||
+        operation === "tags"
     );
   }
 
@@ -249,6 +255,48 @@ export function parseReviewMutation(value) {
   return {
     allowed: true,
     body: '{"reviewed":true}',
+  };
+}
+
+export function parseTagCreateMutation(value) {
+  if (!plainObject(value) || Object.keys(value).length !== 2) {
+    return reject(400, "invalid_request", "Tag creation body is invalid");
+  }
+  if (typeof value.name !== "string" || typeof value.color !== "string") {
+    return reject(400, "invalid_request", "Tag creation body is invalid");
+  }
+  const name = value.name.trim().replace(/\s+/g, " ");
+  if (
+    !name ||
+    name.length > 80 ||
+    hasControlCharacter(name) ||
+    !/^#[0-9A-Fa-f]{6}$/.test(value.color)
+  ) {
+    return reject(400, "invalid_request", "Tag creation body is invalid");
+  }
+  return {
+    allowed: true,
+    body: JSON.stringify({ name, color: value.color }),
+  };
+}
+
+export function parseTagMutation(value) {
+  if (
+    !plainObject(value) ||
+    Object.keys(value).length !== 2 ||
+    !Array.isArray(value.tagIds) ||
+    !Array.isArray(value.expectedTagIds)
+  ) {
+    return reject(400, "invalid_request", "Tag update body is invalid");
+  }
+  const tagIds = normalizeUniqueIds(value.tagIds);
+  const expectedTagIds = normalizeUniqueIds(value.expectedTagIds);
+  if (tagIds === null || expectedTagIds === null) {
+    return reject(400, "invalid_request", "Tag update body is invalid");
+  }
+  return {
+    allowed: true,
+    body: JSON.stringify({ tagIds, expectedTagIds }),
   };
 }
 
@@ -384,11 +432,32 @@ function matchTransactionRoute(segments) {
     segments[2] === "splits" ||
     segments[2] === "category" ||
     segments[2] === "merchant" ||
-    segments[2] === "review"
+    segments[2] === "review" ||
+    segments[2] === "tags"
   ) {
     return { transactionId, operation: segments[2] };
   }
   return null;
+}
+
+function plainObject(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+function normalizeUniqueIds(values) {
+  if (values.length > 16) return null;
+  const normalized = [];
+  for (const value of values) {
+    const id = normalizeId(value);
+    if (!id || id !== value || normalized.includes(id)) return null;
+    normalized.push(id);
+  }
+  return normalized;
 }
 
 function normalizeId(value) {

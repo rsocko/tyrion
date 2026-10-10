@@ -9,6 +9,7 @@ import {
   PolicyStoreUnavailableError,
   PolicyVersionConflictError,
   ReattributionError,
+  TagProjectionError,
 } from "@rsocko/tyrion-kid-engine";
 import {
   PolicyRuntimeConfigurationError,
@@ -61,6 +62,17 @@ export function policyError(error: unknown) {
           : error.code === "policy_unavailable"
             ? 409
             : 422;
+    return jsonError(status, error.code, error.message);
+  }
+  if (error instanceof TagProjectionError) {
+    const status =
+      error.code === "kid_not_projectable"
+        ? 422
+        : error.code === "kid_tag_collision" ||
+            error.code === "kid_tag_mapping_deleted" ||
+            error.code === "transaction_tag_drift"
+          ? 409
+          : 503;
     return jsonError(status, error.code, error.message);
   }
   if (error instanceof ReattributionIntegrationError) {

@@ -501,6 +501,85 @@ async def test_transaction_tags(client):
 
 
 @pytest.mark.anyio
+async def test_create_transaction_tag_is_verified_and_rejects_collisions(client):
+    created = await client.post(
+        "/tags",
+        json={"name": "Kid: Synthetic", "color": "#19D2A5"},
+    )
+    try:
+        assert created.status_code == 200
+        assert created.json()["status"] == "created"
+        assert created.json()["tag"]["name"] == "Kid: Synthetic"
+        assert_contract(created)
+
+        listed = await client.get("/tags")
+        assert created.json()["tag"] in listed.json()["tags"]
+
+        collision = await client.post(
+            "/tags",
+            json={"name": "Kid: Synthetic", "color": "#19D2A5"},
+        )
+        assert collision.status_code == 409
+        assert collision.json()["error"]["code"] == "transaction_tag_collision"
+        assert_contract(collision)
+    finally:
+        main_module.DemoProvider.TRANSACTION_TAGS = [
+            tag
+            for tag in main_module.DemoProvider.TRANSACTION_TAGS
+            if tag["name"] != "Kid: Synthetic"
+        ]
+
+
+@pytest.mark.anyio
+async def test_update_transaction_tags_preserves_complete_set_and_verifies_readback(
+    client,
+):
+    main_module.DemoProvider.TRANSACTION_TAG_OVERRIDES.pop("tx-1000", None)
+    response = await client.patch(
+        "/transactions/tx-1000/tags",
+        json={
+            "tagIds": ["tag-household", "tag-reimbursable"],
+            "expectedTagIds": ["tag-household"],
+        },
+    )
+    try:
+        assert response.status_code == 200
+        assert response.json()["status"] == "updated"
+        assert response.json()["tagReferences"] == [
+            {"id": "tag-household", "name": "Household"},
+            {"id": "tag-reimbursable", "name": "Reimbursable"},
+        ]
+        assert_contract(response)
+
+        detail = await client.get("/transactions/tx-1000")
+        assert detail.json()["transaction"]["tagReferences"] == response.json()[
+            "tagReferences"
+        ]
+    finally:
+        main_module.DemoProvider.TRANSACTION_TAG_OVERRIDES.pop("tx-1000", None)
+
+
+@pytest.mark.anyio
+async def test_update_transaction_tags_surfaces_drift_without_mutating(client):
+    main_module.DemoProvider.TRANSACTION_TAG_OVERRIDES.pop("tx-1000", None)
+    response = await client.patch(
+        "/transactions/tx-1000/tags",
+        json={
+            "tagIds": ["tag-reimbursable"],
+            "expectedTagIds": [],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "transaction_tag_drift"
+    assert_contract(response)
+    detail = await client.get("/transactions/tx-1000")
+    assert detail.json()["transaction"]["tagReferences"] == [
+        {"id": "tag-household", "name": "Household"}
+    ]
+
+
+@pytest.mark.anyio
 async def test_recurring(client):
     resp = await client.get("/recurring")
     assert resp.status_code == 200
@@ -570,6 +649,7 @@ async def test_openapi_json(client):
         "/transactions/{transaction_id}/category",
         "/transactions/{transaction_id}/merchant",
         "/transactions/{transaction_id}/review",
+        "/transactions/{transaction_id}/tags",
         "/categories", "/category-groups", "/tags", "/accounts", "/recurring",
         "/cashflow", "/budgets",
     }
@@ -1570,6 +1650,139 @@ async def test_live_category_update_requires_confirmed_mutation(client, monkeypa
 
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "upstream_error"
+
+
+@pytest.mark.anyio
+async def test_live_transaction_tag_update_compares_and_verifies(client, monkeypatch):
+    provider = AsyncMock()
+    provider.get_transaction_details.side_effect = [
+        {
+            "getTransaction": {
+                "id": "tx-1",
+                "date": "2026-08-08",
+                "amount": -10,
+                "merchant": {"name": "Synthetic"},
+                "account": {"id": "account-1", "displayName": "Demo"},
+                "needsReview": False,
+                "tags": [{"id": "tag-household", "name": "Household"}],
+            }
+        },
+        {
+            "getTransaction": {
+                "id": "tx-1",
+                "date": "2026-08-08",
+                "amount": -10,
+                "merchant": {"name": "Synthetic"},
+                "account": {"id": "account-1", "displayName": "Demo"},
+                "needsReview": False,
+                "tags": [
+                    {"id": "tag-household", "name": "Household"},
+                    {"id": "tag-kid", "name": "Kid: Synthetic"},
+                ],
+            }
+        },
+    ]
+    provider.set_transaction_tags.return_value = {
+        "setTransactionTags": {
+            "errors": [],
+            "transaction": {
+                "tags": [{"id": "tag-household"}, {"id": "tag-kid"}],
+            },
+        },
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.patch(
+        "/transactions/tx-1/tags",
+        json={
+            "tagIds": ["tag-household", "tag-kid"],
+            "expectedTagIds": ["tag-household"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert [tag["id"] for tag in response.json()["tagReferences"]] == [
+        "tag-household",
+        "tag-kid",
+    ]
+    provider.set_transaction_tags.assert_awaited_once_with(
+        "tx-1",
+        ["tag-household", "tag-kid"],
+    )
+
+
+@pytest.mark.anyio
+async def test_live_transaction_tag_update_refuses_drift_before_mutation(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.get_transaction_details.return_value = {
+        "getTransaction": {
+            "id": "tx-1",
+            "date": "2026-08-08",
+            "amount": -10,
+            "merchant": {"name": "Synthetic"},
+            "account": {"id": "account-1", "displayName": "Demo"},
+            "needsReview": False,
+            "tags": [{"id": "tag-external", "name": "External"}],
+        }
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.patch(
+        "/transactions/tx-1/tags",
+        json={
+            "tagIds": ["tag-kid"],
+            "expectedTagIds": ["tag-household"],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "transaction_tag_drift"
+    provider.set_transaction_tags.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_live_transaction_tag_creation_requires_catalog_readback(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.create_transaction_tag.return_value = {
+        "createTransactionTag": {
+            "errors": [],
+            "tag": {
+                "id": "tag-kid",
+                "name": "Kid: Synthetic",
+            },
+        }
+    }
+    provider.get_transaction_tags.return_value = {
+        "householdTransactionTags": [
+            {"id": "tag-kid", "name": "Kid: Synthetic"},
+        ]
+    }
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    response = await client.post(
+        "/tags",
+        json={"name": "Kid: Synthetic", "color": "#19D2A5"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tag"] == {
+        "id": "tag-kid",
+        "name": "Kid: Synthetic",
+        "isActive": True,
+    }
+    provider.create_transaction_tag.assert_awaited_once_with(
+        "Kid: Synthetic",
+        "#19D2A5",
+    )
 
 
 @pytest.mark.anyio

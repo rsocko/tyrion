@@ -1,5 +1,12 @@
 # Kid Attribution — How It Works
 
+> **Authority:** Tyrion owns each attribution decision, confidence, provenance,
+> policy version, ambiguity, and audit history. Managed Monarch
+> `Kid: <display name>` transaction tags are an interoperable projection only.
+> Stable kid identity comes from Tyrion's persisted `kidId` to Monarch tag-ID mapping,
+> never from parsing tag labels or Monarch review assignees. Projection drift is
+> surfaced for explicit reconciliation rather than silently overwritten. — How It Works
+
 ## Overview
 
 Monarch does not expose physical-card or authorized-user identity. It identifies the

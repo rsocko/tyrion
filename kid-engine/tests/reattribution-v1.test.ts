@@ -3,6 +3,7 @@ import {
   ReattributionError,
   ReattributionService,
   type ReattributionApplyCountsV1,
+  type ReattributionAppliedStateV1,
   type ReattributionRecordV1,
   type ReattributionRepository,
 } from '../src/reattribution-v1.js';
@@ -15,6 +16,10 @@ import type {
 import type { PolicyRepository } from '../src/policy/service.js';
 import { inputFixture, policyFixture } from './fixtures.js';
 import { createUnavailableAttributionResultV1 } from '../src/attribution-v1.js';
+import type {
+  AttributionTagProjectorV1,
+  ConfirmedTagProjectionV1,
+} from '../src/tag-projection-v1.js';
 
 const previewActor: PolicyActorV1 = {
   actorId: 'actor-demo',
@@ -99,6 +104,7 @@ describe('controlled re-attribution service', () => {
       expectedPolicyVersion: 1,
       sourceRefs: ['source-record-demo'],
     });
+
     await expect(
       service.apply(previewActor, {
         contractVersion: '2.0',
@@ -120,6 +126,51 @@ describe('controlled re-attribution service', () => {
       pendingReview: 1,
     });
     expect(records.applied).toBe(true);
+  });
+
+  it('projects every changed confirmed automated result after apply', async () => {
+    const records = new MemoryReattributionRepository([
+      {
+        input: inputFixture,
+        current: createUnavailableAttributionResultV1(
+          inputFixture,
+          'policy-unavailable',
+          '2026-08-08T12:02:00Z'
+        ),
+      },
+    ]);
+    const projector = new RecordingProjector();
+    const service = createService(records, policyFixture, projector);
+    const preview = await service.preview(previewActor, {
+      contractVersion: '2.0',
+      householdId: 'household-demo',
+      expectedPolicyVersion: 1,
+      sourceRefs: ['source-record-demo'],
+    });
+    preview.items[0].disposition = 'would-update';
+    preview.items[0].proposed = {
+      ...preview.items[0].proposed,
+      status: 'attributed',
+      kidId: 'kid-alpha',
+    };
+    records.preview = preview;
+
+    await service.apply(applyActor, {
+      contractVersion: '2.0',
+      householdId: 'household-demo',
+      previewId: 'preview-demo',
+      expectedPolicyVersion: 1,
+      confirm: true,
+    });
+
+    expect(projector.inputs).toEqual([
+      expect.objectContaining({
+        sourceRef: 'source-record-demo',
+        kidIds: ['kid-alpha'],
+        decisionVersion:
+          '2026-08-08T12:03:00.000Z|policy:1:preview-demo',
+      }),
+    ]);
   });
 
   it('rejects apply after the preview expires or policy changes', async () => {
@@ -152,6 +203,51 @@ describe('controlled re-attribution service', () => {
         confirm: true,
       })
     ).rejects.toBeInstanceOf(ReattributionError);
+  });
+
+  it('retries projection after an applied preview expires', async () => {
+    const records = new MemoryReattributionRepository([
+      {
+        input: inputFixture,
+        current: createUnavailableAttributionResultV1(
+          inputFixture,
+          'policy-unavailable',
+          '2026-08-08T11:00:00Z'
+        ),
+      },
+    ]);
+    const projector = new RecordingProjector();
+    const service = createService(records, policyFixture, projector);
+    const preview = await service.preview(previewActor, {
+      contractVersion: '2.0',
+      householdId: 'household-demo',
+      expectedPolicyVersion: 1,
+      sourceRefs: ['source-record-demo'],
+    });
+    preview.createdAt = '2026-08-08T12:00:00.000Z';
+    preview.expiresAt = '2026-08-08T12:02:00.000Z';
+    preview.items[0].disposition = 'would-update';
+    records.preview = preview;
+    records.appliedState = {
+      counts: {
+        applied: 1,
+        unchanged: 0,
+        manualPreserved: 0,
+        pendingReview: 0,
+      },
+      appliedAt: '2026-08-08T11:05:00.000Z',
+    };
+
+    const result = await service.apply(applyActor, {
+      contractVersion: '2.0',
+      householdId: 'household-demo',
+      previewId: 'preview-demo',
+      expectedPolicyVersion: 1,
+      confirm: true,
+    });
+
+    expect(result.appliedAt).toBe('2026-08-08T11:05:00.000Z');
+    expect(projector.inputs).toHaveLength(1);
   });
 
   it('rejects an apply-time atomic policy compare-and-swap failure', async () => {
@@ -245,7 +341,8 @@ describe('controlled re-attribution service', () => {
 
 function createService(
   records: MemoryReattributionRepository,
-  policy: PolicySnapshotV1 = policyFixture
+  policy: PolicySnapshotV1 = policyFixture,
+  tagProjector?: AttributionTagProjectorV1
 ): ReattributionService {
   return new ReattributionService(
     new StaticPolicyRepository(policy),
@@ -253,8 +350,26 @@ function createService(
     {
       now: () => new Date('2026-08-08T12:03:00Z'),
       previewId: () => 'preview-demo',
+      tagProjector,
     }
   );
+}
+
+class RecordingProjector implements AttributionTagProjectorV1 {
+  inputs: ConfirmedTagProjectionV1[] = [];
+
+  async projectConfirmed(input: ConfirmedTagProjectionV1) {
+    this.inputs.push(structuredClone(input));
+    return {
+      sourceRef: input.sourceRef,
+      decisionVersion: input.decisionVersion,
+      kidIds: [...input.kidIds],
+      managedTagIds: [],
+      status: 'projected' as const,
+      errorCode: null,
+      updatedAt: '2026-08-08T12:03:00.000Z',
+    };
+  }
 }
 
 class StaticPolicyRepository implements PolicyRepository {
@@ -295,6 +410,7 @@ class MemoryReattributionRepository implements ReattributionRepository {
   preview: ReattributionPreviewV1 | null = null;
   applied = false;
   policyMatchesAtApply = true;
+  appliedState: ReattributionAppliedStateV1 | null = null;
 
   constructor(private readonly records: ReattributionRecordV1[]) {}
 
@@ -310,6 +426,10 @@ class MemoryReattributionRepository implements ReattributionRepository {
     return this.preview ? structuredClone(this.preview) : null;
   }
 
+  async loadAppliedState(): Promise<ReattributionAppliedStateV1 | null> {
+    return this.appliedState ? structuredClone(this.appliedState) : null;
+  }
+
   async applyPreviewIfPolicyVersion(
     preview: ReattributionPreviewV1,
     _appliedAt: string,
@@ -318,7 +438,7 @@ class MemoryReattributionRepository implements ReattributionRepository {
     expect(expectedPolicyVersion).toBe(preview.policyVersion);
     if (!this.policyMatchesAtApply) return null;
     this.applied = true;
-    return {
+    const counts = {
       applied: preview.items.filter((item) => item.disposition === 'would-update')
         .length,
       unchanged: preview.items.filter((item) => item.disposition === 'unchanged')
@@ -330,5 +450,7 @@ class MemoryReattributionRepository implements ReattributionRepository {
         (item) => item.disposition === 'pending-review'
       ).length,
     };
+    this.appliedState = { counts, appliedAt: _appliedAt };
+    return counts;
   }
 }

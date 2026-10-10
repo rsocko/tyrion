@@ -18,6 +18,7 @@ import {
   authorizeReattribution,
   type PolicyRepository,
 } from './policy/service.js';
+import type { AttributionTagProjectorV1 } from './tag-projection-v1.js';
 
 export interface ReattributionRecordV1 {
   input: AttributionInputV1;
@@ -31,6 +32,11 @@ export interface ReattributionApplyCountsV1 {
   pendingReview: number;
 }
 
+export interface ReattributionAppliedStateV1 {
+  counts: ReattributionApplyCountsV1;
+  appliedAt: string;
+}
+
 export interface ReattributionRepository {
   loadRecords(
     householdId: string,
@@ -41,6 +47,10 @@ export interface ReattributionRepository {
     householdId: string,
     previewId: string
   ): Promise<ReattributionPreviewV1 | null>;
+  loadAppliedState(
+    householdId: string,
+    previewId: string
+  ): Promise<ReattributionAppliedStateV1 | null>;
   applyPreviewIfPolicyVersion(
     preview: ReattributionPreviewV1,
     appliedAt: string,
@@ -52,12 +62,14 @@ export interface ReattributionServiceOptions {
   now?: () => Date;
   previewId?: () => string;
   previewLifetimeMs?: number;
+  tagProjector?: AttributionTagProjectorV1;
 }
 
 export class ReattributionService {
   private readonly now: () => Date;
   private readonly previewId: () => string;
   private readonly previewLifetimeMs: number;
+  private readonly tagProjector: AttributionTagProjectorV1 | undefined;
 
   constructor(
     private readonly policyRepository: PolicyRepository,
@@ -67,6 +79,7 @@ export class ReattributionService {
     this.now = options.now ?? (() => new Date());
     this.previewId = options.previewId ?? randomUUID;
     this.previewLifetimeMs = options.previewLifetimeMs ?? 15 * 60 * 1_000;
+    this.tagProjector = options.tagProjector;
     if (
       !Number.isSafeInteger(this.previewLifetimeMs) ||
       this.previewLifetimeMs < 1_000 ||
@@ -184,28 +197,55 @@ export class ReattributionService {
         'Re-attribution preview is unavailable or no longer valid'
       );
     }
-    const appliedAt = this.now().toISOString();
-    if (Date.parse(preview.expiresAt) <= Date.parse(appliedAt)) {
+    let appliedState = await this.reattributionRepository.loadAppliedState(
+      request.householdId,
+      request.previewId
+    );
+    const requestedAt = this.now().toISOString();
+    if (
+      !appliedState &&
+      Date.parse(preview.expiresAt) <= Date.parse(requestedAt)
+    ) {
       throw new ReattributionError(
         'reattribution_preview_expired',
         'Re-attribution preview expired; create a new preview'
       );
     }
-    const counts = await this.policyRepository.withPolicyVersionFence(
-      request.householdId,
-      request.expectedPolicyVersion,
-      () =>
-        this.reattributionRepository.applyPreviewIfPolicyVersion(
-          preview,
-          appliedAt,
-          request.expectedPolicyVersion
-        )
-    );
-    if (!counts) {
-      throw new ReattributionError(
-        'policy_version_conflict',
-        'Policy version changed; create a new preview'
+    if (!appliedState) {
+      const counts = await this.policyRepository.withPolicyVersionFence(
+        request.householdId,
+        request.expectedPolicyVersion,
+        () =>
+          this.reattributionRepository.applyPreviewIfPolicyVersion(
+            preview,
+            requestedAt,
+            request.expectedPolicyVersion
+          )
       );
+      if (!counts) {
+        throw new ReattributionError(
+          'policy_version_conflict',
+          'Policy version changed; create a new preview'
+        );
+      }
+      appliedState = { counts, appliedAt: requestedAt };
+    }
+    const { counts, appliedAt } = appliedState;
+    if (this.tagProjector) {
+      for (const item of preview.items) {
+        if (item.disposition !== 'would-update') continue;
+        await this.tagProjector.projectConfirmed({
+          householdId: request.householdId,
+          sourceRef: item.sourceRef,
+          decisionVersion:
+            `${appliedAt}|policy:${preview.policyVersion}:${preview.previewId}`,
+          kidIds:
+            item.proposed.status === 'attributed' && item.proposed.kidId !== null
+              ? [item.proposed.kidId]
+              : [],
+          kids: policy.kids,
+        });
+      }
     }
     return {
       contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
