@@ -45,7 +45,9 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/
 COPY --chown=tyrion:tyrion monarch-bridge/bridge_runtime.py \
     monarch-bridge/contract.py \
+    monarch-bridge/live_receipt_probe.py \
     monarch-bridge/main.py \
+    monarch-bridge/receipt_probe.py \
     /app/
 
 WORKDIR /app
