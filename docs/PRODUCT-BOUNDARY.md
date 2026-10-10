@@ -60,8 +60,8 @@ the otherwise private bridge boundary, not a browser or product surface. The gat
 exposes only bounded Bridge v1 health, contract, transaction read/detail/split/category
 mutation, account, category-group, category, tag, recurring, budget, and sync
 operations, plus the read-only Finance Insights document-expectation and payee-pattern
-projections for Mission Control/OWL review. It authenticates every request, rejects
-browser-originated requests, and does not
+projections and stateless bill-to-transaction matching for Mission Control/OWL review.
+It authenticates every request, rejects browser-originated requests, and does not
 expose auth setup, logout, session state, raw upstream routes, arbitrary passthrough,
 cash flow, OpenAPI/docs, policy, or attribution operations. The raw
 Monarch Bridge, its reusable session material, and its auth/session setup remain
@@ -93,7 +93,9 @@ finance workspace.
 - `/finance/kids` may summarize per-kid status and link to Tyrion configuration;
   profile, rule, limit, and policy CRUD remains Tyrion-owned.
 - `/finance/reconciliation` coordinates Monarch transactions with documents and
-  obligations owned by OWL/Document Intelligence or other source systems.
+  obligations owned by OWL/Document Intelligence or other source systems. Tyrion may
+  rank normalized candidate transactions and return payment status, but it does not
+  extract, retain, or present source documents.
 - `/finance/settings` shows connector health and links to Tyrion-owned policy and
   connector configuration.
 - Mission Control notifications, tasks, and My Day carry finance awareness and

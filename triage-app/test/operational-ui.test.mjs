@@ -77,6 +77,9 @@ let healthPayloadOverride;
 let authStatusPayloadOverride;
 let bridgeAccounts;
 let bridgeRecurring;
+let bridgeTransactions;
+let bridgeTransactionTotal;
+let bridgeTransactionNextCursor;
 let previews = new Map();
 let appliedPreviews = new Map();
 let attributionActionRecords = new Map();
@@ -189,6 +192,20 @@ before(async () => {
           contractVersion: "1.0",
           error: {
             code: "synthetic_private_failure",
+            message: "synthetic upstream detail that must not escape",
+          },
+        }));
+        return;
+      }
+      if (responseMode === "unauthorized" || responseMode === "forbidden") {
+        response.writeHead(responseMode === "unauthorized" ? 401 : 403, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          error: {
+            code: "synthetic_private_auth_failure",
             message: "synthetic upstream detail that must not escape",
           },
         }));
@@ -337,6 +354,23 @@ before(async () => {
               name: bridgeTagCatalog.find((tag) => tag.id === id)?.name ?? "Tag",
             })),
           },
+        }));
+        return;
+      }
+      if (request.url.startsWith("/transactions?") && request.method === "GET") {
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          "X-Monarch-Contract-Version": "1.0",
+        });
+        response.end(JSON.stringify({
+          contractVersion: "1.0",
+          provenance: {
+            provider: "live",
+            fetchedAt: "2026-08-11T14:00:00.000Z",
+          },
+          transactions: bridgeTransactions,
+          total: bridgeTransactionTotal,
+          page: { limit: 100, nextCursor: bridgeTransactionNextCursor },
         }));
         return;
       }
@@ -2160,6 +2194,29 @@ beforeEach(() => {
       category: null,
     },
   ];
+  bridgeTransactions = [
+    {
+      id: "transaction-invented-utility",
+      date: "2026-08-15",
+      amount: -123.45,
+      merchant: { name: "Invented Utility Company", logoUrl: null },
+      category: null,
+      account: {
+        id: "account-invented-checking",
+        displayName: "Invented Checking",
+        mask: null,
+      },
+      isPending: false,
+      isRecurring: true,
+      reviewStatus: "reviewed",
+      reviewAssignee: null,
+      notes: null,
+      tags: [],
+      tagReferences: [],
+    },
+  ];
+  bridgeTransactionTotal = bridgeTransactions.length;
+  bridgeTransactionNextCursor = null;
   expireNextPreview = false;
   reattributionResponseMode = "normal";
   attributionActionRecords = new Map();
@@ -2281,6 +2338,7 @@ test("connector policy exposes exactly the backend connector operations", () => 
     ["GET", "recurring"],
     ["GET", "budgets"],
     ["GET", "document-expectation-signals"],
+    ["POST", "bill-matches"],
     ["POST", "sync"],
   ];
   for (const [method, path] of allowed) {
@@ -2813,6 +2871,7 @@ test("public connector gateway forwards every allowlisted operation with caller 
       },
       body: body ? JSON.stringify(body) : undefined,
     });
+
     assert.equal(response.status, 200, `${method} ${path}`);
     assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
     assert.equal(response.headers.get("cache-control"), "no-store");
@@ -2841,6 +2900,184 @@ test("public connector gateway forwards every allowlisted operation with caller 
     receivedRequests.findLast((request) => request.path?.endsWith("/tags"))
       ?.body,
     '{"tagIds":["tag-household","tag-kid"],"expectedTagIds":["tag-household"]}'
+  );
+});
+
+test("bill matching returns a deterministic privacy-bounded paid result", async () => {
+  const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      contractVersion: "1.0",
+      billRef: "bill-invented-utility-2026-08",
+      amountMinor: 12345,
+      currency: "USD",
+      dueDate: "2026-08-15",
+      payeeName: "Invented Utility Company",
+      accountRef: "account-invented-checking",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const result = await response.json();
+  assert.equal(result.matchStatus, "matched");
+  assert.equal(result.paymentStatus, "paid");
+  assert.equal(result.selectedTransactionRef, "transaction-invented-utility");
+  assert.equal(result.candidates[0].scoreBasisPoints, 10000);
+  assert.doesNotMatch(JSON.stringify(result), /merchantName|accountName|123\.45/);
+  const lookup = receivedRequests.at(-1);
+  assert.equal(lookup.method, "GET");
+  assert.equal(lookup.authorized, true);
+  assert.equal(lookup.hasBody, false);
+  assert.match(lookup.path, /^\/transactions\?/);
+  assert.match(lookup.path, /start_date=2026-08-08/);
+  assert.match(lookup.path, /end_date=2026-08-22/);
+  assert.match(lookup.path, /account_id=account-invented-checking/);
+});
+
+test("bill matching exposes ambiguity and pending without leaking transaction detail", async () => {
+  bridgeTransactions = [
+    { ...bridgeTransactions[0], isPending: true },
+    {
+      ...bridgeTransactions[0],
+      id: "transaction-invented-utility-second",
+      date: "2026-08-16",
+    },
+  ];
+  bridgeTransactionTotal = 2;
+  const requestBody = {
+    contractVersion: "1.0",
+    billRef: "bill-invented-utility-2026-08",
+    amountMinor: 12345,
+    currency: "USD",
+    dueDate: "2026-08-15",
+    payeeName: "Invented Utility Company",
+  };
+  const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify(requestBody),
+  });
+  const result = await response.json();
+  assert.equal(result.matchStatus, "ambiguous");
+  assert.equal(result.paymentStatus, "ambiguous");
+  assert.equal(result.selectedTransactionRef, null);
+
+  bridgeTransactions = [bridgeTransactions[0]];
+  bridgeTransactionTotal = 1;
+  const pendingResponse = await fetch(
+    `${uiUrl}/api/connector/v1/bill-matches`,
+    {
+      method: "POST",
+      headers: insightHeaders({ Host: undefined }),
+      body: JSON.stringify(requestBody),
+    }
+  );
+  assert.equal((await pendingResponse.json()).paymentStatus, "pending");
+});
+
+test("bill matching fails closed for unauthorized, caller-scoped, and unavailable requests", async () => {
+  const requestBody = {
+    contractVersion: "1.0",
+    billRef: "bill-invented-utility-2026-08",
+    amountMinor: 12345,
+    currency: "USD",
+    dueDate: "2026-08-15",
+    payeeName: "Invented Utility Company",
+  };
+  for (const headers of [
+    { "Content-Type": "application/json" },
+    {
+      ...insightHeaders({ Host: undefined }),
+      Origin: "https://browser.example.invalid",
+    },
+  ]) {
+    const before = receivedRequests.length;
+    const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+    });
+    assert.equal(response.status, headers.Origin ? 403 : 401);
+    assert.equal(receivedRequests.length, before);
+  }
+
+  const beforeInvalid = receivedRequests.length;
+  const invalid = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      ...requestBody,
+      householdId: "caller-controlled-household",
+    }),
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).error.code, "invalid_request");
+  assert.equal(receivedRequests.length, beforeInvalid);
+
+  for (const mode of ["non-2xx", "unauthorized", "forbidden"]) {
+    bridgeResponseMode = mode;
+    const unavailable = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+      method: "POST",
+      headers: insightHeaders({ Host: undefined }),
+      body: JSON.stringify(requestBody),
+    });
+    assert.equal(unavailable.status, 503, mode);
+    const unavailableText = await unavailable.text();
+    assert.match(unavailableText, /bill_match_source_unavailable/);
+    assert.doesNotMatch(unavailableText, /synthetic upstream detail/);
+  }
+
+  bridgeResponseMode = "malformed-json";
+  const malformed = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify(requestBody),
+  });
+  assert.equal(malformed.status, 502);
+  assert.equal(
+    (await malformed.json()).error.code,
+    "invalid_bill_match_source_response"
+  );
+});
+
+test("bill matching rejects currency drift and incomplete candidate pages", async () => {
+  const requestBody = {
+    contractVersion: "1.0",
+    billRef: "bill-invented-utility-2026-08",
+    amountMinor: 12345,
+    currency: "USD",
+    dueDate: "2026-08-15",
+    payeeName: "Invented Utility Company",
+  };
+  const beforeCurrency = receivedRequests.length;
+  const currencyMismatch = await fetch(
+    `${uiUrl}/api/connector/v1/bill-matches`,
+    {
+      method: "POST",
+      headers: insightHeaders({ Host: undefined }),
+      body: JSON.stringify({ ...requestBody, currency: "EUR" }),
+    }
+  );
+  assert.equal(currencyMismatch.status, 422);
+  assert.equal(
+    (await currencyMismatch.json()).error.code,
+    "bill_currency_mismatch"
+  );
+  assert.equal(receivedRequests.length, beforeCurrency);
+
+  bridgeTransactionTotal = 2;
+  bridgeTransactionNextCursor = "synthetic-next-page";
+  const incomplete = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify(requestBody),
+  });
+  assert.equal(incomplete.status, 422);
+  assert.equal(
+    (await incomplete.json()).error.code,
+    "bill_match_query_too_broad"
   );
 });
 
