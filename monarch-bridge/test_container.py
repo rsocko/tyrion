@@ -45,6 +45,29 @@ def test_image_contains_only_runtime_bridge_dependencies():
     assert "triage-app" not in dockerfile
 
 
+def test_image_contains_internal_receipt_probe_runtime():
+    dockerfile = read_repository_file("Dockerfile")
+    instructions = dockerfile_instructions(dockerfile)
+    final_stage_start = max(
+        index
+        for index, instruction in enumerate(instructions)
+        if shlex.split(instruction)[0].upper() == "FROM"
+    )
+    runtime_copies = [
+        shlex.split(instruction)
+        for instruction in instructions[final_stage_start + 1:]
+        if shlex.split(instruction)[0].upper() == "COPY"
+    ]
+    probe_copy = next(
+        tokens
+        for tokens in runtime_copies
+        if "monarch-bridge/receipt_probe.py" in tokens
+    )
+
+    assert "monarch-bridge/live_receipt_probe.py" in probe_copy
+    assert probe_copy[-1] == "/app/"
+
+
 def test_image_runs_non_root_with_external_session_storage():
     dockerfile = read_repository_file("Dockerfile")
     instructions = dockerfile_instructions(dockerfile)
