@@ -64,7 +64,7 @@ merchant names, balances, transaction values, response bodies, cookies, or token
 | Category write-back | Rejected writes are never success-shaped | Completed 2026-08-08 with explicit confirmation, read-back, and verified restoration |
 | Merchant/payee write-back | Normalized 1-120 character input, unknown-field/control-character rejection, exact mutation-response verification, deterministic demo response, connector body allowlisting, and sanitized failures | Controlled live validation required with explicit confirmation, read-back, and restoration |
 | Transaction review | Pinned-client `needsReview`, `reviewStatus`, `needsReviewByUser`, household directory, `needs_review` filter, and `reviewed=True` mutation inspected; normalized status/assignee, strict mark-reviewed body, exact mutation verification, missing-capability failure, deterministic demo response, and connector allowlisting | Controlled live validation required on a dedicated needs-review transaction; do not run without accepting that the authoritative review action is not safely reversible |
-| Receipts and attachment retrieval | Isolated internal probe covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; safe recent matched-PDF candidate selection; exact unmatch/rematch restoration; bounded transaction-attachment list/get/upload/download/delete; PNG/PDF generation and byte comparison; duplicate classification; failed-receipt deletion; immediate/delayed asset reuse classification; capped pagination and polling; strict malformed/oversized rejection; independent cleanup; and stable sanitized output. The probe adds no public Bridge DTO or route. | Base create/upload/process/list/get/download/delete completed 2026-10-10 with stable `receipt_probe_ok`, empty stderr, and no retained synthetic object. A separately gated partial expanded run restored the manual match, preserved transaction-attachment and PNG/PDF bytes, classified duplicate uploads as distinct, and found immediate/two-second asset reuse identical. Its final failed-receipt scenario stopped safely at `receipt_upload_failed` because the original text fixture was rejected before processing; the fixture is now a valid blank PNG and requires rerun. Email ingestion and pending-to-posted identity remain explicit skips. |
+| Receipts and attachment retrieval | Isolated internal probe covers uploaded/email sources; `in_progress`, `pending`, `pending_matches`, `completed`, and `failed`; list/get opaque-ID correlation; safe recent matched-PDF candidate selection; exact unmatch/rematch restoration; bounded transaction-attachment list/get/upload/download/delete; PNG/PDF generation and byte comparison; duplicate classification; failed-receipt deletion; immediate/delayed asset reuse classification; capped pagination and polling; strict malformed/oversized rejection; independent cleanup; and stable sanitized output. The probe adds no public Bridge DTO or route. | Base create/upload/process/list/get/download/delete and the separately gated expanded matrix completed 2026-10-10 with stable success codes, exit 0, and empty stderr. The matrix restored the manual match; preserved transaction-attachment and PNG/PDF bytes; classified duplicate uploads as distinct; found immediate/two-second asset reuse identical; verified failed-receipt deletion; and completed cleanup. UI startup succeeded after the run. Email ingestion and pending-to-posted identity remained explicit skips. |
 | Kids tag projection | Stable kid-to-tag mapping; collision/deletion/rename handling; reassignment, shared purchase, parent expense, retry/idempotency, partial failure, unrelated-tag preservation, optimistic drift refusal, exact read-back, action replay recovery, and re-attribution convergence use invented deterministic state only | Controlled live tag-set validation requires `TYRION_TEST_TRANSACTION_ID`, a pre-created `TYRION_TEST_TAG_ID`, and the reversible mutation confirmation; the test restores and verifies the complete original tag set. Managed-tag creation is not performed live because the pinned client exposes no verified deletion contract |
 | Remote transport | Token required, TLS acknowledgement required, restricted CORS | Homelab smoke test through TLS proxy |
 | Public connector gateway | Constant-time bearer validation; exact Traefik and v1 route/method/query/body allowlists; post-normalization ingress-marker check; browser rejection; 1 KiB request and 8 MiB general response bounds; composed health with one 4 KiB `/auth/status` verification, explicit v1 shape/version validation, derived status/reachability, no auth-field leakage, and sanitized non-success failures; status/body/safe-header preservation for passthrough operations; separation from UI proxy and internal APIs | TLS smoke test from a backend client using invented/demo data only |
@@ -261,13 +261,12 @@ fakes a transaction.
 The successful 2026-10-10 base receipt run established create, PNG upload, processing,
 list/get correlation, download, and delete behavior. It returned only
 `receipt_probe_ok`, emitted no stderr, and verified absent read-back after deletion.
-Match/unmatch was deliberately disabled for that run. The following expanded
-matrix run on the same date restored the manual match, preserved transaction-attachment
-and PNG/PDF bytes, classified duplicate uploads as distinct, and observed identical
-immediate and two-second reuse of the transaction attachment asset. It emitted empty
-stderr and completed cleanup, but stopped at `receipt_upload_failed` when Monarch
-rejected the text non-receipt fixture before processing. The fixture is now a valid
-blank PNG; failed-processing deletion requires a rerun. The following questions remain:
+Match/unmatch was deliberately disabled for that run. The separately gated expanded
+matrix completed later the same date with `receipt_attachment_matrix_ok` and empty
+stderr. It restored the manual match, preserved transaction-attachment and PNG/PDF
+bytes, classified duplicate uploads as distinct, observed identical immediate and
+two-second reuse of the transaction attachment asset, verified failed-receipt
+deletion, and completed cleanup. The following questions remain:
 
 - Effective size and page limits for PNG and PDF.
 - Whether `originalAssetUrl` is public, cookie-authenticated, token-authenticated,
@@ -278,10 +277,9 @@ blank PNG; failed-processing deletion requires a rerun. The following questions 
   attachment selection; no email-ingestion configuration currently exists.
 - Whether a pending transaction's linked identity changes when it posts and how long
   receipt correlation remains stable; no pending candidate currently exists.
-- Exact deletion behavior for processing, failed, matched, and unmatched receipts,
-  including whether attachment assets are deleted synchronously. The base controlled
-  run verified deletion and absent read-back only for its completed unmatched
-  synthetic receipt.
+- Exact deletion behavior for processing, matched, and unmatched receipts, including
+  whether attachment assets are deleted synchronously. The controlled runs verified
+  deletion and absent read-back for completed unmatched and failed synthetic receipts.
 - Whether transaction attachment retrieval uses the same longer-term URL lifetime and
   authentication semantics as receipt attachments.
 
