@@ -11,6 +11,10 @@ The authoritative architecture decision is
 [`docs/PRODUCT-BOUNDARY.md`](docs/PRODUCT-BOUNDARY.md), and delivery is tracked in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Repository examples and fixtures are governed
 by the [`synthetic-data and public-disclosure certification`](docs/SYNTHETIC-DATA-CERTIFICATION.md).
+The source-verified
+[`Monarch client comparison`](docs/MONARCH-CLIENT-COMPARISON.md) records why Tyrion
+uses its pinned community fork, how an independent client differs, and which
+normalization and security responsibilities remain in the Bridge.
 
 Tyrion is an independent project and is not affiliated with, endorsed by,
 sponsored by, or supported by Monarch Money, Inc. The connector uses an
