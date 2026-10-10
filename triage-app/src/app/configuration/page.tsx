@@ -38,6 +38,7 @@ import {
   type PolicyUiState,
 } from "@/lib/policy-ui-state.mjs";
 import ConnectorSettings from "@/components/connector-settings";
+import { CoinMark } from "@/components/ui/CoinMark";
 
 type LoadState = "loading" | "ready" | "unauthorized" | "unavailable";
 type CatalogState = "loading" | "ready" | "error";
@@ -1336,28 +1337,6 @@ function SettingsSearchEmpty({ onClear }: { onClear: () => void }) {
   );
 }
 
-function TyrionMark() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="size-11 shrink-0 transition-transform duration-300 ease-out group-hover:-rotate-3 group-hover:scale-105"
-      viewBox="0 0 64 64"
-    >
-      <defs>
-        <radialGradient id="tyrion-coin" cx="34%" cy="28%" r="80%">
-          <stop offset="0" stopColor="#f0d585" />
-          <stop offset=".55" stopColor="#c9a24a" />
-          <stop offset="1" stopColor="#8a6b27" />
-        </radialGradient>
-      </defs>
-      <rect width="64" height="64" rx="15" fill="#15171c" />
-      <circle cx="32" cy="32" r="24" fill="url(#tyrion-coin)" stroke="#6b5220" strokeWidth="2" />
-      <circle cx="32" cy="32" r="18.5" fill="none" stroke="#6f541f" opacity=".75" />
-      <path d="M20 18.5h24v7h-7.8v21h-8.4v-21H20z" fill="#302307" />
-    </svg>
-  );
-}
-
 function SearchIcon() {
   return (
     <svg aria-hidden="true" className="pointer-events-none absolute left-3 top-3 size-4 text-muted" viewBox="0 0 24 24" fill="none">
@@ -1381,7 +1360,11 @@ function ConfigurationShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-hair bg-elevated">
         <div className="mx-auto flex max-w-7xl items-center px-4 py-4 sm:px-6 lg:px-8">
           <Link className="group flex items-center gap-3" href="/configuration" aria-label="Tyrion settings">
-            <TyrionMark />
+            <CoinMark
+              className="transition-transform duration-300 ease-out group-hover:-rotate-3 group-hover:scale-105"
+              decorative
+              size={44}
+            />
             <span>
               <span className="block font-serif text-xl font-bold leading-none text-parchment">
                 Tyrion

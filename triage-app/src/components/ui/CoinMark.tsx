@@ -1,13 +1,18 @@
 interface CoinMarkProps {
   size?: number;
   className?: string;
+  decorative?: boolean;
 }
 
 /**
  * TYRION coin mark — the canonical "simplified" cut: gold radial face,
  * dark rim, inner ring, and a serif "T". Detail scales with size.
  */
-export function CoinMark({ size = 30, className = "" }: CoinMarkProps) {
+export function CoinMark({
+  size = 30,
+  className = "",
+  decorative = false,
+}: CoinMarkProps) {
   const showInnerRing = size >= 22;
   const gid = `tycoin-${size}`;
   return (
@@ -16,8 +21,9 @@ export function CoinMark({ size = 30, className = "" }: CoinMarkProps) {
       width={size}
       height={size}
       viewBox="0 0 100 100"
-      role="img"
-      aria-label="TYRION"
+      role={decorative ? undefined : "img"}
+      aria-hidden={decorative || undefined}
+      aria-label={decorative ? undefined : "Tyrion"}
     >
       <defs>
         <radialGradient id={gid} cx="38%" cy="34%" r="72%">
