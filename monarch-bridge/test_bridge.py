@@ -3,6 +3,8 @@ Smoke tests for the Monarch Bridge service in demo mode.
 Tests verify endpoint shapes and response codes without needing real credentials.
 """
 
+import asyncio
+import hashlib
 import os
 from calendar import monthrange
 from datetime import date
@@ -22,6 +24,7 @@ from contract import (
     MAX_CATEGORIES,
     MAX_CATEGORY_GROUPS,
     MAX_RECURRING_OBLIGATIONS,
+    MAX_RECEIPTS,
     MAX_TRANSACTION_TAGS,
     normalize_accounts,
     normalize_budgets,
@@ -29,6 +32,7 @@ from contract import (
     normalize_category_groups,
     normalize_categories,
     normalize_recurring,
+    normalize_receipt,
     normalize_transaction,
     normalize_transaction_tags,
     normalize_transaction_splits,
@@ -36,6 +40,13 @@ from contract import (
 )
 import main as main_module
 from main import app
+from receipt_probe import (
+    AttachmentMetadata,
+    DownloadedAttachment,
+    ReceiptPage as AdapterReceiptPage,
+    ReceiptProbeError,
+    ReceiptRecord,
+)
 
 
 @pytest.fixture
@@ -53,6 +64,37 @@ async def client():
 def assert_contract(resp):
     assert resp.headers["x-monarch-contract-version"] == CONTRACT_VERSION
     assert resp.json()["contractVersion"] == CONTRACT_VERSION
+
+
+def probe_receipt(
+    *,
+    receipt_id="receipt-invented",
+    status="completed",
+    linked_transaction_id=None,
+    with_attachment=True,
+    filename="private-filename.png",
+):
+    return ReceiptRecord(
+        id=receipt_id,
+        source="upload",
+        status=status,
+        created_at="2026-10-10T12:00:00Z",
+        linked_transaction_id=linked_transaction_id,
+        attachments=(
+            (
+                AttachmentMetadata(
+                    id="attachment-invented",
+                    filename=filename,
+                    extension="png",
+                    size_bytes=8,
+                    download_available=True,
+                    _asset_url="https://res.cloudinary.com/private/signed",
+                ),
+            )
+            if with_attachment
+            else ()
+        ),
+    )
 
 
 @pytest.mark.anyio
@@ -653,6 +695,10 @@ async def test_openapi_json(client):
         "/transactions/{transaction_id}/tags",
         "/categories", "/category-groups", "/tags", "/accounts", "/recurring",
         "/cashflow", "/budgets",
+        "/receipts", "/receipts/{receipt_id}",
+        "/receipts/{receipt_id}/content",
+        "/receipts/{receipt_id}/attachments/{attachment_id}/content",
+        "/receipts/{receipt_id}/match",
     }
     assert set(schema["paths"]) == public_paths
     assert not any(
@@ -692,6 +738,8 @@ async def test_openapi_json(client):
         "recentApplicationCount",
         "lastAppliedAt",
         "splitTransactionsAction",
+        "originalAssetUrl",
+        "filename",
     ):
         assert upstream_field not in serialized_schema
     response_bounds = {
@@ -701,6 +749,7 @@ async def test_openapi_json(client):
         "TransactionTagsResponse": ("tags", MAX_TRANSACTION_TAGS),
         ("RecurringResponse"): ("recurring", MAX_RECURRING_OBLIGATIONS),
         "BudgetsResponse": ("budgets", MAX_BUDGET_ROWS),
+        "ReceiptsResponse": ("receipts", MAX_RECEIPTS),
     }
     for model_name, (field_name, maximum) in response_bounds.items():
         assert (
@@ -2161,3 +2210,637 @@ async def test_live_budget_uses_explicit_full_month_period(client, monkeypatch):
         start_date=period_start.isoformat(),
         end_date=period_end.isoformat(),
     )
+
+
+def test_receipt_normalizer_hides_private_attachment_fields():
+    normalized = normalize_receipt(probe_receipt().to_result())
+
+    assert normalized.model_dump(by_alias=True) == {
+        "id": "receipt-invented",
+        "source": "upload",
+        "status": "awaiting_match",
+        "createdAt": normalized.created_at,
+        "linkedTransactionId": None,
+        "attachments": [
+            {
+                "id": "attachment-invented",
+                "mediaType": "image/png",
+                "sizeBytes": 8,
+                "downloadAvailable": True,
+            }
+        ],
+    }
+    serialized = normalized.model_dump_json(by_alias=True)
+    assert "private-filename" not in serialized
+    assert "cloudinary" not in serialized
+    assert "originalAssetUrl" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("upstream_status", "linked_transaction_id", "expected_status"),
+    (
+        ("in_progress", None, "processing"),
+        ("pending", None, "processing"),
+        ("pending_matches", None, "awaiting_match"),
+        ("pending_matches", "transaction-invented", "matched"),
+        ("completed", None, "awaiting_match"),
+        ("completed", "transaction-invented", "matched"),
+        ("failed", None, "failed"),
+    ),
+)
+def test_receipt_normalizer_maps_private_states(
+    upstream_status,
+    linked_transaction_id,
+    expected_status,
+):
+    normalized = normalize_receipt(
+        probe_receipt(
+            status=upstream_status,
+            linked_transaction_id=linked_transaction_id,
+        ).to_result()
+    )
+
+    assert normalized.status == expected_status
+
+
+@pytest.mark.anyio
+async def test_demo_receipt_contract_and_upload_flow(client):
+    listed = await client.get("/receipts")
+    created = await client.post("/receipts")
+    uploaded = await client.put(
+        "/receipts/receipt-demo-new/content",
+        content=b"\x89PNG\r\n\x1a\n",
+        headers={"Content-Type": "image/png"},
+    )
+    downloaded = await client.get(
+        "/receipts/receipt-demo/attachments/attachment-demo/content"
+    )
+
+    assert listed.status_code == 200
+    assert listed.headers["cache-control"] == "no-store"
+    assert listed.json()["receipts"][0]["status"] == "awaiting_match"
+    assert set(listed.json()["receipts"][0]["attachments"][0]) == {
+        "id",
+        "mediaType",
+        "sizeBytes",
+        "downloadAvailable",
+    }
+    assert created.status_code == 201
+    assert created.json()["receipt"]["status"] == "processing"
+    assert uploaded.status_code == 200
+    assert uploaded.json()["receipt"]["status"] == "awaiting_match"
+    assert downloaded.status_code == 200
+    assert downloaded.headers["content-type"] == "image/png"
+    assert downloaded.headers["cache-control"] == "no-store"
+    assert "content-disposition" not in downloaded.headers
+    for response in (listed, created, uploaded):
+        assert_contract(response)
+
+
+@pytest.mark.anyio
+async def test_receipt_routes_reject_unknown_query_body_and_unsupported_upload(client):
+    unknown = await client.get("/receipts?extra=true")
+    duplicate = await client.get("/receipts?limit=1&limit=2")
+    create_body = await client.post("/receipts", content=b"unexpected")
+    unsupported = await client.put(
+        "/receipts/receipt-demo-new/content",
+        content=b"text",
+        headers={"Content-Type": "text/plain"},
+    )
+    oversized = await client.put(
+        "/receipts/receipt-demo-new/content",
+        content=b"x" * (main_module.MAX_UPLOAD_BYTES + 1),
+        headers={"Content-Type": "image/png"},
+    )
+
+    assert unknown.status_code == 400
+    assert duplicate.status_code == 400
+    assert create_body.status_code == 400
+    assert unsupported.status_code == 415
+    assert oversized.status_code == 413
+    assert all(
+        response.json()["error"]["code"]
+        in {
+            "invalid_request",
+            "unsupported_media_type",
+            "payload_too_large",
+        }
+        for response in (
+            unknown,
+            duplicate,
+            create_body,
+            unsupported,
+            oversized,
+        )
+    )
+
+
+@pytest.mark.anyio
+async def test_receipt_match_requires_explicit_confirmation_and_expected_revision(client):
+    missing_confirmation = await client.post(
+        "/receipts/receipt-demo/match",
+        json={
+            "transactionId": "transaction-invented",
+            "expectedLinkedTransactionId": None,
+        },
+    )
+    missing_revision = await client.post(
+        "/receipts/receipt-demo/match",
+        json={"transactionId": "transaction-invented", "confirmed": True},
+    )
+    matched = await client.post(
+        "/receipts/receipt-demo/match",
+        json={
+            "transactionId": "transaction-invented",
+            "expectedLinkedTransactionId": None,
+            "confirmed": True,
+        },
+    )
+
+    assert missing_confirmation.status_code == 422
+    assert missing_revision.status_code == 422
+    assert matched.status_code == 200
+    assert matched.json()["status"] == "matched"
+    assert (
+        matched.json()["receipt"]["linkedTransactionId"]
+        == "transaction-invented"
+    )
+    assert_contract(matched)
+
+
+@pytest.mark.anyio
+async def test_receipt_match_rejects_declared_and_chunked_oversized_bodies(client):
+    declared = await client.post(
+        "/receipts/receipt-demo/match",
+        content=b"{}",
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(main_module.MAX_RECEIPT_MATCH_BODY_BYTES + 1),
+        },
+    )
+
+    async def oversized_chunks():
+        yield b'{"transactionId":"'
+        yield b"x" * main_module.MAX_RECEIPT_MATCH_BODY_BYTES
+        yield b'","expectedLinkedTransactionId":null,"confirmed":true}'
+
+    chunked = await client.post(
+        "/receipts/receipt-demo/match",
+        content=oversized_chunks(),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert declared.status_code == 413
+    assert chunked.status_code == 413
+    assert declared.json()["error"]["code"] == "payload_too_large"
+    assert chunked.json()["error"]["code"] == "payload_too_large"
+
+
+@pytest.mark.anyio
+async def test_live_receipt_list_normalizes_without_private_fields(client, monkeypatch):
+    page = AdapterReceiptPage(
+        receipts=(probe_receipt(),),
+        total_count=1,
+        limit=25,
+        offset=0,
+    )
+    provider = object()
+    listing = AsyncMock(return_value=page)
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+    monkeypatch.setattr(main_module, "list_receipts", listing)
+
+    response = await client.get("/receipts?source=upload&limit=25&offset=0")
+
+    assert response.status_code == 200
+    assert response.json()["page"] == {
+        "limit": 25,
+        "offset": 0,
+        "total": 1,
+        "hasMore": False,
+    }
+    assert "private-filename" not in response.text
+    assert "cloudinary" not in response.text
+    listing.assert_awaited_once_with(
+        provider,
+        source="upload",
+        limit=25,
+        offset=0,
+    )
+
+
+@pytest.mark.anyio
+async def test_live_receipt_creation_returns_persistable_opaque_identity(
+    client,
+    monkeypatch,
+):
+    pending = probe_receipt(status="pending", with_attachment=False)
+    creator = AsyncMock(return_value=pending)
+    provider = object()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+    monkeypatch.setattr(main_module, "create_receipt", creator)
+
+    response = await client.post("/receipts")
+
+    assert response.status_code == 201
+    assert response.json()["receipt"]["id"] == "receipt-invented"
+    assert response.json()["receipt"]["status"] == "processing"
+    creator.assert_awaited_once_with(provider)
+
+
+@pytest.mark.anyio
+async def test_live_receipt_upload_uses_temporary_bounded_file(client, monkeypatch):
+    pending = probe_receipt(status="pending", with_attachment=False)
+    completed = probe_receipt()
+    captured = {}
+
+    async def capture_upload(provider, receipt_id, path):
+        captured["provider"] = provider
+        captured["receipt_id"] = receipt_id
+        captured["path"] = path
+        captured["content"] = path.read_bytes()
+
+    provider = object()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+    monkeypatch.setattr(
+        main_module,
+        "get_receipt",
+        AsyncMock(return_value=pending),
+    )
+    monkeypatch.setattr(main_module, "upload_receipt_file", capture_upload)
+    started = AsyncMock(return_value=pending)
+    monkeypatch.setattr(main_module, "start_receipt", started)
+    polled = AsyncMock(return_value=completed)
+    monkeypatch.setattr(main_module, "poll_receipt", polled)
+
+    response = await client.put(
+        "/receipts/receipt-invented/content",
+        content=b"%PDF-1.4 invented",
+        headers={"Content-Type": "application/pdf"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["receipt"]["status"] == "awaiting_match"
+    assert captured["provider"] is provider
+    assert captured["receipt_id"] == "receipt-invented"
+    assert captured["content"] == b"%PDF-1.4 invented"
+    assert captured["path"].suffix == ".pdf"
+    assert not captured["path"].exists()
+    started.assert_awaited_once_with(provider, "receipt-invented")
+    polled.assert_awaited_once_with(provider, "receipt-invented")
+
+
+@pytest.mark.anyio
+async def test_live_receipt_upload_retry_returns_terminal_state_without_reupload(
+    client,
+    monkeypatch,
+):
+    content = b"\x89PNG\r\n\x1a\n"
+    completed = probe_receipt(
+        filename=f"receipt-{hashlib.sha256(content).hexdigest()}.png"
+    )
+    uploader = AsyncMock()
+    starter = AsyncMock()
+    poller = AsyncMock()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        main_module,
+        "get_receipt",
+        AsyncMock(return_value=completed),
+    )
+    monkeypatch.setattr(main_module, "upload_receipt_file", uploader)
+    monkeypatch.setattr(main_module, "start_receipt", starter)
+    monkeypatch.setattr(main_module, "poll_receipt", poller)
+
+    response = await client.put(
+        "/receipts/receipt-invented/content",
+        content=content,
+        headers={"Content-Type": "image/png"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["receipt"]["status"] == "awaiting_match"
+    uploader.assert_not_awaited()
+    starter.assert_not_awaited()
+    poller.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_live_receipt_upload_retry_rejects_same_size_different_content(
+    client,
+    monkeypatch,
+):
+    first_content = b"\x89PNG\r\n\x1a\nfirst"
+    second_content = b"\x89PNG\r\n\x1a\nother"
+    completed = probe_receipt(
+        filename=f"receipt-{hashlib.sha256(first_content).hexdigest()}.png"
+    )
+    uploader = AsyncMock()
+    starter = AsyncMock()
+    poller = AsyncMock()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        main_module,
+        "get_receipt",
+        AsyncMock(return_value=completed),
+    )
+    monkeypatch.setattr(main_module, "upload_receipt_file", uploader)
+    monkeypatch.setattr(main_module, "start_receipt", starter)
+    monkeypatch.setattr(main_module, "poll_receipt", poller)
+
+    response = await client.put(
+        "/receipts/receipt-invented/content",
+        content=second_content,
+        headers={"Content-Type": "image/png"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "receipt_upload_conflict"
+    uploader.assert_not_awaited()
+    starter.assert_not_awaited()
+    poller.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_concurrent_receipt_uploads_create_one_upstream_attachment(
+    client,
+    monkeypatch,
+):
+    content = b"\x89PNG\r\n\x1a\n"
+    digest = hashlib.sha256(content).hexdigest()
+    pending = probe_receipt(status="pending", with_attachment=False)
+    completed = probe_receipt(filename=f"receipt-{digest}.png")
+    uploader = AsyncMock()
+    starter = AsyncMock()
+    poller = AsyncMock(return_value=completed)
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        main_module,
+        "get_receipt",
+        AsyncMock(side_effect=(pending, completed)),
+    )
+    monkeypatch.setattr(main_module, "upload_receipt_file", uploader)
+    monkeypatch.setattr(main_module, "start_receipt", starter)
+    monkeypatch.setattr(main_module, "poll_receipt", poller)
+
+    first, second = await asyncio.gather(
+        client.put(
+            "/receipts/receipt-invented/content",
+            content=content,
+            headers={"Content-Type": "image/png"},
+        ),
+        client.put(
+            "/receipts/receipt-invented/content",
+            content=content,
+            headers={"Content-Type": "image/png"},
+        ),
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    uploader.assert_awaited_once()
+    assert uploader.await_args.args[2].name == f"receipt-{digest}.png"
+    starter.assert_awaited_once()
+    poller.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_live_receipt_download_verifies_attachment_ownership(client, monkeypatch):
+    provider = object()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+    monkeypatch.setattr(
+        main_module,
+        "get_receipt",
+        AsyncMock(return_value=probe_receipt()),
+    )
+    downloader = AsyncMock(
+        return_value=DownloadedAttachment(
+            content=b"invented-png",
+            media_type="image/png",
+        )
+    )
+    monkeypatch.setattr(main_module, "download_attachment_payload", downloader)
+
+    missing = await client.get(
+        "/receipts/receipt-invented/attachments/other/content"
+    )
+    downloaded = await client.get(
+        "/receipts/receipt-invented/attachments/attachment-invented/content"
+    )
+
+    assert missing.status_code == 404
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"invented-png"
+    assert downloaded.headers["content-type"] == "image/png"
+    downloader.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_live_receipt_match_requires_posted_transaction_and_readback(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.get_transaction_details.return_value = {
+        "getTransaction": {
+            "id": "transaction-invented",
+            "date": "2026-10-10",
+            "amount": -1,
+            "merchant": {"name": "Invented Store"},
+            "account": {"id": "account-invented", "displayName": "Checking"},
+            "needsReview": False,
+            "pending": False,
+        }
+    }
+    unmatched = probe_receipt()
+    matched = probe_receipt(linked_transaction_id="transaction-invented")
+    get_mock = AsyncMock(side_effect=(unmatched, matched))
+    matcher = AsyncMock()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+    monkeypatch.setattr(main_module, "get_receipt", get_mock)
+    monkeypatch.setattr(main_module, "match_receipt", matcher)
+
+    response = await client.post(
+        "/receipts/receipt-invented/match",
+        json={
+            "transactionId": "transaction-invented",
+            "expectedLinkedTransactionId": None,
+            "confirmed": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "matched"
+    matcher.assert_awaited_once_with(
+        provider,
+        unmatched,
+        "transaction-invented",
+    )
+    provider.get_transaction_details.assert_awaited_once_with(
+        "transaction-invented",
+        redirect_posted=False,
+    )
+    assert get_mock.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_concurrent_receipt_matches_serialize_expected_unmatched_revision(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    async def transaction_details(transaction_id, redirect_posted=True):
+        assert redirect_posted is False
+        return {"getTransaction": {"id": transaction_id, "pending": False}}
+
+    provider.get_transaction_details.side_effect = transaction_details
+    current = probe_receipt()
+
+    async def get_current(_client, _receipt_id):
+        return current
+
+    async def set_match(_client, _receipt, transaction_id):
+        nonlocal current
+        await asyncio.sleep(0)
+        current = probe_receipt(linked_transaction_id=transaction_id)
+
+    matcher = AsyncMock(side_effect=set_match)
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+    monkeypatch.setattr(main_module, "get_receipt", get_current)
+    monkeypatch.setattr(main_module, "match_receipt", matcher)
+
+    responses = await asyncio.gather(
+        client.post(
+            "/receipts/receipt-invented/match",
+            json={
+                "transactionId": "transaction-first",
+                "expectedLinkedTransactionId": None,
+                "confirmed": True,
+            },
+        ),
+        client.post(
+            "/receipts/receipt-invented/match",
+            json={
+                "transactionId": "transaction-second",
+                "expectedLinkedTransactionId": None,
+                "confirmed": True,
+            },
+        ),
+    )
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    conflict = next(response for response in responses if response.status_code == 409)
+    assert conflict.json()["error"]["code"] == "receipt_match_conflict"
+    matcher.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_live_receipt_match_sanitizes_transaction_lookup_failure(
+    client,
+    monkeypatch,
+):
+    provider = AsyncMock()
+    provider.get_transaction_details.side_effect = RuntimeError(
+        "private upstream detail"
+    )
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+    monkeypatch.setattr(
+        main_module,
+        "get_receipt",
+        AsyncMock(return_value=probe_receipt()),
+    )
+
+    response = await client.post(
+        "/receipts/receipt-invented/match",
+        json={
+            "transactionId": "transaction-invented",
+            "expectedLinkedTransactionId": None,
+            "confirmed": True,
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["error"] == {
+        "code": "upstream_error",
+        "message": "Monarch receipt match request failed",
+    }
+    assert "private upstream detail" not in response.text
+
+
+@pytest.mark.anyio
+async def test_live_receipt_match_rejects_pending_transaction(client, monkeypatch):
+    provider = AsyncMock()
+    provider.get_transaction_details.return_value = {
+        "getTransaction": {
+            "id": "transaction-invented",
+            "date": "2026-10-10",
+            "amount": -1,
+            "merchant": {"name": "Invented Store"},
+            "account": {"id": "account-invented", "displayName": "Checking"},
+            "needsReview": False,
+            "pending": True,
+        }
+    }
+    matcher = AsyncMock()
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+    monkeypatch.setattr(
+        main_module,
+        "get_receipt",
+        AsyncMock(return_value=probe_receipt()),
+    )
+    monkeypatch.setattr(main_module, "match_receipt", matcher)
+
+    response = await client.post(
+        "/receipts/receipt-invented/match",
+        json={
+            "transactionId": "transaction-invented",
+            "expectedLinkedTransactionId": None,
+            "confirmed": True,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "pending_transaction_not_supported"
+    matcher.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_live_receipt_poll_timeout_is_sanitized(client, monkeypatch):
+    pending = probe_receipt(status="pending", with_attachment=False)
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        main_module,
+        "get_receipt",
+        AsyncMock(return_value=pending),
+    )
+    monkeypatch.setattr(main_module, "upload_receipt_file", AsyncMock())
+    monkeypatch.setattr(main_module, "start_receipt", AsyncMock(return_value=pending))
+    monkeypatch.setattr(
+        main_module,
+        "poll_receipt",
+        AsyncMock(side_effect=ReceiptProbeError("receipt_poll_timeout")),
+    )
+
+    response = await client.put(
+        "/receipts/receipt-invented/content",
+        content=b"\x89PNG\r\n\x1a\n",
+        headers={"Content-Type": "image/png"},
+    )
+
+    assert response.status_code == 504
+    assert response.json()["error"] == {
+        "code": "receipt_processing_timeout",
+        "message": "Monarch receipt processing did not complete in time",
+    }
+    assert response.status_code != 500

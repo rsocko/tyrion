@@ -254,9 +254,8 @@ dedicated test transaction/category and
 the write and restores the original category in a `finally` block. Do not redirect
 live test output to tracked files.
 
-Receipt operations have a separate, internal controlled-live probe. It is not a
-public Bridge route, is not collected by pytest, and uses the same bridge-owned
-external session:
+Receipt operations have a separate controlled-live probe. It is not collected by
+pytest and uses the same bridge-owned external session:
 
 ```powershell
 $env:BRIDGE_LOAD_DOTENV = "false"
@@ -287,6 +286,20 @@ Deterministic coverage runs with `python -m pytest test_receipt_probe.py`.
 See [`docs/MONARCH-INTEGRATION-VALIDATION.md`](../docs/MONARCH-INTEGRATION-VALIDATION.md)
 for the evidence matrix, limitations, and safe refresh procedure.
 
+The production Bridge contract exposes only normalized receipt identities, coarse
+source/status, linked transaction identity, bounded attachment metadata, and freshness.
+It never returns upstream response shapes, filenames, signed asset URLs, or document
+bytes in JSON. Upload is deliberately two-step: `POST /receipts` creates the opaque
+Monarch receipt first so the caller can durably record it, then
+`PUT /receipts/{id}/content` accepts one raw PNG, JPEG, or PDF body up to 2 MiB and
+performs bounded processing polling. Callers must not blindly create another receipt
+after an unknown outcome. Attachment bytes are available only through the protected
+bounded proxy route and are never cached. Matching requires `confirmed: true`, an
+explicit expected unmatched revision (`expectedLinkedTransactionId: null`), a posted
+transaction, and authoritative receipt read-back.
+These routes remain private Bridge operations; this slice does not add them to the
+browser proxy or public connector gateway allowlist.
+
 ## Endpoints
 
 | Method | Path | Description |
@@ -301,6 +314,12 @@ for the evidence matrix, limitations, and safe refresh procedure.
 | GET | `/transactions` | Fetch transactions with filters |
 | GET | `/transactions/{id}` | Single transaction detail |
 | PATCH | `/transactions/{id}/category` | Verified category write-back |
+| GET | `/receipts` | Bounded normalized receipt list |
+| GET | `/receipts/{id}` | Normalized receipt detail |
+| POST | `/receipts` | Create one uploaded-receipt identity |
+| PUT | `/receipts/{id}/content` | Bounded upload, start, and capped processing poll |
+| GET | `/receipts/{id}/attachments/{attachmentId}/content` | MIME/size-bounded attachment proxy |
+| POST | `/receipts/{id}/match` | Explicitly confirmed posted-transaction match with read-back |
 | GET | `/accounts` | Bounded account references and current balances |
 | GET | `/category-groups` | Bounded category-group references |
 | GET | `/categories` | Bounded categories with stable group identity |

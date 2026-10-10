@@ -39,6 +39,7 @@ from receipt_probe import (
     delete_transaction_attachment,
     discover_matched_pdf_candidate,
     download_attachment,
+    download_attachment_payload,
     find_receipt,
     get_receipt,
     get_transaction_attachment,
@@ -823,6 +824,13 @@ async def test_download_attachment_streams_with_mime_and_byte_limits():
     )
 
     assert content == b"invented"
+    payload = await download_attachment_payload(
+        attachment,
+        max_bytes=8,
+        transport=httpx.MockTransport(handler),
+    )
+    assert payload.content == b"invented"
+    assert payload.media_type == "image/png"
 
 
 @pytest.mark.anyio

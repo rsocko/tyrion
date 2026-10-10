@@ -1,7 +1,7 @@
-"""Isolated validation adapter for private Monarch receipt operations.
+"""Internal adapter for validated private Monarch receipt operations.
 
-This module intentionally does not define Bridge API routes or public DTOs. Callers
-must supply the client owned by the Bridge session manager.
+Callers must supply the client owned by the Bridge session manager. Upstream shapes
+and signed asset URLs remain private to this module.
 """
 
 from __future__ import annotations
@@ -118,6 +118,12 @@ class ReceiptPage:
             "limit": self.limit,
             "offset": self.offset,
         }
+
+
+@dataclass(frozen=True)
+class DownloadedAttachment:
+    content: bytes = field(repr=False)
+    media_type: Literal["image/jpeg", "image/png", "application/pdf"]
 
 
 @dataclass(frozen=True)
@@ -768,6 +774,21 @@ async def download_attachment(
     max_bytes: int = MAX_DOWNLOAD_BYTES,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> bytes:
+    return (
+        await download_attachment_payload(
+            attachment,
+            max_bytes=max_bytes,
+            transport=transport,
+        )
+    ).content
+
+
+async def download_attachment_payload(
+    attachment: AttachmentMetadata,
+    *,
+    max_bytes: int = MAX_DOWNLOAD_BYTES,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> DownloadedAttachment:
     if not 1 <= max_bytes <= MAX_DOWNLOAD_BYTES:
         raise ReceiptProbeError("invalid_download_limit")
     url = attachment._asset_url
@@ -786,7 +807,11 @@ async def download_attachment(
                 if response.status_code in (401, 403):
                     raise ReceiptProbeError("attachment_auth_rejected")
                 response.raise_for_status()
-                content_type = response.headers.get("content-type", "").split(";", 1)[0]
+                content_type = (
+                    response.headers.get("content-type", "")
+                    .split(";", 1)[0]
+                    .lower()
+                )
                 if content_type.lower() not in ALLOWED_DOWNLOAD_TYPES:
                     raise ReceiptProbeError("attachment_type_rejected")
                 length = response.headers.get("content-length")
@@ -807,7 +832,10 @@ async def download_attachment(
         raise
     except (httpx.HTTPError, ValueError) as exc:
         raise ReceiptProbeError("attachment_download_failed") from exc
-    return b"".join(chunks)
+    return DownloadedAttachment(
+        content=b"".join(chunks),
+        media_type=content_type,
+    )
 
 
 def attachments_match(

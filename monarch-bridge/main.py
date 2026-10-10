@@ -8,21 +8,24 @@ Run with --demo flag to use mock data (no Monarch credentials needed).
 import asyncio
 import base64
 import binascii
+import hashlib
 import inspect
 import logging
 import os
 import re
 import sys
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Path as PathParam, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -53,6 +56,11 @@ from contract import (
     MerchantUpdateResponse,
     PageInfo,
     RecurringResponse,
+    ReceiptMatchRequest,
+    ReceiptMatchResponse,
+    ReceiptPage,
+    ReceiptResponse,
+    ReceiptsResponse,
     SyncResponse,
     TransactionResponse,
     TransactionReviewResponse,
@@ -69,11 +77,25 @@ from contract import (
     normalize_category_groups,
     normalize_categories,
     normalize_recurring,
+    normalize_receipt,
     normalize_transaction,
     normalize_transaction_tags,
     normalize_transaction_splits,
     normalize_transactions,
     provenance,
+)
+from receipt_probe import (
+    MAX_DOWNLOAD_BYTES,
+    MAX_UPLOAD_BYTES,
+    ReceiptProbeError,
+    create_receipt,
+    download_attachment_payload,
+    get_receipt,
+    list_receipts,
+    match_receipt,
+    poll_receipt,
+    start_receipt,
+    upload_receipt_file,
 )
 
 if os.getenv("BRIDGE_LOAD_DOTENV", "").lower() in ("1", "true", "yes"):
@@ -93,6 +115,8 @@ logging.basicConfig(
 logger = logging.getLogger("monarch_bridge")
 logger.addFilter(RedactingFilter())
 TRANSACTION_TAG_UPDATE_LOCKS = tuple(asyncio.Lock() for _ in range(64))
+RECEIPT_MUTATION_LOCKS = tuple(asyncio.Lock() for _ in range(64))
+MAX_RECEIPT_MATCH_BODY_BYTES = 4096
 
 
 def create_monarch_client():
@@ -166,6 +190,19 @@ TRANSACTION_QUERY_PARAMETERS = {
     "cursor",
 }
 TRANSACTION_SINGLETON_PARAMETERS = TRANSACTION_QUERY_PARAMETERS - {"tag_id"}
+RECEIPT_QUERY_PARAMETERS = {"source", "limit", "offset"}
+RECEIPT_UPLOAD_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "application/pdf": ".pdf",
+}
+
+
+def receipt_mutation_lock(receipt_id: str) -> asyncio.Lock:
+    digest = hashlib.sha256(receipt_id.encode("utf-8")).digest()
+    return RECEIPT_MUTATION_LOCKS[
+        int.from_bytes(digest[:2], "big") % len(RECEIPT_MUTATION_LOCKS)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -503,24 +540,44 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(SETTINGS.allowed_origins),
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Bridge-Token"],
 )
 
 
 @app.middleware("http")
 async def secure_bridge_request(request: Request, call_next):
+    body_limit = None
+    body_description = None
     if request.url.path.startswith("/auth/") and request.method == "POST":
+        body_limit = SETTINGS.max_auth_body_bytes
+        body_description = "Authentication payload"
+    elif (
+        request.method == "POST"
+        and request.url.path.startswith("/receipts/")
+        and request.url.path.endswith("/match")
+    ):
+        body_limit = MAX_RECEIPT_MATCH_BODY_BYTES
+        body_description = "Receipt match payload"
+    if body_limit is not None:
         content_length = request.headers.get("content-length")
         if content_length:
             try:
-                if int(content_length) > SETTINGS.max_auth_body_bytes:
-                    return error_response(413, "payload_too_large", "Authentication payload is too large")
+                if int(content_length) > body_limit:
+                    return error_response(
+                        413,
+                        "payload_too_large",
+                        f"{body_description} is too large",
+                    )
             except ValueError:
                 return error_response(400, "invalid_request", "Content-Length is invalid")
         body = await request.body()
-        if len(body) > SETTINGS.max_auth_body_bytes:
-            return error_response(413, "payload_too_large", "Authentication payload is too large")
+        if len(body) > body_limit:
+            return error_response(
+                413,
+                "payload_too_large",
+                f"{body_description} is too large",
+            )
 
     public_path = request.url.path in {"/", "/health", "/contract"}
     client_host = request.client.host if request.client else None
@@ -542,7 +599,7 @@ async def secure_bridge_request(request: Request, call_next):
 
     response = await call_next(request)
     response.headers["X-Monarch-Contract-Version"] = CONTRACT_VERSION
-    if request.url.path.startswith("/auth/"):
+    if request.url.path.startswith(("/auth/", "/receipts")):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -575,6 +632,29 @@ def validate_inquiry_query(request: Request) -> Optional[JSONResponse]:
             value = request.query_params.get(name)
             if value is not None and value not in {"true", "false"}:
                 return error_response(422, "invalid_request", f"{name} must be true or false")
+    elif path == "/receipts":
+        pairs = list(request.query_params.multi_items())
+        unknown = sorted({name for name, _ in pairs} - RECEIPT_QUERY_PARAMETERS)
+        if unknown:
+            return error_response(
+                400,
+                "invalid_request",
+                f"Unknown query parameter: {unknown[0]}",
+            )
+        for name in RECEIPT_QUERY_PARAMETERS:
+            if len(request.query_params.getlist(name)) > 1:
+                return error_response(
+                    400,
+                    "invalid_request",
+                    f"{name} may be specified only once",
+                )
+    elif path.startswith("/receipts/") and request.query_params:
+        name = next(iter(request.query_params))
+        return error_response(
+            400,
+            "invalid_request",
+            f"Unknown query parameter: {name}",
+        )
     elif path.startswith("/transactions/") and request.query_params:
         name = next(iter(request.query_params))
         return error_response(400, "invalid_request", f"Unknown query parameter: {name}")
@@ -883,6 +963,642 @@ async def health():
 async def root():
     """Expose bridge health at the production ingress root."""
     return await health()
+
+
+def receipt_http_error(exc: ReceiptProbeError) -> HTTPException:
+    if exc.code == "upstream_request_failed" and isinstance(exc.__cause__, Exception):
+        return upstream_error("receipt", exc.__cause__)
+    status, code, message = {
+        "receipt_not_found": (
+            404,
+            "receipt_not_found",
+            "The Monarch receipt was not found",
+        ),
+        "invalid_identifier": (
+            422,
+            "invalid_request",
+            "The receipt identifier is invalid",
+        ),
+        "receipt_poll_timeout": (
+            504,
+            "receipt_processing_timeout",
+            "Monarch receipt processing did not complete in time",
+        ),
+        "attachment_too_large": (
+            413,
+            "attachment_too_large",
+            "The receipt attachment exceeds the download limit",
+        ),
+        "attachment_type_rejected": (
+            415,
+            "unsupported_media_type",
+            "The receipt attachment type is not supported",
+        ),
+        "attachment_auth_rejected": (
+            502,
+            "attachment_unavailable",
+            "The receipt attachment is unavailable",
+        ),
+    }.get(
+        exc.code,
+        (502, "receipt_upstream_error", "The Monarch receipt request failed"),
+    )
+    return HTTPException(
+        status,
+        detail={"error": code, "message": message},
+    )
+
+
+def demo_receipt(
+    receipt_id: str = "receipt-demo",
+    *,
+    linked_transaction_id: Optional[str] = None,
+    status: str = "completed",
+    with_attachment: bool = True,
+):
+    return normalize_receipt(
+        {
+            "id": receipt_id,
+            "source": "upload",
+            "status": status,
+            "createdAt": "2026-10-10T12:00:00Z",
+            "linkedTransactionId": linked_transaction_id,
+            "attachments": (
+                [
+                    {
+                        "id": "attachment-demo",
+                        "extension": "png",
+                        "sizeBytes": 68,
+                        "downloadAvailable": True,
+                    }
+                ]
+                if with_attachment
+                else []
+            ),
+        }
+    )
+
+
+async def ensure_empty_request_body(request: Request) -> None:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > 0:
+                raise HTTPException(
+                    400,
+                    detail={
+                        "error": "invalid_request",
+                        "message": "This receipt operation does not accept a body",
+                    },
+                )
+        except ValueError:
+            raise HTTPException(
+                400,
+                detail={
+                    "error": "invalid_request",
+                    "message": "Content-Length is invalid",
+                },
+            )
+    async for chunk in request.stream():
+        if chunk:
+            raise HTTPException(
+                400,
+                detail={
+                    "error": "invalid_request",
+                    "message": "This receipt operation does not accept a body",
+                },
+            )
+
+
+async def write_bounded_receipt_upload(request: Request, path: Path) -> str:
+    if request.headers.get("content-encoding", "identity").lower() != "identity":
+        raise HTTPException(
+            415,
+            detail={
+                "error": "unsupported_content_encoding",
+                "message": "Receipt uploads must not use content encoding",
+            },
+        )
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    if media_type not in RECEIPT_UPLOAD_TYPES:
+        raise HTTPException(
+            415,
+            detail={
+                "error": "unsupported_media_type",
+                "message": "Receipt uploads require PNG, JPEG, or PDF content",
+            },
+        )
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            parsed_length = int(content_length)
+        except ValueError:
+            raise HTTPException(
+                400,
+                detail={
+                    "error": "invalid_request",
+                    "message": "Content-Length is invalid",
+                },
+            )
+        if parsed_length <= 0:
+            raise HTTPException(
+                422,
+                detail={"error": "invalid_request", "message": "Receipt upload is empty"},
+            )
+        if parsed_length > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                413,
+                detail={
+                    "error": "payload_too_large",
+                    "message": "Receipt upload exceeds the size limit",
+                },
+            )
+    size = 0
+    digest = hashlib.sha256()
+    try:
+        with path.open("wb") as output:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        413,
+                        detail={
+                            "error": "payload_too_large",
+                            "message": "Receipt upload exceeds the size limit",
+                        },
+                    )
+                output.write(chunk)
+                digest.update(chunk)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            400,
+            detail={
+                "error": "invalid_request",
+                "message": "Receipt upload could not be read",
+            },
+        )
+    if size == 0:
+        raise HTTPException(
+            422,
+            detail={"error": "invalid_request", "message": "Receipt upload is empty"},
+        )
+    return digest.hexdigest()
+
+
+@app.get("/receipts", response_model=ReceiptsResponse)
+async def get_receipts(
+    source: Literal["upload", "email"] = Query("upload"),
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    if DEMO_MODE:
+        receipts = [demo_receipt()] if offset == 0 else []
+        return ReceiptsResponse(
+            provenance=provenance("demo"),
+            receipts=receipts,
+            page=ReceiptPage(
+                limit=limit,
+                offset=offset,
+                total=1,
+                has_more=False,
+            ),
+        )
+    client = await get_client()
+    try:
+        result = await list_receipts(
+            client,
+            source=source,
+            limit=limit,
+            offset=offset,
+        )
+        return ReceiptsResponse(
+            provenance=provenance("live"),
+            receipts=[
+                normalize_receipt(receipt.to_result())
+                for receipt in result.receipts
+            ],
+            page=ReceiptPage(
+                limit=limit,
+                offset=offset,
+                total=result.total_count,
+                has_more=offset + len(result.receipts) < result.total_count,
+            ),
+        )
+    except ReceiptProbeError as exc:
+        raise receipt_http_error(exc)
+    except (TypeError, ValueError) as exc:
+        raise upstream_error("receipt list", exc)
+
+
+@app.get("/receipts/{receipt_id}", response_model=ReceiptResponse)
+async def get_receipt_detail(
+    receipt_id: str = PathParam(
+        ...,
+        min_length=1,
+        max_length=512,
+        pattern=r"^[^\x00-\x1f\x7f]+$",
+    ),
+):
+    if DEMO_MODE:
+        if receipt_id not in {"receipt-demo", "receipt-demo-new"}:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "receipt_not_found",
+                    "message": "The Monarch receipt was not found",
+                },
+            )
+        return ReceiptResponse(
+            provenance=provenance("demo"),
+            receipt=demo_receipt(receipt_id),
+        )
+    client = await get_client()
+    try:
+        receipt = await get_receipt(client, receipt_id)
+        if receipt is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "receipt_not_found",
+                    "message": "The Monarch receipt was not found",
+                },
+            )
+        return ReceiptResponse(
+            provenance=provenance("live"),
+            receipt=normalize_receipt(receipt.to_result()),
+        )
+    except HTTPException:
+        raise
+    except ReceiptProbeError as exc:
+        raise receipt_http_error(exc)
+    except (TypeError, ValueError) as exc:
+        raise upstream_error("receipt detail", exc)
+
+
+@app.post("/receipts", response_model=ReceiptResponse, status_code=201)
+async def create_uploaded_receipt(request: Request):
+    await ensure_empty_request_body(request)
+    if DEMO_MODE:
+        return ReceiptResponse(
+            provenance=provenance("demo"),
+            receipt=demo_receipt(
+                "receipt-demo-new",
+                status="pending",
+                with_attachment=False,
+            ),
+        )
+    client = await get_client()
+    try:
+        receipt = await create_receipt(client)
+        return ReceiptResponse(
+            provenance=provenance("live"),
+            receipt=normalize_receipt(receipt.to_result()),
+        )
+    except ReceiptProbeError as exc:
+        raise receipt_http_error(exc)
+    except (TypeError, ValueError) as exc:
+        raise upstream_error("receipt creation", exc)
+
+
+@app.put("/receipts/{receipt_id}/content", response_model=ReceiptResponse)
+async def upload_uploaded_receipt(
+    request: Request,
+    receipt_id: str = PathParam(
+        ...,
+        min_length=1,
+        max_length=512,
+        pattern=r"^[^\x00-\x1f\x7f]+$",
+    ),
+):
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    suffix = RECEIPT_UPLOAD_TYPES.get(media_type, ".bin")
+    if DEMO_MODE and receipt_id != "receipt-demo-new":
+        raise HTTPException(
+            404,
+            detail={
+                "error": "receipt_not_found",
+                "message": "The Monarch receipt was not found",
+            },
+        )
+    with tempfile.TemporaryDirectory(prefix="tyrion-receipt-upload-") as directory:
+        temporary_path = Path(directory) / "receipt-upload.tmp"
+        content_digest = await write_bounded_receipt_upload(request, temporary_path)
+        path = temporary_path.with_name(f"receipt-{content_digest}{suffix}")
+        temporary_path.replace(path)
+        if DEMO_MODE:
+            return ReceiptResponse(
+                provenance=provenance("demo"),
+                receipt=demo_receipt(receipt_id),
+            )
+        client = await get_client()
+        try:
+            async with receipt_mutation_lock(receipt_id):
+                existing = await get_receipt(client, receipt_id)
+                if existing is None:
+                    raise HTTPException(
+                        404,
+                        detail={
+                            "error": "receipt_not_found",
+                            "message": "The Monarch receipt was not found",
+                        },
+                    )
+                if (
+                    existing.source != "upload"
+                    or existing.linked_transaction_id is not None
+                ):
+                    raise HTTPException(
+                        409,
+                        detail={
+                            "error": "receipt_state_conflict",
+                            "message": "The Monarch receipt cannot accept an upload",
+                        },
+                    )
+                if len(existing.attachments) > 1:
+                    raise HTTPException(
+                        409,
+                        detail={
+                            "error": "receipt_state_conflict",
+                            "message": "The Monarch receipt upload state is ambiguous",
+                        },
+                    )
+                attachment_matches = False
+                if existing.attachments:
+                    uploaded = existing.attachments[0]
+                    expected_extensions = (
+                        {"jpg", "jpeg"}
+                        if media_type == "image/jpeg"
+                        else {suffix.lstrip(".")}
+                    )
+                    attachment_matches = not (
+                        uploaded.filename != path.name
+                        or (
+                            uploaded.extension is not None
+                            and uploaded.extension.lower().lstrip(".")
+                            not in expected_extensions
+                        )
+                        or (
+                            uploaded.size_bytes is not None
+                            and uploaded.size_bytes != path.stat().st_size
+                        )
+                    )
+                    if not attachment_matches:
+                        raise HTTPException(
+                            409,
+                            detail={
+                                "error": "receipt_upload_conflict",
+                                "message": "The Monarch receipt contains different content",
+                            },
+                        )
+                if existing.status in {"pending_matches", "completed", "failed"}:
+                    if not attachment_matches:
+                        raise HTTPException(
+                            409,
+                            detail={
+                                "error": "receipt_state_conflict",
+                                "message": "The Monarch receipt upload state is ambiguous",
+                            },
+                        )
+                    return ReceiptResponse(
+                        provenance=provenance("live"),
+                        receipt=normalize_receipt(existing.to_result()),
+                    )
+                if existing.status == "pending":
+                    if not existing.attachments:
+                        await upload_receipt_file(client, receipt_id, path)
+                    await start_receipt(client, receipt_id)
+                elif existing.status == "in_progress" and not attachment_matches:
+                    raise HTTPException(
+                        409,
+                        detail={
+                            "error": "receipt_state_conflict",
+                            "message": "The Monarch receipt upload state is ambiguous",
+                        },
+                    )
+                receipt = await poll_receipt(client, receipt_id)
+                return ReceiptResponse(
+                    provenance=provenance("live"),
+                    receipt=normalize_receipt(receipt.to_result()),
+                )
+        except HTTPException:
+            raise
+        except ReceiptProbeError as exc:
+            raise receipt_http_error(exc)
+        except (TypeError, ValueError) as exc:
+            raise upstream_error("receipt upload", exc)
+
+
+@app.get("/receipts/{receipt_id}/attachments/{attachment_id}/content")
+async def get_receipt_attachment_content(
+    receipt_id: str = PathParam(
+        ...,
+        min_length=1,
+        max_length=512,
+        pattern=r"^[^\x00-\x1f\x7f]+$",
+    ),
+    attachment_id: str = PathParam(
+        ...,
+        min_length=1,
+        max_length=512,
+        pattern=r"^[^\x00-\x1f\x7f]+$",
+    ),
+):
+    if DEMO_MODE:
+        if receipt_id not in {"receipt-demo", "receipt-demo-new"}:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "receipt_not_found",
+                    "message": "The Monarch receipt was not found",
+                },
+            )
+        if attachment_id != "attachment-demo":
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "attachment_not_found",
+                    "message": "The Monarch receipt attachment was not found",
+                },
+            )
+        content = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+            "AAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        return Response(
+            content=content,
+            media_type="image/png",
+            headers={"Cache-Control": "no-store"},
+        )
+    client = await get_client()
+    try:
+        receipt = await get_receipt(client, receipt_id)
+        if receipt is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "receipt_not_found",
+                    "message": "The Monarch receipt was not found",
+                },
+            )
+        attachment = next(
+            (
+                item
+                for item in receipt.attachments
+                if item.id == attachment_id
+            ),
+            None,
+        )
+        if attachment is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "attachment_not_found",
+                    "message": "The Monarch receipt attachment was not found",
+                },
+            )
+        if not attachment.download_available:
+            raise HTTPException(
+                502,
+                detail={
+                    "error": "attachment_unavailable",
+                    "message": "The receipt attachment is unavailable",
+                },
+            )
+        downloaded = await download_attachment_payload(
+            attachment,
+            max_bytes=MAX_DOWNLOAD_BYTES,
+        )
+        return Response(
+            content=downloaded.content,
+            media_type=downloaded.media_type,
+            headers={"Cache-Control": "no-store"},
+        )
+    except HTTPException:
+        raise
+    except ReceiptProbeError as exc:
+        raise receipt_http_error(exc)
+
+
+@app.post(
+    "/receipts/{receipt_id}/match",
+    response_model=ReceiptMatchResponse,
+)
+async def match_uploaded_receipt(
+    update: ReceiptMatchRequest,
+    receipt_id: str = PathParam(
+        ...,
+        min_length=1,
+        max_length=512,
+        pattern=r"^[^\x00-\x1f\x7f]+$",
+    ),
+):
+    if DEMO_MODE:
+        if receipt_id not in {"receipt-demo", "receipt-demo-new"}:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "receipt_not_found",
+                    "message": "The Monarch receipt was not found",
+                },
+            )
+        return ReceiptMatchResponse(
+            status="matched",
+            receipt=demo_receipt(
+                receipt_id,
+                linked_transaction_id=update.transaction_id,
+            ),
+        )
+    client = await get_client()
+    mutation_lock = receipt_mutation_lock(receipt_id)
+    await mutation_lock.acquire()
+    try:
+        receipt = await get_receipt(client, receipt_id)
+        if receipt is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "receipt_not_found",
+                    "message": "The Monarch receipt was not found",
+                },
+            )
+        if receipt.linked_transaction_id == update.transaction_id:
+            return ReceiptMatchResponse(
+                status="matched",
+                receipt=normalize_receipt(receipt.to_result()),
+            )
+        if receipt.linked_transaction_id is not None:
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "receipt_match_conflict",
+                    "message": "The Monarch receipt is already matched",
+                },
+            )
+        if receipt.status in {"in_progress", "pending"}:
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "receipt_processing",
+                    "message": "The Monarch receipt is still processing",
+                },
+            )
+        if receipt.status == "failed":
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "receipt_failed",
+                    "message": "The Monarch receipt failed processing",
+                },
+            )
+        transaction_result = await client.get_transaction_details(
+            update.transaction_id,
+            redirect_posted=False,
+        )
+        raw_transaction = (
+            transaction_result.get("getTransaction")
+            if isinstance(transaction_result, dict)
+            else None
+        )
+        if raw_transaction is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "error": "transaction_not_found",
+                    "message": "The Monarch transaction was not found",
+                },
+            )
+        if not isinstance(raw_transaction, dict):
+            raise ValueError("Upstream transaction response was malformed")
+        if raw_transaction.get("id") != update.transaction_id:
+            raise ValueError("Upstream transaction identity was malformed")
+        pending = raw_transaction.get("pending")
+        if not isinstance(pending, bool):
+            raise ValueError("Upstream transaction pending state was malformed")
+        if pending:
+            raise HTTPException(
+                409,
+                detail={
+                    "error": "pending_transaction_not_supported",
+                    "message": "Receipts can be matched only to posted transactions",
+                },
+            )
+        await match_receipt(client, receipt, update.transaction_id)
+        matched = await get_receipt(client, receipt_id)
+        if matched is None or matched.linked_transaction_id != update.transaction_id:
+            raise ReceiptProbeError("receipt_match_verification_failed")
+        return ReceiptMatchResponse(
+            status="matched",
+            receipt=normalize_receipt(matched.to_result()),
+        )
+    except HTTPException:
+        raise
+    except ReceiptProbeError as exc:
+        raise receipt_http_error(exc)
+    except Exception as exc:
+        raise upstream_error("receipt match", exc)
+    finally:
+        mutation_lock.release()
 
 
 @app.post("/sync", response_model=SyncResponse)
