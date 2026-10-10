@@ -1,6 +1,6 @@
 # Tyrion Delivery Roadmap
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-10-09
 
 **Product boundary:** [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md)
 
@@ -27,7 +27,7 @@ automation, and reconciliation. Prototype completeness is not product completion
 | Connector | FastAPI bridge, read endpoints, category write-back, demo/live modes | Contract hardening, incremental sync, retries, health, and write-back auditability |
 | Domain logic | Versioned kid policy, attribution, review, re-attribution, authorization, persistence ports, and a secure file adapter | Production persistence/API adapter and Mission Control-native exception workflows |
 | Automation | Alert concepts and weekly-summary logic | Durable scheduling, idempotency, notification delivery, and task lifecycle |
-| Reconciliation | Bill and document matching designs | Stable cross-system identities, match lifecycle, evidence links, and audit trail |
+| Reconciliation | Stateless Bill-to-Transaction Matching v1 API with deterministic ranked candidates and payment status | Stable cross-system identities, match lifecycle, native receipt evidence, evidence links, and audit trail |
 | UI reference | Mockups and standalone Next.js prototype | Bounded debug mode and migration of useful patterns into Mission Control |
 
 ## Milestone 1 — Boundary and connector contract
@@ -132,12 +132,24 @@ OWL/Document Intelligence while each source retains authority.
 
 **GitHub tracking:** [#6](https://github.com/rsocko/tyrion/issues/6),
 [#9](https://github.com/rsocko/tyrion/issues/9), and
-[#21](https://github.com/rsocko/tyrion/issues/21).
+[#21](https://github.com/rsocko/tyrion/issues/21), plus receipt validation and
+evidence issues [#220](https://github.com/rsocko/tyrion/issues/220) and
+[#219](https://github.com/rsocko/tyrion/issues/219).
 
 - [ ] Define obligation, document, transaction, candidate-match, and resolution
   identities.
 - [ ] Match bills, statements, EOBs, and receipts to Monarch transactions with
   explainable confidence.
+- [x] Publish a stateless Bill-to-Transaction Matching v1 API with opaque identities,
+  bounded candidates, deterministic evidence factors, and explicit matched,
+  no-match, ambiguous, paid, pending, and unmatched outcomes.
+- [ ] Deliver the phased Paperless-first receipt flow in
+  [`RECEIPT-RECONCILIATION-ARCHITECTURE.md`](./RECEIPT-RECONCILIATION-ARCHITECTURE.md):
+  validate Monarch's private receipt operations, add OWL provenance, submit controlled
+  replicas through Tyrion, combine native receipt evidence with Bill Matching v1,
+  route only exceptions to Mission Control, and retain Monarch-first import as a
+  recovery path. Receipt delivery is gated in order by #220 private-operation
+  validation, #219 normalized evidence, and #9 cross-system orchestration.
 - [ ] Reconcile OWL bills and credit-card statements with Monarch to detect high
   bill or statement totals, amount mismatches, missing payments, and unusually
   large statement contributors
@@ -180,6 +192,9 @@ automation failures without using the product UI as a hidden source of truth.
 - Full account, transaction, budget, report, net-worth, investment, goal, or
   forecasting experiences
 - Ordinary transaction review or receipt matching already handled by Monarch
+- A second receipt archive or receipt-specific candidate-ranking engine; Paperless
+  remains canonical, Monarch provides native receipt intelligence, and receipt
+  reconciliation reuses Bill Matching v1
 - A generic bills calendar
 - A Tyrion-specific chat shell separate from Houston
 - Cosmetic parity work on frozen prototype screens unless needed for a validated

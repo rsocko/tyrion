@@ -31,6 +31,8 @@ reporting product, broad transaction browser, or separate assistant shell.
 | System | Owns | Does not own |
 | --- | --- | --- |
 | **Monarch** | Accounts, transactions, categories, budgets, recurring transactions, reports, goals, forecasts, investments, and ordinary receipt matching | Household-specific attribution, cross-system work prioritization, or Mission Control tasks |
+| **Paperless-ngx** | Canonical original receipts, invoices, bills, statements, order documents, scans, archive metadata, and document retention | Transaction truth, finance categorization, or cross-system prioritization |
+| **OWL / Document Intelligence** | Document provenance, extraction, expectations, obligations, duplicate decisions, document relationships, and durable document-to-payment reconciliation history | Raw Monarch session material, authoritative transaction records, or Mission Control task priority |
 | **Mission Control** | Finance attention surfaces, exception review and actions, notifications, tasks, My Day, Houston, navigation, authentication, and shared interaction patterns | Tyrion policy CRUD, connector setup, a replacement ledger, budget manager, report suite, bills app, or second finance assistant |
 | **Tyrion domain** | Kid/profile configuration, account and merchant rules, limits, policy versions, per-kid attribution, exception detection, decision summaries, finance tools, and reconciliation orchestration | Authoritative copies of Monarch data or a general-purpose finance application |
 | **Tyrion attribution service** | Protected, household-scoped batch evaluation of privacy-safe normalized attribution facts against the current Tyrion policy | Bridge transport, browser access, raw transaction/account records, or executable engine distribution to consumers |
@@ -95,7 +97,9 @@ finance workspace.
 - `/finance/reconciliation` coordinates Monarch transactions with documents and
   obligations owned by OWL/Document Intelligence or other source systems. Tyrion may
   rank normalized candidate transactions and return payment status, but it does not
-  extract, retain, or present source documents.
+  extract, retain, or present source documents. Receipt reconciliation follows the
+  Paperless-first ownership and controlled Monarch-replica flow in
+  [`RECEIPT-RECONCILIATION-ARCHITECTURE.md`](./RECEIPT-RECONCILIATION-ARCHITECTURE.md).
 - `/finance/settings` shows connector health and links to Tyrion-owned policy and
   connector configuration.
 - Mission Control notifications, tasks, and My Day carry finance awareness and
@@ -110,7 +114,9 @@ finance workspace.
 Mission Control must link to Monarch for full transaction review, categorization,
 budgeting, recurring-transaction management, reporting, accounts, investments,
 goals, and forecasting. It must link to the relevant document system for original
-documents and specialist document operations.
+documents and specialist document operations. A Monarch receipt attachment may be a
+controlled non-authoritative replica, but Paperless remains the canonical artifact
+store and OWL retains the durable cross-system relationship.
 
 Tyrion must not expand into:
 
