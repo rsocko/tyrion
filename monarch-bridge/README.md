@@ -254,6 +254,26 @@ dedicated test transaction/category and
 the write and restores the original category in a `finally` block. Do not redirect
 live test output to tracked files.
 
+Receipt operations have a separate, internal controlled-live probe. It is not a
+public Bridge route, is not collected by pytest, and uses the same bridge-owned
+external session:
+
+```powershell
+$env:BRIDGE_LOAD_DOTENV = "false"
+$env:SESSION_FILE = "<external bridge-owned session path>"
+$env:TYRION_LIVE_RECEIPT_TESTS = "1"
+$env:TYRION_LIVE_RECEIPT_MUTATION_CONFIRM = "I_ACCEPT_RECEIPT_PROBE_MUTATIONS"
+python live_receipt_probe.py
+```
+
+The probe creates invented PNG content in the OS temporary directory, applies hard
+poll/download limits, never emits identifiers or signed URLs, and deletes the
+synthetic receipt in `finally`. An optional process-only
+`TYRION_TEST_RECEIPT_TRANSACTION_ID` exercises match/unmatch restoration. Do not run
+the probe in CI or redirect its output. Treat `receipt_probe_cleanup_failed` as a
+manual-cleanup stop condition. Deterministic receipt coverage runs with
+`python -m pytest test_receipt_probe.py`.
+
 See [`docs/MONARCH-INTEGRATION-VALIDATION.md`](../docs/MONARCH-INTEGRATION-VALIDATION.md)
 for the evidence matrix, limitations, and safe refresh procedure.
 
