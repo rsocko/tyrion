@@ -13,6 +13,8 @@ MAX_CATEGORIES = 2_000
 MAX_TRANSACTION_TAGS = 1_000
 MAX_RECURRING_OBLIGATIONS = 5_000
 MAX_BUDGET_ROWS = 5_000
+MAX_RECEIPTS = 100
+MAX_RECEIPT_ATTACHMENTS = 10
 
 
 def _camel(name: str) -> str:
@@ -307,6 +309,83 @@ class TransactionReviewResponse(ContractResponse):
     review_status: Literal["reviewed"] = "reviewed"
 
 
+class ReceiptAttachment(ApiModel):
+    id: str = Field(min_length=1, max_length=512)
+    media_type: Optional[
+        Literal["image/jpeg", "image/png", "application/pdf"]
+    ] = None
+    size_bytes: Optional[int] = Field(default=None, ge=0)
+    download_available: bool
+
+    @field_validator("id")
+    @classmethod
+    def id_must_be_safe(cls, value: str) -> str:
+        if value != value.strip() or any(
+            ord(character) < 32 or ord(character) == 127 for character in value
+        ):
+            raise ValueError("Receipt attachment ID is invalid")
+        return value
+
+
+class Receipt(ApiModel):
+    id: str = Field(min_length=1, max_length=512)
+    source: Literal["upload", "email"]
+    status: Literal["processing", "awaiting_match", "matched", "failed"]
+    created_at: Optional[datetime] = None
+    linked_transaction_id: Optional[str] = Field(default=None, max_length=512)
+    attachments: list[ReceiptAttachment] = Field(
+        default_factory=list,
+        max_length=MAX_RECEIPT_ATTACHMENTS,
+    )
+
+    @field_validator("id", "linked_transaction_id")
+    @classmethod
+    def ids_must_be_safe(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and (
+            value != value.strip()
+            or not value
+            or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        ):
+            raise ValueError("Receipt identifier is invalid")
+        return value
+
+
+class ReceiptPage(ApiModel):
+    limit: int = Field(ge=1, le=MAX_RECEIPTS)
+    offset: int = Field(ge=0)
+    total: int = Field(ge=0)
+    has_more: bool
+
+
+class ReceiptsResponse(DataResponse):
+    receipts: list[Receipt] = Field(max_length=MAX_RECEIPTS)
+    page: ReceiptPage
+
+
+class ReceiptResponse(DataResponse):
+    receipt: Receipt
+
+
+class ReceiptMatchRequest(ApiModel):
+    transaction_id: str = Field(min_length=1, max_length=512)
+    expected_linked_transaction_id: None = Field(...)
+    confirmed: Literal[True]
+
+    @field_validator("transaction_id")
+    @classmethod
+    def transaction_id_must_be_safe(cls, value: str) -> str:
+        if value != value.strip() or any(
+            ord(character) < 32 or ord(character) == 127 for character in value
+        ):
+            raise ValueError("Transaction ID is invalid")
+        return value
+
+
+class ReceiptMatchResponse(ContractResponse):
+    status: Literal["matched"]
+    receipt: Receipt
+
+
 class ErrorDetail(ApiModel):
     code: str
     message: str
@@ -532,6 +611,67 @@ def normalize_transaction(raw: Any) -> Transaction:
         notes=_optional_text(_pick(value, "notes")),
         tags=[tag.name for tag in tag_references],
         tag_references=tag_references,
+    )
+
+
+def normalize_receipt_attachment(raw: Any) -> ReceiptAttachment:
+    value = _mapping(raw)
+    extension = _optional_text(_pick(value, "extension"))
+    media_type = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "pdf": "application/pdf",
+    }.get(extension.lower().lstrip(".")) if extension else None
+    return ReceiptAttachment(
+        id=_identifier(_pick(value, "id")),
+        media_type=media_type,
+        size_bytes=_pick(value, "sizeBytes", "size_bytes"),
+        download_available=_required_bool(
+            _pick(value, "downloadAvailable", "download_available"),
+            "download availability",
+        ),
+    )
+
+
+def normalize_receipt(raw: Any) -> Receipt:
+    value = _mapping(raw)
+    upstream_status = _required_text(_pick(value, "status"))
+    linked_transaction_id = _optional_text(
+        _pick(value, "linkedTransactionId", "linked_transaction_id")
+    )
+    if upstream_status in {"in_progress", "pending"}:
+        status = "processing"
+    elif upstream_status in {"pending_matches", "completed"}:
+        status = "matched" if linked_transaction_id else "awaiting_match"
+    elif upstream_status == "failed":
+        status = "failed"
+    else:
+        raise ValueError("Upstream receipt status is invalid")
+    source = _required_text(_pick(value, "source"))
+    if source not in {"upload", "email"}:
+        raise ValueError("Upstream receipt source is invalid")
+    created = _pick(value, "createdAt", "created_at")
+    if created is None:
+        created_at = None
+    elif isinstance(created, datetime):
+        created_at = created
+    elif isinstance(created, str):
+        created_at = datetime.fromisoformat(created.replace("Z", "+00:00"))
+    else:
+        raise ValueError("Upstream receipt creation time is invalid")
+    if created_at is not None and created_at.tzinfo is None:
+        raise ValueError("Upstream receipt creation time must include a timezone")
+    attachments = _pick(value, "attachments", default=[])
+    if not isinstance(attachments, list):
+        raise ValueError("Upstream receipt attachments must be an array")
+    return Receipt(
+        id=_identifier(_pick(value, "id")),
+        source=source,
+        status=status,
+        created_at=created_at,
+        linked_transaction_id=linked_transaction_id,
+        attachments=[normalize_receipt_attachment(item) for item in attachments],
     )
 
 
