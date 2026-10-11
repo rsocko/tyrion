@@ -223,6 +223,14 @@ Finance Insights SQLite volume. Artifacts are streamed through the UI container'
 bounded, non-executable `/tmp` tmpfs, never stored in SQLite, and removed after every
 success, failure, conflict, or unknown result.
 
+The broker-only `/api/internal/v1/finance/receipt-broker` route has the same private
+authority, bearer, browser-rejection, router-exclusion, state-path, identity, and
+default-off gate requirements. It accepts only bounded already-canonical bytes and
+opaque OWL identity. Unlike receipt evidence intake, it never calls OWL and therefore
+does not use `OWL_RECEIPT_INTAKE_URL` or `OWL_RECEIPT_INTAKE_API_TOKEN`. Create and
+upload reservations are persisted before their respective Bridge mutations, and
+reconciliation never recreates an unknown result.
+
 Connector `GET /health` is composed inside the server-only gateway: it makes exactly
 one protected Bridge `/auth/status` verification with `BRIDGE_API_TOKEN`, validates
 the bounded v1 response, derives reachability and service status from that result,

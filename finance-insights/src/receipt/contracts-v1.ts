@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  idempotencyKeySchema,
   sourceReferenceSchema,
   utcTimestampSchema,
 } from '../contracts/primitives.js';
@@ -122,6 +123,36 @@ export const receiptSourceOccurrenceSchemaV1 = z
 
 export const receiptBlobSha256SchemaV1 = receiptSourceOccurrenceSchemaV1;
 
+export const receiptBrokerOutcomeSchemaV1 = z.enum([
+  'acknowledged',
+  'processing',
+  'duplicate',
+  'retryable',
+  'unknown',
+]);
+
+export const receiptBrokerResponseSchemaV1 = z.strictObject({
+  brokerContractVersion: z.literal('1.0'),
+  idempotencyKey: idempotencyKeySchema,
+  outcome: receiptBrokerOutcomeSchemaV1,
+  acknowledged: z.boolean(),
+  retrySafe: z.boolean(),
+  reconcileRequired: z.boolean(),
+  replicaRef: sourceReferenceSchema.nullable(),
+  replicaLifecycle: receiptReplicaLifecycleSchemaV1,
+  revision: z.number().int().nonnegative(),
+  nativeEvidence: receiptNativeEvidenceSchemaV1.nullable(),
+  reasonCodes: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(80)
+        .regex(/^[a-z0-9][a-z0-9._-]*$/)
+    )
+    .max(12),
+});
+
 export type ReceiptSourceChannelV1 = z.infer<
   typeof receiptSourceChannelSchemaV1
 >;
@@ -137,6 +168,12 @@ export type ReceiptNativeEvidenceV1 = z.infer<
 export type ReceiptEvidenceResponseV1 = z.infer<
   typeof receiptEvidenceResponseSchemaV1
 >;
+export type ReceiptBrokerOutcomeV1 = z.infer<
+  typeof receiptBrokerOutcomeSchemaV1
+>;
+export type ReceiptBrokerResponseV1 = z.infer<
+  typeof receiptBrokerResponseSchemaV1
+>;
 
 export function parseReceiptIntakeResultV1(
   value: unknown
@@ -148,4 +185,10 @@ export function parseReceiptEvidenceResponseV1(
   value: unknown
 ): ReceiptEvidenceResponseV1 {
   return receiptEvidenceResponseSchemaV1.parse(value);
+}
+
+export function parseReceiptBrokerResponseV1(
+  value: unknown
+): ReceiptBrokerResponseV1 {
+  return receiptBrokerResponseSchemaV1.parse(value);
 }

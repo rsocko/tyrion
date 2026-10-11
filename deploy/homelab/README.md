@@ -53,6 +53,13 @@ Monarch-first recovery work is approved. The UI streams artifacts through its bo
 64 MiB `/tmp` tmpfs, persists only byte-free orchestration state, and removes temporary
 files in every terminal or unknown outcome.
 
+For Paperless-first delivery, use the broker-only
+`/api/internal/v1/finance/receipt-broker` route instead. It reuses the receipt state,
+identity namespace, Bridge credential, and receipt gates but does not call OWL
+canonical intake. OWL sends only already-canonical raw bytes and opaque identity.
+Keep `TYRION_RECEIPT_REPLICA_WRITE_ENABLED=false` until writes are approved; enable
+the read and recovery gates before allowing reconcile calls.
+
 The `receipt-recovery` Compose profile adds a disabled one-shot
 `tyrion-monarch-recovery` job for Monarch-first backfill. It reuses the immutable
 Bridge image but runs `receipt_recovery_worker.py --run-once`; it does not start a

@@ -11,6 +11,10 @@ orchestration state, and conditionally creates one controlled Monarch replica be
 default-off gates. Unknown outcomes remain queryable and are never blindly recreated.
 The generated contract is
 [`receipt-evidence-service-v1.openapi.json`](./receipt-evidence-service-v1.openapi.json).
+For the normal Paperless-first flow, OWL now calls the narrower broker-only contract
+after it has already established canonical document identity. That route never calls
+OWL intake and is published as
+[`receipt-broker-v1.openapi.json`](./receipt-broker-v1.openapi.json).
 
 ## Decision
 
@@ -55,7 +59,7 @@ file synchronization loop.
 | Accounts, payees, transactions, categories, splits, and native receipt match | Monarch | Normalized bounded DTOs through Tyrion |
 | Candidate transaction ranking | Tyrion | Stateless result returned to OWL or Mission Control |
 | Review, notification, task, My Day, and confirmation UX | Mission Control | Calls the owning system for every source mutation |
-| Acquisition execution and credentials | Paperless mail, n8n, or provider connector | OWL retains only opaque connector references |
+| Acquisition execution and credentials | Paperless mail, scanner/folder ingestion, web upload, or provider connector | OWL retains only opaque connector references |
 
 There are two related relationships:
 
@@ -133,6 +137,41 @@ Paperless acceptance is the commit point for the artifact. A Monarch failure doe
 not roll back Paperless or OWL. A Tyrion or Monarch timeout remains unknown until
 the caller checks the stable source occurrence or receipt identity; it must not
 blindly upload again.
+
+## Broker-only Paperless-first route
+
+OWL sends an already-canonical artifact to
+`POST /api/internal/v1/finance/receipt-broker/replicas` on the fixed private
+`tyrion-operations-ui:3000` authority. The body is the raw PDF, JPEG, or PNG bytes,
+not multipart or base64, and is limited to 2 MiB. Required headers are
+`Idempotency-Key`, `X-OWL-Canonical-Document-Ref`, and `X-OWL-Source-Ref`.
+The two OWL references are independent opaque identifiers; Tyrion does not interpret
+or return Paperless IDs. `X-Tyrion-Expected-Revision` is optional and enforces an
+optimistic check when supplied.
+
+The idempotency key permanently identifies one OWL delivery intent. Reusing it with
+different bytes, canonical identity, or source identity returns `409`; an exact
+replay returns `200` without another Monarch create. Tyrion durably reserves the
+create before calling the Bridge, removes the bounded temporary artifact after the
+request, and never stores document bytes.
+
+OWL reconciles with
+`POST /api/internal/v1/finance/receipt-broker/replicas/{idempotencyKey}/reconcile`.
+The request has no body. When OWL knows the last Tyrion revision it supplies
+`X-Tyrion-Expected-Revision`; after a submit transport timeout it omits the header
+because no revision was observed. Reconcile performs only an authoritative Bridge
+read when a private receipt identity is known. It never creates or uploads a
+replacement. An unknown create without an identity remains queryable as `unknown`.
+
+New acknowledged submissions return `201`, in-progress or unknown submissions return
+`202`, and exact duplicate submissions return `200`. Reconcile returns `200` for
+current acknowledged evidence and `202` for processing, unknown, or transiently
+retryable evidence. The bounded response includes outcome, acknowledgement,
+retry/reconcile flags, opaque replica reference, lifecycle, revision, normalized
+native evidence, and reason codes. `acknowledged=true` means a Bridge upload or read
+returned normalized evidence; `processing` may therefore be acknowledged while still
+requiring reconciliation. `retrySafe=true` applies only to another read-only
+reconcile call. Mutation-unknown results are never retry-safe.
 
 ## Intake decision matrix
 

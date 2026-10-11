@@ -124,6 +124,7 @@ export class ReceiptOrchestrationSqliteStoreV1 {
       }
       return this.getByOccurrence(sourceOccurrenceId)!;
     }
+
     this.database
       .prepare(
         `INSERT INTO receipt_evidence_orchestrations (
@@ -141,6 +142,73 @@ export class ReceiptOrchestrationSqliteStoreV1 {
         now
       );
     return this.getByOccurrence(sourceOccurrenceId)!;
+  }
+
+  reserveBrokerCreate(
+    sourceOccurrenceId: string,
+    blobSha256: string,
+    intake: ReceiptIntakeResultV1,
+    now: string,
+    expectedRevision?: number
+  ): { record: ReceiptOrchestrationRecordV1; claimed: boolean } {
+    return this.database.transaction(() => {
+      const existing = this.getByOccurrence(sourceOccurrenceId);
+      if (existing) {
+        if (
+          existing.blobSha256 !== blobSha256 ||
+          JSON.stringify(existing.intake) !== JSON.stringify(intake)
+        ) {
+          throw new ReceiptOrchestrationConflictV1(
+            'occurrence_hash_conflict'
+          );
+        }
+        if (
+          expectedRevision !== undefined &&
+          expectedRevision !== existing.revision
+        ) {
+          throw new ReceiptOrchestrationConflictV1('revision_conflict');
+        }
+        if (existing.replicaLifecycle !== 'not_submitted') {
+          return { record: existing, claimed: false };
+        }
+        return {
+          record: this.updateReplica(
+            sourceOccurrenceId,
+            existing.revision,
+            {
+              lifecycle: 'review',
+              reasonCodes: ['monarch_create_reserved'],
+            },
+            now
+          ),
+          claimed: true,
+        };
+      }
+      if (expectedRevision !== undefined && expectedRevision !== 0) {
+        throw new ReceiptOrchestrationConflictV1('revision_conflict');
+      }
+      this.database
+        .prepare(
+          `INSERT INTO receipt_evidence_orchestrations (
+            source_occurrence_id, blob_sha256, intake_ref, intake_json,
+            replica_ref, raw_receipt_id, replica_lifecycle, revision,
+            native_evidence_json, reason_codes_json, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, NULL, NULL, 'review', 1, NULL, ?, ?, ?)`
+        )
+        .run(
+          sourceOccurrenceId,
+          blobSha256,
+          intake.intake_ref,
+          JSON.stringify(intake),
+          JSON.stringify(['monarch_create_reserved']),
+          now,
+          now
+        );
+      return {
+        record: this.getByOccurrence(sourceOccurrenceId)!,
+        claimed: true,
+      };
+    })();
   }
 
   updateReplica(
