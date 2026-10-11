@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   parseReceiptIntakeResultV1,
+  parseReceiptBrokerResponseV1,
+  createReceiptBrokerOpenApiV1,
   createReceiptEvidenceOpenApiV1,
   receiptEvidenceResponseV1,
   receiptOpaqueReferenceV1,
@@ -42,6 +44,36 @@ describe('receipt evidence v1', () => {
       )
     );
     expect(first).not.toContain('raw-private-receipt');
+  });
+
+  it('validates the bounded broker response and rejects extra data', () => {
+    const response = {
+      brokerContractVersion: '1.0',
+      idempotencyKey: 'owl-delivery-invented-0001',
+      outcome: 'processing',
+      acknowledged: true,
+      retrySafe: false,
+      reconcileRequired: true,
+      replicaRef: 'receipt-v1_example',
+      replicaLifecycle: 'processing',
+      revision: 3,
+      nativeEvidence: {
+        receiptSource: 'upload',
+        receiptState: 'processing',
+        transactionRef: null,
+        attachmentCount: 1,
+        sourceAsOf: '2026-10-10T18:00:00Z',
+        observedAt: '2026-10-10T18:00:01Z',
+      },
+      reasonCodes: [],
+    };
+    expect(parseReceiptBrokerResponseV1(response)).toEqual(response);
+    expect(() =>
+      parseReceiptBrokerResponseV1({
+        ...response,
+        rawMonarchReceiptId: 'forbidden',
+      })
+    ).toThrow();
   });
 
   it('persists idempotent occurrence state and rejects hash drift', () => {
@@ -187,6 +219,57 @@ describe('receipt evidence v1', () => {
     store.close();
   });
 
+  it('atomically claims one broker create and resumes pre-reservation state', () => {
+    const { store, path } = createStore();
+    const intake = owlResult({
+      intake_ref: 'owl-delivery-invented-0001',
+      canonical_document_ref: 'paperless-document-invented',
+      review_ref: 'owl-source-invented',
+      reason_codes: [],
+      source_channel: 'provider_api',
+      retry_safe: false,
+    });
+    const first = store.reserveBrokerCreate(
+      'a'.repeat(64),
+      'b'.repeat(64),
+      intake,
+      '2026-10-10T18:00:00.000Z'
+    );
+    expect(first.claimed).toBe(true);
+    expect(first.record.replicaLifecycle).toBe('review');
+    expect(first.record.reasonCodes).toEqual(['monarch_create_reserved']);
+
+    const secondStore = new ReceiptOrchestrationSqliteStoreV1(path);
+    const duplicate = secondStore.reserveBrokerCreate(
+      'a'.repeat(64),
+      'b'.repeat(64),
+      intake,
+      '2026-10-10T18:00:01.000Z',
+      first.record.revision
+    );
+    expect(duplicate.claimed).toBe(false);
+    secondStore.close();
+    store.close();
+
+    const legacy = createStore().store;
+    const unreserved = legacy.recordIntake(
+      'c'.repeat(64),
+      'd'.repeat(64),
+      intake,
+      '2026-10-10T18:00:02.000Z'
+    );
+    const resumed = legacy.reserveBrokerCreate(
+      unreserved.sourceOccurrenceId,
+      unreserved.blobSha256,
+      intake,
+      '2026-10-10T18:00:03.000Z',
+      unreserved.revision
+    );
+    expect(resumed.claimed).toBe(true);
+    expect(resumed.record.reasonCodes).toEqual(['monarch_create_reserved']);
+    legacy.close();
+  });
+
   it('review-gates semantic candidates without changing intake outcome', () => {
     const { store } = createStore();
     const intake = owlResult({
@@ -231,6 +314,17 @@ describe('receipt evidence v1', () => {
       '/api/internal/v1/finance/receipt-evidence/occurrences/{intakeRef}/reconcile',
     ]);
     expect(JSON.stringify(document)).not.toContain('/api/connector/v1');
+  });
+
+  it('publishes the broker-only route without canonical intake operations', () => {
+    const document = createReceiptBrokerOpenApiV1();
+    expect(Object.keys(document.paths as Record<string, unknown>)).toEqual([
+      '/api/internal/v1/finance/receipt-broker/replicas',
+      '/api/internal/v1/finance/receipt-broker/replicas/{idempotencyKey}/reconcile',
+    ]);
+    const serialized = JSON.stringify(document);
+    expect(serialized).not.toContain('receipt-intake');
+    expect(serialized).not.toContain('X-OWL-Source-Channel');
   });
 });
 

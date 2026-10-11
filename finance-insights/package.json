@@ -77,6 +77,7 @@
     "build": "tsc",
     "generate:openapi": "npm run build && node scripts/generate-openapi.mjs",
     "generate:receipt-openapi": "npm run build && node scripts/generate-receipt-openapi.mjs",
+    "generate:receipt-broker-openapi": "npm run build && node scripts/generate-receipt-broker-openapi.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

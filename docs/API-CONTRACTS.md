@@ -72,6 +72,25 @@ state, freshness, and reason codes. They exclude document bytes, OCR, filenames,
 signed URLs, raw Paperless or Monarch identifiers, account data, credentials, and
 upstream payloads. OWL records returned lifecycle changes through its local
 `ReceiptIntakeService.record_external_replica` optimistic-revision boundary. The
+
+## Private receipt broker service
+
+The broker-only route family `/api/internal/v1/finance/receipt-broker` is the normal
+Paperless-first handoff for OWL documents that are already canonical. It uses the
+same fixed private authority, bearer authentication, browser rejection, byte-free
+SQLite state, opaque identity namespace, and default-off receipt gates as the
+receipt-evidence service. It never calls OWL canonical intake.
+
+`POST /replicas` accepts raw PDF, JPEG, or PNG bytes up to 2 MiB. Required headers
+are `Idempotency-Key`, `X-OWL-Canonical-Document-Ref`, and `X-OWL-Source-Ref`;
+`X-Tyrion-Expected-Revision` is optional. `POST
+/replicas/{idempotencyKey}/reconcile` has no body and accepts the optional revision
+header. OWL omits that header when a submit transport timeout prevented it from
+observing a Tyrion revision.
+
+The exact request parameters, bounded success schema, and sanitized error statuses
+are generated in
+[`receipt-broker-v1.openapi.json`](./receipt-broker-v1.openapi.json). The
 caller supplies `external_system="monarch"`, Tyrion's opaque `replicaRef`, the
 returned lifecycle, Tyrion's orchestration revision as `source_revision`, and the
 current OWL replica revision as `expected_revision`; the two revision sequences are

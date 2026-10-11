@@ -753,7 +753,7 @@ before(async () => {
       TYRION_FINANCE_AUTOMATION_WRITE_ENABLED: "true",
       TYRION_RECEIPT_EVIDENCE_READ_ENABLED: "true",
       TYRION_RECEIPT_REPLICA_WRITE_ENABLED: "true",
-      TYRION_RECEIPT_RECOVERY_ENABLED: "false",
+      TYRION_RECEIPT_RECOVERY_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_TEST_ONLY_NOW: "2026-08-11T14:00:00Z",
       TYRION_REATTRIBUTION_URL: fakeReattributionUrl,
       TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "true",
@@ -1203,17 +1203,14 @@ test("receipt evidence is private, Paperless-first, and idempotent", async () =>
   assert.equal(JSON.stringify(body).includes("private-receipt"), false);
   assert.equal(JSON.stringify(body).includes("private-transaction"), false);
 
-  const disabledRecovery = await rawReceiptEvidenceFetch(
+  const reconciled = await rawReceiptEvidenceFetch(
     `${path}/${body.intake.intake_ref}/reconcile`,
     "POST",
     undefined,
     receiptEvidenceHeaders()
   );
-  assert.equal(disabledRecovery.status, 503);
-  assert.equal(
-    (await disabledRecovery.json()).error.code,
-    "receipt_recovery_disabled"
-  );
+  assert.equal(reconciled.status, 200);
+  assert.equal((await reconciled.json()).replicaLifecycle, "matched");
   assert.equal(owlReceiptRequests, beforeOwl + 1);
   assert.equal(receiptSequence, beforeCreates + 1);
 
@@ -1314,6 +1311,181 @@ test("receipt evidence persists unknown create outcomes without blind recreation
   }
 });
 
+test("receipt broker accepts canonical bytes without calling OWL and is idempotent", async () => {
+    const path = "/api/internal/v1/finance/receipt-broker/replicas";
+    const headers = receiptBrokerHeaders();
+    const beforeOwl = owlReceiptRequests;
+    const beforeCreates = receiptSequence;
+    const unauthorized = await rawReceiptEvidenceFetch(
+      path,
+      "POST",
+      syntheticPdf(),
+      receiptBrokerHeaders({ Authorization: undefined })
+    );
+    assert.equal(unauthorized.status, 401);
+
+    const unsupported = await rawReceiptEvidenceFetch(
+      path,
+      "POST",
+      Buffer.from([0x49, 0x49, 0x2a, 0x00]),
+      receiptBrokerHeaders({ "Content-Type": "image/tiff" })
+    );
+    assert.equal(unsupported.status, 415);
+
+    const oversized = await rawReceiptEvidenceFetch(
+      path,
+      "POST",
+      Buffer.concat([
+        syntheticPdf(),
+        Buffer.alloc(2 * 1024 * 1024, 0x20),
+      ]),
+      headers
+    );
+    assert.equal(oversized.status, 413);
+
+    const first = await rawReceiptEvidenceFetch(
+      path,
+      "POST",
+      syntheticPdf(),
+      headers
+    );
+    assert.equal(first.status, 201);
+    const body = await first.json();
+    assert.deepEqual(
+      Object.keys(body).sort(),
+      [
+        "acknowledged",
+        "brokerContractVersion",
+        "idempotencyKey",
+        "nativeEvidence",
+        "outcome",
+        "reasonCodes",
+        "reconcileRequired",
+        "replicaLifecycle",
+        "replicaRef",
+        "retrySafe",
+        "revision",
+      ].sort()
+    );
+    assert.equal(body.outcome, "acknowledged");
+    assert.equal(body.acknowledged, true);
+    assert.equal(body.replicaLifecycle, "matched");
+    assert.equal(body.nativeEvidence.transactionRef.startsWith("transaction-v1_"), true);
+    assert.equal(JSON.stringify(body).includes("private-receipt"), false);
+    assert.equal(JSON.stringify(body).includes("private-transaction"), false);
+    assert.equal(owlReceiptRequests, beforeOwl);
+    assert.equal(receiptSequence, beforeCreates + 1);
+
+    const duplicate = await rawReceiptEvidenceFetch(
+      path,
+      "POST",
+      syntheticPdf(),
+      headers
+    );
+    assert.equal(duplicate.status, 200);
+    assert.equal((await duplicate.json()).outcome, "duplicate");
+    assert.equal(receiptSequence, beforeCreates + 1);
+
+    const conflict = await rawReceiptEvidenceFetch(
+      path,
+      "POST",
+      Buffer.from("%PDF-1.4\n% different invented receipt\n%%EOF\n"),
+      headers
+    );
+    assert.equal(conflict.status, 409);
+    assert.equal((await conflict.json()).error.code, "receipt_broker_conflict");
+
+    const reconciled = await rawReceiptEvidenceFetch(
+      `${path}/${encodeURIComponent(body.idempotencyKey)}/reconcile`,
+      "POST",
+      undefined,
+      receiptBrokerHeaders({
+        "Content-Type": undefined,
+        "X-Tyrion-Expected-Revision": String(body.revision),
+      })
+    );
+    assert.equal(reconciled.status, 200);
+    assert.equal((await reconciled.json()).acknowledged, true);
+
+    const stale = await rawReceiptEvidenceFetch(
+      `${path}/${encodeURIComponent(body.idempotencyKey)}/reconcile`,
+      "POST",
+      undefined,
+      receiptBrokerHeaders({
+        "Content-Type": undefined,
+        "X-Tyrion-Expected-Revision": String(body.revision),
+      })
+    );
+    assert.equal(stale.status, 409);
+
+    const missing = await rawReceiptEvidenceFetch(
+      `${path}/owl-delivery-missing-0001/reconcile`,
+      "POST",
+      undefined,
+      receiptBrokerHeaders({
+        "Content-Type": undefined,
+        "X-Tyrion-Expected-Revision": "0",
+      })
+    );
+    assert.equal(missing.status, 404);
+});
+
+test("receipt broker preserves unknown create outcomes without recreation", async () => {
+    const path = "/api/internal/v1/finance/receipt-broker/replicas";
+    const headers = receiptBrokerHeaders({
+      "Idempotency-Key": "owl-delivery-unknown-0001",
+      "X-OWL-Canonical-Document-Ref": "paperless-document-unknown",
+      "X-OWL-Source-Ref": "owl-source-unknown",
+    });
+    const attemptsBefore = receivedRequests.filter(
+      (request) => request.path === "/receipts" && request.method === "POST"
+    ).length;
+    receiptCreateOutcomeUnknown = true;
+    try {
+      const first = await rawReceiptEvidenceFetch(
+        path,
+        "POST",
+        syntheticPdf(),
+        headers
+      );
+      assert.equal(first.status, 202);
+      const body = await first.json();
+      assert.equal(body.outcome, "unknown");
+      assert.equal(body.acknowledged, false);
+      assert.equal(body.reconcileRequired, true);
+      assert.equal(body.replicaRef, null);
+
+      const replay = await rawReceiptEvidenceFetch(
+        path,
+        "POST",
+        syntheticPdf(),
+        headers
+      );
+      assert.equal(replay.status, 200);
+      const replayBody = await replay.json();
+      assert.equal(replayBody.outcome, "duplicate");
+      assert.equal(replayBody.reconcileRequired, true);
+
+      const reconciled = await rawReceiptEvidenceFetch(
+        `${path}/${encodeURIComponent(body.idempotencyKey)}/reconcile`,
+        "POST",
+        undefined,
+        receiptBrokerHeaders({
+          "Content-Type": undefined,
+          "Idempotency-Key": body.idempotencyKey,
+        })
+      );
+      assert.equal(reconciled.status, 202);
+      assert.equal((await reconciled.json()).outcome, "unknown");
+      const attemptsAfter = receivedRequests.filter(
+        (request) => request.path === "/receipts" && request.method === "POST"
+      ).length;
+      assert.equal(attemptsAfter, attemptsBefore + 1);
+    } finally {
+      receiptCreateOutcomeUnknown = false;
+    }
+});
+
 function receiptEvidenceHeaders(overrides = {}) {
   return Object.fromEntries(
     Object.entries({
@@ -1323,6 +1495,20 @@ function receiptEvidenceHeaders(overrides = {}) {
       "X-OWL-Source-Channel": "manual_upload",
       "X-OWL-Source-Occurrence-Version": "1",
       "X-OWL-Source-Occurrence": "a".repeat(64),
+      ...overrides,
+    }).filter(([, value]) => value !== undefined)
+  );
+}
+
+function receiptBrokerHeaders(overrides = {}) {
+  return Object.fromEntries(
+    Object.entries({
+      Host: internalAttributionHost,
+      Authorization: ["Bearer", serviceToken].join(" "),
+      "Content-Type": "application/pdf",
+      "Idempotency-Key": "owl-delivery-invented-0001",
+      "X-OWL-Canonical-Document-Ref": "paperless-document-invented",
+      "X-OWL-Source-Ref": "owl-source-invented",
       ...overrides,
     }).filter(([, value]) => value !== undefined)
   );

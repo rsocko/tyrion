@@ -47,7 +47,7 @@ export async function submitReceiptEvidence(
   const sourceOccurrenceId = parseOccurrenceHeader(request.headers);
   validateOwlHeaders(request.headers);
   return withOccurrenceLock(sourceOccurrenceId, async () => {
-    const artifact = await spoolArtifact(request);
+    const artifact = await spoolReceiptArtifact(request);
     try {
       const prior = runtime.store.getByOccurrence(sourceOccurrenceId);
       if (prior) {
@@ -353,7 +353,13 @@ function parseOccurrenceHeader(headers: Headers): string {
   return parsed.data;
 }
 
-async function spoolArtifact(request: Request): Promise<{
+export async function spoolReceiptArtifact(
+  request: Request,
+  options: {
+    allowedMediaTypes?: ReadonlySet<string>;
+    maximumBytes?: number;
+  } = {}
+): Promise<{
   directory: string;
   path: string;
   mediaType: string;
@@ -365,7 +371,10 @@ async function spoolArtifact(request: Request): Promise<{
     ?.split(";")[0]
     ?.trim()
     .toLowerCase();
-  if (!mediaType || !ALLOWED_MEDIA_TYPES.has(mediaType)) {
+  const allowedMediaTypes = options.allowedMediaTypes ?? ALLOWED_MEDIA_TYPES;
+  const maximumBytes =
+    options.maximumBytes ?? RECEIPT_ARTIFACT_MAX_BYTES_V1;
+  if (!mediaType || !allowedMediaTypes.has(mediaType)) {
     throw new ReceiptEvidenceHttpError(
       415,
       "unsupported_media_type",
@@ -376,7 +385,7 @@ async function spoolArtifact(request: Request): Promise<{
   if (
     contentLength &&
     (!/^\d+$/.test(contentLength) ||
-      Number(contentLength) > RECEIPT_ARTIFACT_MAX_BYTES_V1)
+      Number(contentLength) > maximumBytes)
   ) {
     throw new ReceiptEvidenceHttpError(
       413,
@@ -400,7 +409,7 @@ async function spoolArtifact(request: Request): Promise<{
   );
   source.on("data", (chunk: Buffer) => {
     size += chunk.byteLength;
-    if (size > RECEIPT_ARTIFACT_MAX_BYTES_V1) {
+    if (size > maximumBytes) {
       source.destroy(new Error("payload_too_large"));
       return;
     }

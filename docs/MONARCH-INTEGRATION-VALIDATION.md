@@ -30,6 +30,14 @@ temporary cleanup, sanitized OWL/Bridge failures, restart reuse, and no second c
 after uncertainty. Bill Matching v1 regression tests remain required because it is
 the only fallback scorer.
 
+The private receipt broker is the narrower normal path for documents already
+canonical in Paperless. Deterministic coverage must additionally verify raw
+PDF/JPEG/PNG transfer bounded to 2 MiB, independent opaque canonical/source
+references, stable idempotency keys, exact duplicate replay, conflict on key drift,
+optional optimistic revision checks, reconciliation after a submit transport timeout
+without a known revision, and zero OWL intake calls. Unknown create or upload outcomes
+must remain queryable and must never trigger a replacement create.
+
 Normal validation uses invented artifacts and demo dependencies only. The successful
 PR #283 deployed receipt smoke remains the live evidence for the private Bridge
 primitives. Enabling production replica writes requires a separate controlled rollout
