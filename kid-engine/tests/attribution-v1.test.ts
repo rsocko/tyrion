@@ -136,6 +136,8 @@ describe('v1 deterministic attribution', () => {
           kidId: null,
           pattern: 'SYNTHETIC SHOP',
           businessEntityPattern: null,
+          statementDescriptorPattern: null,
+          locationPredicate: null,
           scope: 'accounts',
           accountRefs: ['bridge-account-shared'],
           confidence: 'definite',
@@ -164,6 +166,8 @@ describe('v1 deterministic attribution', () => {
           kidId: null,
           pattern: 'SYNTHETIC SHOP',
           businessEntityPattern: null,
+          statementDescriptorPattern: null,
+          locationPredicate: null,
           scope: 'accounts',
           accountRefs: ['bridge-account-shared'],
           confidence: 'definite',
@@ -191,6 +195,8 @@ describe('v1 deterministic attribution', () => {
           kidId: 'kid-alpha',
           pattern: 'SYNTHETIC SHOP',
           businessEntityPattern: null,
+          statementDescriptorPattern: null,
+          locationPredicate: null,
           scope: 'accounts',
           accountRefs: ['bridge-account-shared'],
           confidence: 'definite',
@@ -202,6 +208,8 @@ describe('v1 deterministic attribution', () => {
           kidId: null,
           pattern: 'SYNTHETIC SHOP',
           businessEntityPattern: null,
+          statementDescriptorPattern: null,
+          locationPredicate: null,
           scope: 'accounts',
           accountRefs: ['bridge-account-shared'],
           confidence: 'definite',
@@ -252,6 +260,166 @@ describe('v1 deterministic attribution', () => {
     });
   });
 
+    it('matches descriptor and fresh location predicates with explicit confidence', () => {
+      const policy: PolicySnapshotV1 = {
+        ...policyFixture,
+        merchantRules: [
+          {
+            ...policyFixture.merchantRules[0],
+            statementDescriptorPattern: 'TRENTON, NJ',
+            locationPredicate: {
+              countryCode: 'US',
+              region: 'NJ',
+              locality: null,
+              minimumConfidence: 0.8,
+            },
+          },
+        ],
+      };
+      const input: AttributionInputV1 = {
+        ...inputFixture,
+        transaction: {
+          ...inputFixture.transaction,
+          statementDescriptors: [
+            {
+              kind: 'statement',
+              text: '  SYNTHETIC SHOP #42 / TRENTON, NJ  ',
+              source: 'monarch',
+            },
+          ],
+          locationEvidence: {
+            countryCode: 'US',
+            region: 'NJ',
+            locality: 'TRENTON',
+            confidence: 0.91,
+            sourceKind: 'private-ai-inference',
+            model: 'private-location-model',
+            modelVersion: '2026-10',
+            evaluatedAt: '2026-08-08T12:02:00Z',
+            staleAfter: '2026-08-09T12:02:00Z',
+          },
+        },
+      };
+
+      expect(
+        attributeTransactionV1(input, policy, { evaluatedAt })
+      ).toMatchObject({
+        kidId: 'kid-beta',
+        method: 'merchant-rule',
+        provenance: { ruleIds: ['rule-merchant-beta'] },
+      });
+      expect(
+        attributeTransactionV1(
+          {
+            ...input,
+            transaction: {
+              ...input.transaction,
+              locationEvidence: {
+                ...input.transaction.locationEvidence!,
+                confidence: 0.79,
+              },
+            },
+          },
+          policy,
+          { evaluatedAt }
+        ).review.reasons
+      ).toEqual(['no-match']);
+    });
+
+    it('supports a standalone location-only rule and ignores stale evidence', () => {
+      const locationRule: PolicySnapshotV1['merchantRules'][number] = {
+        id: 'rule-location-michigan',
+        outcome: 'kid',
+        kidId: 'kid-alpha',
+        pattern: null,
+        businessEntityPattern: null,
+        statementDescriptorPattern: null,
+        locationPredicate: {
+          countryCode: 'US',
+          region: 'MI',
+          locality: null,
+          minimumConfidence: 0.85,
+        },
+        scope: 'global',
+        accountRefs: [],
+        confidence: 'definite',
+        enabled: true,
+      };
+      const policy = { ...policyFixture, merchantRules: [locationRule] };
+      const input: AttributionInputV1 = {
+        ...inputFixture,
+        transaction: {
+          ...inputFixture.transaction,
+          merchantName: 'Unrelated Merchant',
+          locationEvidence: {
+            countryCode: 'US',
+            region: 'MI',
+            locality: 'ANN ARBOR',
+            confidence: 0.9,
+            sourceKind: 'user-confirmed',
+            model: null,
+            modelVersion: null,
+            evaluatedAt: '2026-08-08T12:00:00Z',
+            staleAfter: '2026-08-08T13:00:00Z',
+          },
+        },
+      };
+      expect(
+        attributeTransactionV1(input, policy, { evaluatedAt })
+      ).toMatchObject({
+        kidId: 'kid-alpha',
+        confidence: 'definite',
+        provenance: { ruleIds: ['rule-location-michigan'] },
+      });
+      expect(
+        attributeTransactionV1(input, policy, {
+          evaluatedAt: '2026-08-08T13:00:01Z',
+        }).review.reasons
+      ).toEqual(['no-match']);
+    });
+
+    it('uses the most specific matching rule before evaluating conflicts', () => {
+      const broad = {
+        ...policyFixture.merchantRules[0],
+        id: 'rule-broad',
+        kidId: 'kid-alpha',
+      };
+      const specific = {
+        ...policyFixture.merchantRules[0],
+        id: 'rule-specific',
+        locationPredicate: {
+          countryCode: 'US',
+          region: 'NJ',
+          locality: null,
+          minimumConfidence: 0.8,
+        },
+      };
+      const result = attributeTransactionV1(
+        {
+          ...inputFixture,
+          transaction: {
+            ...inputFixture.transaction,
+            locationEvidence: {
+              countryCode: 'US',
+              region: 'NJ',
+              locality: null,
+              confidence: 0.9,
+              sourceKind: 'user-confirmed',
+              model: null,
+              modelVersion: null,
+              evaluatedAt: '2026-08-08T12:00:00Z',
+              staleAfter: '2026-08-09T12:00:00Z',
+            },
+          },
+        },
+        { ...policyFixture, merchantRules: [broad, specific] },
+        { evaluatedAt }
+      );
+      expect(result).toMatchObject({
+        kidId: 'kid-beta',
+        provenance: { ruleIds: ['rule-specific'] },
+      });
+    });
   it('uses history then no-match for a rule-based account', () => {
     const policy: PolicySnapshotV1 = {
       ...policyFixture,

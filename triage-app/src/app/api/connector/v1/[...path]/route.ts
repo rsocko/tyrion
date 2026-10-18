@@ -43,14 +43,14 @@ function jsonError(status: number, code: string, message: string) {
 function connectorHealthJson(
   body:
     | {
-        contractVersion: "1.0";
+        contractVersion: "1.1";
         status: "ok" | "degraded";
         mode: "demo" | "live";
         reachable: boolean;
         authenticated: boolean;
         authState: "unauthenticated" | "connected" | "expired" | "degraded";
       }
-    | { contractVersion: "1.0"; error: { code: string; message: string } },
+    | { contractVersion: "1.1"; error: { code: string; message: string } },
   status: number
 ) {
   return NextResponse.json(body, {

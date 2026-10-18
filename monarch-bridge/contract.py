@@ -6,7 +6,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-CONTRACT_VERSION = "1.0"
+CONTRACT_VERSION = "1.1"
+SUPPORTED_CONTRACT_VERSIONS = ["1.0", CONTRACT_VERSION]
 MAX_ACCOUNTS = 1_000
 MAX_CATEGORY_GROUPS = 250
 MAX_CATEGORIES = 2_000
@@ -15,6 +16,8 @@ MAX_RECURRING_OBLIGATIONS = 5_000
 MAX_BUDGET_ROWS = 5_000
 MAX_RECEIPTS = 100
 MAX_RECEIPT_ATTACHMENTS = 10
+MAX_TRANSACTION_DESCRIPTORS = 2
+MAX_TRANSACTION_DESCRIPTOR_BYTES = 2_048
 
 
 def _camel(name: str) -> str:
@@ -47,7 +50,9 @@ class DataResponse(ContractResponse):
 
 class ContractInfoResponse(ContractResponse):
     stability: Literal["stable"] = "stable"
-    supported_versions: list[str] = Field(default_factory=lambda: [CONTRACT_VERSION])
+    supported_versions: list[str] = Field(
+        default_factory=lambda: list(SUPPORTED_CONTRACT_VERSIONS)
+    )
 
 
 class HealthResponse(ContractResponse):
@@ -101,6 +106,17 @@ class ReviewAssigneeRef(ApiModel):
     name: str
 
 
+class TransactionDescriptorSource(ApiModel):
+    system: Literal["monarch"]
+    field: Literal["plaidName", "dataProviderDescription"]
+
+
+class TransactionDescriptor(ApiModel):
+    kind: Literal["statement", "provider-description"]
+    text: str
+    source: TransactionDescriptorSource
+
+
 class Transaction(ApiModel):
     id: str
     date: date
@@ -113,6 +129,10 @@ class Transaction(ApiModel):
     is_recurring: bool = False
     review_status: Literal["needs_review", "reviewed"]
     review_assignee: Optional[ReviewAssigneeRef] = None
+    statement_descriptors: list[TransactionDescriptor] = Field(
+        default_factory=list,
+        max_length=MAX_TRANSACTION_DESCRIPTORS,
+    )
     notes: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     tag_references: list[TransactionTagRef] = Field(default_factory=list)
@@ -483,6 +503,34 @@ def _optional_business_context(value: Any) -> Optional[str]:
     return normalized
 
 
+def _optional_transaction_descriptor(
+    value: Any,
+    *,
+    kind: Literal["statement", "provider-description"],
+    field: Literal["plaidName", "dataProviderDescription"],
+) -> Optional[TransactionDescriptor]:
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"Upstream transaction descriptor {field} must be text")
+    if len(value.encode("utf-8")) > MAX_TRANSACTION_DESCRIPTOR_BYTES:
+        raise ValueError(
+            f"Upstream transaction descriptor {field} exceeded "
+            f"{MAX_TRANSACTION_DESCRIPTOR_BYTES} bytes"
+        )
+    if any(
+        ord(character) < 32 and character not in "\t\r\n"
+        or 127 <= ord(character) <= 159
+        for character in value
+    ):
+        raise ValueError(f"Upstream transaction descriptor {field} is invalid")
+    return TransactionDescriptor(
+        kind=kind,
+        text=value,
+        source=TransactionDescriptorSource(system="monarch", field=field),
+    )
+
+
 def _optional_http_url(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -579,6 +627,22 @@ def normalize_transaction(raw: Any) -> Transaction:
     )
     review_assignee_id = _pick(review_assignee, "id")
     review_assignee_name = _pick(review_assignee, "name")
+    statement_descriptors = [
+        descriptor
+        for descriptor in (
+            _optional_transaction_descriptor(
+                _pick(value, "plaidName"),
+                kind="statement",
+                field="plaidName",
+            ),
+            _optional_transaction_descriptor(
+                _pick(value, "dataProviderDescription"),
+                kind="provider-description",
+                field="dataProviderDescription",
+            ),
+        )
+        if descriptor is not None
+    ]
     return Transaction(
         id=_identifier(_pick(value, "id")),
         date=_date(_pick(value, "date", "postedDate", "createdAt")),
@@ -608,6 +672,7 @@ def normalize_transaction(raw: Any) -> Transaction:
             if review_assignee_id is not None and review_assignee_name is not None
             else None
         ),
+        statement_descriptors=statement_descriptors,
         notes=_optional_text(_pick(value, "notes")),
         tags=[tag.name for tag in tag_references],
         tag_references=tag_references,

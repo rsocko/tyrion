@@ -29,6 +29,8 @@ export const policyDraftFixture: PolicyDraftV1 = {
       kidId: 'kid-beta',
       pattern: 'SYNTHETIC SHOP',
       businessEntityPattern: null,
+      statementDescriptorPattern: null,
+      locationPredicate: null,
       scope: 'global',
       accountRefs: [],
       confidence: 'likely',
@@ -70,6 +72,8 @@ export const inputFixture: AttributionInputV1 = {
   transaction: {
     merchantName: 'Synthetic Shop',
     businessEntityName: null,
+    statementDescriptors: [],
+    locationEvidence: null,
     accountRef: 'bridge-account-shared',
     occurredOn: '2026-08-08',
   },

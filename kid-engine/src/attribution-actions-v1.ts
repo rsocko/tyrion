@@ -390,7 +390,12 @@ export function parseAttributionActionRequestV1(
           ...(action === 'defer-exception' ? ['deferUntil'] : []),
         ];
   exactKeys(request, [...commonKeys, ...actionKeys]);
-  literal(request.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
+  if (
+    request.contractVersion !== TYRION_DOMAIN_CONTRACT_VERSION &&
+    request.contractVersion !== '2.0'
+  ) {
+    invalid('contractVersion is unsupported');
+  }
   literal(request.provenance, ATTRIBUTION_ACTION_PROVENANCE, 'provenance');
   const base = {
     contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,

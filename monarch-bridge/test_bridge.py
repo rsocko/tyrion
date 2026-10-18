@@ -25,7 +25,10 @@ from contract import (
     MAX_CATEGORY_GROUPS,
     MAX_RECURRING_OBLIGATIONS,
     MAX_RECEIPTS,
+    MAX_TRANSACTION_DESCRIPTOR_BYTES,
+    MAX_TRANSACTION_DESCRIPTORS,
     MAX_TRANSACTION_TAGS,
+    SUPPORTED_CONTRACT_VERSIONS,
     normalize_accounts,
     normalize_budgets,
     normalize_cashflow,
@@ -102,7 +105,7 @@ async def test_contract_version(client):
     resp = await client.get("/contract")
     assert resp.status_code == 200
     assert_contract(resp)
-    assert resp.json()["supportedVersions"] == [CONTRACT_VERSION]
+    assert resp.json()["supportedVersions"] == SUPPORTED_CONTRACT_VERSIONS
 
 
 @pytest.mark.anyio
@@ -171,7 +174,7 @@ async def test_transactions(client):
             "id", "date", "amount", "merchant", "businessContext",
             "category", "account",
             "isPending", "isRecurring", "reviewStatus", "reviewAssignee",
-            "notes", "tags", "tagReferences",
+            "statementDescriptors", "notes", "tags", "tagReferences",
         }
         assert set(tx["merchant"]) == {"name", "logoUrl"}
         assert set(tx["account"]) == {"id", "displayName", "mask"}
@@ -760,6 +763,7 @@ async def test_openapi_json(client):
         )
     transaction_schema = schema["components"]["schemas"]["Transaction"]["properties"]
     assert transaction_schema["businessContext"]["anyOf"][0]["maxLength"] == 120
+    assert transaction_schema["statementDescriptors"]["maxItems"] == MAX_TRANSACTION_DESCRIPTORS
     assert "businessEntity" not in transaction_schema
 
 
@@ -770,6 +774,8 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
             "date": "2026-08-01",
             "amount": -12.5,
             "merchant": {"name": "Store"},
+            "plaidName": "  STORE #42 / NJ  ",
+            "dataProviderDescription": "Card purchase",
             "businessEntity": {"id": "demo-entity", "name": "Store Holdings"},
             "category": {"id": "cat-1", "name": "Shopping"},
             "account": {"id": "acc-1", "displayName": "Checking"},
@@ -783,6 +789,8 @@ def test_live_and_demo_normalizers_produce_identical_dtos():
                 "postedDate": "2026-08-01T08:00:00Z",
                 "amount": "-12.50",
                 "merchant": {"name": "Store"},
+                "plaidName": "  STORE #42 / NJ  ",
+                "dataProviderDescription": "Card purchase",
                 "businessEntity": {"id": "live-entity", "name": "Store Holdings"},
                 "category": {"id": "cat-1", "name": "Shopping"},
                 "account": {"id": "acc-1", "displayName": "Checking"},
@@ -836,6 +844,49 @@ def test_transaction_normalizer_matches_nullable_consumer_fields():
     assert transaction.category is None
     assert transaction.account.mask == "1234"
     assert transaction.notes is None
+    assert transaction.statement_descriptors == []
+
+
+def test_transaction_normalizer_preserves_lossless_descriptors_with_provenance():
+    transaction = normalize_transaction({
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -12.5,
+        "merchant": {"name": "Store"},
+        "plaidName": "  STORE   #42 / TRENTON, NJ\t",
+        "dataProviderDescription": "POS purchase: Store -- terminal 7",
+        "account": {"id": "acc-1", "displayName": "Checking"},
+        "needsReview": False,
+    })
+
+    assert [item.model_dump(by_alias=True) for item in transaction.statement_descriptors] == [
+        {
+            "kind": "statement",
+            "text": "  STORE   #42 / TRENTON, NJ\t",
+            "source": {"system": "monarch", "field": "plaidName"},
+        },
+        {
+            "kind": "provider-description",
+            "text": "POS purchase: Store -- terminal 7",
+            "source": {
+                "system": "monarch",
+                "field": "dataProviderDescription",
+            },
+        },
+    ]
+
+
+def test_transaction_normalizer_rejects_oversized_descriptor_instead_of_truncating():
+    with pytest.raises(ValueError, match="exceeded"):
+        normalize_transaction({
+            "id": "tx-1",
+            "date": "2026-08-01",
+            "amount": -12.5,
+            "merchant": {"name": "Store"},
+            "plaidName": "x" * (MAX_TRANSACTION_DESCRIPTOR_BYTES + 1),
+            "account": {"id": "acc-1", "displayName": "Checking"},
+            "needsReview": False,
+        })
 
 
 @pytest.mark.parametrize("value", [None, "false", 0])
@@ -1289,6 +1340,44 @@ async def test_live_transactions_use_provider_pagination_and_defaults(client, mo
     assert kwargs["tag_ids"] == ["tag-1"]
     assert kwargs["is_pending"] is True
     assert kwargs["is_recurring"] is False
+
+
+@pytest.mark.anyio
+async def test_live_transaction_list_and_detail_preserve_statement_descriptor_parity(
+    client,
+    monkeypatch,
+):
+    descriptor = "  STORE #42 / TRENTON, NJ  "
+    transaction = {
+        "id": "tx-1",
+        "date": "2026-08-01",
+        "amount": -10,
+        "merchant": {"name": "Store"},
+        "plaidName": descriptor,
+        "category": {"id": "cat-1", "name": "Shopping"},
+        "account": {"id": "acc-1", "displayName": "Checking"},
+        "needsReview": False,
+    }
+    provider = AsyncMock()
+    provider.get_transactions.return_value = {
+        "allTransactions": {"totalCount": 1, "results": [transaction]},
+    }
+    provider.get_transaction_details.return_value = {"getTransaction": transaction}
+    monkeypatch.setattr(main_module, "DEMO_MODE", False)
+    monkeypatch.setattr(main_module, "get_client", AsyncMock(return_value=provider))
+
+    listed = await client.get("/transactions?limit=1")
+    detailed = await client.get("/transactions/tx-1")
+
+    expected = [{
+        "kind": "statement",
+        "text": descriptor,
+        "source": {"system": "monarch", "field": "plaidName"},
+    }]
+    assert listed.status_code == 200
+    assert detailed.status_code == 200
+    assert listed.json()["transactions"][0]["statementDescriptors"] == expected
+    assert detailed.json()["transaction"]["statementDescriptors"] == expected
 
 
 @pytest.mark.anyio

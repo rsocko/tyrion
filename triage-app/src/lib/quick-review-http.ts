@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   QuickReviewValidationError,
+  prepareDescriptorInferenceV1,
   prepareVendorResearchV1,
   rankQuickReviewV1,
   suggestMerchantRuleV1,
@@ -16,7 +17,11 @@ import {
 } from "@/lib/attribution-http";
 import { getPolicyRuntime } from "@/lib/policy-runtime";
 
-export type QuickReviewOperation = "rank" | "research" | "rule-suggestion";
+export type QuickReviewOperation =
+  | "rank"
+  | "research"
+  | "descriptor-inference"
+  | "rule-suggestion";
 
 export async function handleQuickReviewRequest(
   request: NextRequest,
@@ -30,6 +35,8 @@ export async function handleQuickReviewRequest(
         ? rankQuickReviewV1(body)
         : operation === "research"
           ? prepareVendorResearchV1(body)
+          : operation === "descriptor-inference"
+            ? prepareDescriptorInferenceV1(body)
           : operation === "rule-suggestion"
             ? {
                 ...suggestMerchantRuleV1(body),

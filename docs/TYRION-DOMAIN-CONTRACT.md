@@ -1,7 +1,7 @@
 # Tyrion Domain Contract
 
-**Contract version:** `2.0`
-**Engine version:** `2.0.0`
+**Contract version:** `2.1`
+**Engine version:** `2.1.0`
 **Services:** `GET /api/internal/v2/attribution/policy`,
 `POST /api/internal/v2/attribution/batch`, and
 `POST /api/internal/v2/attribution/actions`, plus the private Quick Review support
@@ -128,7 +128,7 @@ while the connector remains disabled, then update Mission Control to generate
 `accountRef` and call v2, verify the deterministic contract, and only then enable the
 connector. No production deployment is part of this repository change.
 
-`contractVersion: "2.0"` and the mutable policy `policyVersion` are independent.
+`contractVersion: "2.1"` and the mutable policy `policyVersion` are independent.
 Production currently reports policy version 2, so they happen to coincide for this
 rollout; neither value is derived from the other.
 
@@ -200,14 +200,28 @@ transaction facts are:
 
 - Opaque consumer `sourceRef`
 - `occurredOn` calendar date and normalized `merchantName`
+- Up to two exact bounded statement descriptors with Monarch source-kind labeling;
+  descriptor whitespace and punctuation are preserved and values above 2,048 UTF-8
+  bytes are rejected rather than truncated
+- Optional normalized location evidence: uppercase country code and region, optional
+  locality, numeric confidence, `private-ai-inference` or `user-confirmed` source
+  kind, model/version provenance where applicable, evaluation timestamp, and explicit
+  stale-after timestamp
 - Required direct Bridge `accountRef`, equal to the normalized Account DTO `id`
-- `observedAt` timestamp and fixed `mission-control-normalized-v2` provenance
+- `observedAt` timestamp and fixed `mission-control-normalized-v3` provenance
 - Optional structured manual action, kid reference, and decision timestamp
 
 The service rejects unknown fields. Raw Bridge pages, Monarch transaction/account
 identifiers, account masks, amounts, notes, tags, categories, session material,
 credentials, free-form manual explanations, and browser identity/permission claims
 are not accepted.
+
+The domain contract is `2.1` with engine `2.1.0`. Runtime parsers accept persisted
+`2.0` policy/input/result records and the prior `mission-control-normalized-v2`
+request provenance during rollout, canonicalize them to `2.1`, and never infer
+descriptor or location evidence that was not present. Mission Control should first
+deploy readers that accept Bridge `1.0`/`1.1` and Tyrion `2.0`/`2.1`, then deploy
+Tyrion, then begin sending v3 attribution batches.
 
 Tyrion derives the fixed Mission Control service actor, homelab household, and sole
 `attribution:batch` permission from implementation constants after authenticating the

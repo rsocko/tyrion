@@ -385,14 +385,14 @@ async def test_remote_bridge_requires_service_auth(monkeypatch, tmp_path):
         for response in denied
     )
     assert all(
-        response.json()["contractVersion"] == "1.0"
-        and response.headers["x-monarch-contract-version"] == "1.0"
+        response.json()["contractVersion"] == "1.1"
+        and response.headers["x-monarch-contract-version"] == "1.1"
         for response in denied
     )
     assert allowed.status_code == 200
-    assert allowed.headers["x-monarch-contract-version"] == "1.0"
+    assert allowed.headers["x-monarch-contract-version"] == "1.1"
     assert allowed_update.status_code == 200
-    assert allowed_update.headers["x-monarch-contract-version"] == "1.0"
+    assert allowed_update.headers["x-monarch-contract-version"] == "1.1"
     assert health.status_code == 200
 
 

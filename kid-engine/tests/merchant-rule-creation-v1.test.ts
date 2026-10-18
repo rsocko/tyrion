@@ -21,18 +21,21 @@ const actor: PolicyActorV1 = {
 };
 
 const request = {
-  contractVersion: '2.0',
+  contractVersion: '2.1',
   expectedPolicyVersion: 1,
   idempotencyKey: 'rule-create-demo-1',
   confirmation: {
     confirmed: true,
     confirmedAt: '2026-10-09T20:00:00Z',
   },
+  locationOnlyConfirmation: null,
   rule: {
     outcome: 'kid',
     kidId: 'kid-alpha',
     pattern: 'INVENTED MARKET',
     businessEntityPattern: 'INVENTED HOLDINGS',
+    statementDescriptorPattern: null,
+    locationPredicate: null,
     scope: 'accounts',
     accountRefs: ['bridge-account-alpha'],
     confidence: 'likely',
@@ -130,6 +133,57 @@ describe('merchant rule creation v1', () => {
         async () => true
       )
     ).rejects.toMatchObject({ code: 'merchant_rule_confirmation_required' });
+  });
+
+  it('requires a distinct fresh confirmation for a standalone location rule', async () => {
+    const service = new MerchantRuleCreationService(
+      new SeededPolicyRepository(policyFixture),
+      { now: () => new Date('2026-10-09T20:01:00Z') }
+    );
+    const locationOnlyRequest = {
+      ...request,
+      idempotencyKey: 'rule-create-location-only',
+      rule: {
+        ...request.rule,
+        pattern: null,
+        businessEntityPattern: null,
+        locationPredicate: {
+          countryCode: 'US',
+          region: 'MI',
+          locality: null,
+          minimumConfidence: 0.85,
+        },
+      },
+    };
+    await expect(
+      service.create(actor, locationOnlyRequest, async () => true)
+    ).rejects.toMatchObject({
+      code: 'location_only_rule_confirmation_required',
+    });
+
+    await expect(
+      service.create(
+        actor,
+        {
+          ...locationOnlyRequest,
+          locationOnlyConfirmation: {
+            confirmed: true,
+            confirmedAt: '2026-10-09T20:00:30Z',
+          },
+        },
+        async () => true
+      )
+    ).resolves.toMatchObject({
+      outcome: 'created',
+      rule: {
+        pattern: null,
+        locationPredicate: {
+          countryCode: 'US',
+          region: 'MI',
+          minimumConfidence: 0.85,
+        },
+      },
+    });
   });
 });
 

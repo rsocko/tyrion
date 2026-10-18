@@ -389,10 +389,10 @@ before(async () => {
         const tagIds = bridgeTransactionTags.get(sourceRef) ?? ["tag-household"];
         response.writeHead(200, {
           "Content-Type": "application/json",
-          "X-Monarch-Contract-Version": "1.0",
+          "X-Monarch-Contract-Version": "1.1",
         });
         response.end(JSON.stringify({
-          contractVersion: "1.0",
+          contractVersion: "1.1",
           provenance: {
             provider: "live",
             fetchedAt: "2026-08-11T14:00:00.123456Z",
@@ -402,12 +402,14 @@ before(async () => {
             date: "2026-08-11",
             amount: -1,
             merchant: { name: "Synthetic", logoUrl: null },
+            businessContext: null,
             category: null,
             account: { id: "account-demo", displayName: "Demo", mask: null },
             isPending: false,
             isRecurring: false,
             reviewStatus: "reviewed",
             reviewAssignee: null,
+            statementDescriptors: [],
             notes: null,
             tags: tagIds.map(
               (id) => bridgeTagCatalog.find((tag) => tag.id === id)?.name ?? "Tag"
@@ -3388,7 +3390,13 @@ test("public connector gateway forwards every allowlisted operation with caller 
     });
 
     assert.equal(response.status, 200, `${method} ${path}`);
-    assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
+    assert.equal(
+      response.headers.get("x-monarch-contract-version"),
+      path === "/api/connector/v1/health" ||
+        path === "/api/connector/v1/transactions/invented-transaction"
+        ? "1.1"
+        : "1.0"
+    );
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(receivedRequests.at(-1).authorized, true);
   }
@@ -3794,9 +3802,9 @@ test("connector health derives connected, unauthenticated, expired, and transien
     });
     assert.equal(response.status, 200, state);
     assert.equal(response.headers.get("cache-control"), "no-store");
-    assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
+    assert.equal(response.headers.get("x-monarch-contract-version"), "1.1");
     assert.deepEqual(await response.json(), {
-      contractVersion: "1.0",
+      contractVersion: "1.1",
       status: state === "connected" || state === "unauthenticated" ? "ok" : "degraded",
       mode: "live",
       reachable: true,
@@ -3808,7 +3816,7 @@ test("connector health derives connected, unauthenticated, expired, and transien
 
 test("connector health repairs restart-stale state from one live verification", async () => {
   healthPayloadOverride = {
-    contractVersion: "1.0",
+    contractVersion: "1.1",
     status: "degraded",
     mode: "demo",
     reachable: true,
@@ -3828,7 +3836,7 @@ test("connector health repairs restart-stale state from one live verification", 
   });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    contractVersion: "1.0",
+    contractVersion: "1.1",
     status: "ok",
     mode: "live",
     reachable: true,
@@ -3870,10 +3878,10 @@ test("connector health fails closed for each invalid auth-status response", asyn
     });
     assert.equal(response.status, status, mode);
     assert.equal(response.headers.get("cache-control"), "no-store");
-    assert.equal(response.headers.get("x-monarch-contract-version"), "1.0");
+    assert.equal(response.headers.get("x-monarch-contract-version"), "1.1");
     const text = await response.text();
     assert.deepEqual(JSON.parse(text), {
-      contractVersion: "1.0",
+      contractVersion: "1.1",
       error: {
         code,
         message:
@@ -4363,8 +4371,8 @@ test("attribution policy discovery returns active metadata and authoritative hou
   assert.equal(response.headers.get("cache-control"), "no-store");
   const payload = await response.json();
   assert.deepEqual(payload, {
-    contractVersion: "2.0",
-    engineVersion: "2.0.0",
+    contractVersion: "2.1",
+    engineVersion: "2.1.0",
     policyVersion: activePolicy.policyVersion,
     policyUpdatedAt: activePolicy.updatedAt,
     householdCurrency: activePolicy.currency,
@@ -4459,11 +4467,14 @@ test("Quick Review support is private, bounded, and privacy-safe", async () => {
       outcome: "kid",
       merchantPattern: "INVENTED MARKET",
       businessEntityPattern: "INVENTED HOLDINGS",
+      statementDescriptorPattern: null,
+      locationPredicate: null,
       scope: "accounts",
       accountRefs: ["account-synthetic"],
       kidId: "kid-synthetic",
       confidence: "likely",
       requiresConfirmation: true,
+      requiresLocationOnlyConfirmation: false,
     },
   });
 
@@ -4583,13 +4594,13 @@ test("batch attribution returns only strict normalized decisions", async () => {
   );
   const payload = JSON.parse(text);
   assert.equal(payload.policyVersion, activePolicy.policyVersion);
-  assert.equal(payload.engineVersion, "2.0.0");
+  assert.equal(payload.engineVersion, "2.1.0");
   assert.deepEqual(
     payload.results.map((result) => result.sourceRef),
     ["consumer-source-one", "consumer-source-manual"]
   );
   assert.deepEqual(payload.results[0], {
-    contractVersion: "2.0",
+    contractVersion: "2.1",
     sourceRef: "consumer-source-one",
     status: "attributed",
     kidId: "kid-synthetic",
@@ -4600,7 +4611,7 @@ test("batch attribution returns only strict normalized decisions", async () => {
     reasons: [],
     decisionSource: "automated",
     policyVersion: activePolicy.policyVersion,
-    engineVersion: "2.0.0",
+    engineVersion: "2.1.0",
     evaluatedAt: payload.results[0].evaluatedAt,
   });
   assert.match(payload.results[0].evaluatedAt, /^\d{4}-\d{2}-\d{2}T/);
@@ -4742,7 +4753,7 @@ test("attribution actions explain bounded corrections and Monarch provenance", a
   );
   const payload = JSON.parse(text);
   assert.deepEqual(payload.attribution, {
-    contractVersion: "2.0",
+    contractVersion: "2.1",
     sourceRef: "consumer-action-explain",
     status: "pending",
     kidId: "kid-synthetic",
@@ -4753,7 +4764,7 @@ test("attribution actions explain bounded corrections and Monarch provenance", a
     provenance: {
       decisionSource: "automated",
       policyVersion: activePolicy.policyVersion,
-      engineVersion: "2.0.0",
+      engineVersion: "2.1.0",
       ruleIds: ["rule-merchant-synthetic"],
       evaluatedAt: "2026-08-08T12:58:00.000Z",
     },

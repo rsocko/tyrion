@@ -19,9 +19,12 @@ Monarch account A is used, attribute the transaction to household member X.
 
 Per-transaction manual decisions always win. Account-scoped merchant rules are
 evaluated next, followed by global merchant rules. A matching account-scoped rule
-suppresses matching global rules for that transaction. Equally specific rules that
-produce different outcomes create a reviewable conflict instead of choosing by array
-order.
+suppresses matching global rules for that transaction. Within that scope, Tyrion
+keeps only the most specific matching rules: each configured merchant,
+business-entity, statement-descriptor, and location constraint increases
+specificity, with country/region/locality constraints counted independently.
+Equally specific rules that produce different outcomes create a reviewable conflict
+instead of choosing by array order.
 
 ### 2. Account Defaults
 
@@ -52,6 +55,17 @@ Merchant contains "SCHOOL LUNCH - WESTVIEW" → Sophie (confidence: definite)
 - An optional business-entity pattern is an additional required match when Monarch
   supplies a stable normalized business-entity label. It never exposes or matches a
   raw upstream business-entity identifier.
+- An optional statement-descriptor pattern is an additional required,
+  case-insensitive substring match against the exact bounded descriptor text
+  preserved by Bridge 1.1.
+- An optional location predicate requires every populated country, region, and
+  locality field to match fresh normalized evidence and requires evidence confidence
+  to meet the rule's explicit threshold. Expired or future-dated evidence does not
+  match.
+- A location predicate may be combined with merchant/account conditions or may be
+  the sole selector. Creating a location-only rule requires both the normal rule
+  confirmation and a separate fresh `locationOnlyConfirmation`; UI intent alone is
+  insufficient.
 - Rule outcomes are **attribute to a profile**, **parent/shared**, or **leave
   unassigned for review**. This lets an account-scoped rule explicitly override a
   global profile rule without relying on an account default.
@@ -190,3 +204,10 @@ The system suggests new rules based on your triage decisions:
 ```
 
 This feedback loop means the triage inbox gets smaller over time as rules get more comprehensive.
+
+Mission Control may use its private AI runtime to infer normalized location evidence
+from the Bridge descriptor envelope. Tyrion validates the evidence and evaluates it
+deterministically; Tyrion does not call an AI model. Raw descriptors are excluded
+from public vendor-search envelopes. Existing vendor research receives only the
+validated vendor name, optional coarse country/region/locality, and separately
+confirmed amount/date context.

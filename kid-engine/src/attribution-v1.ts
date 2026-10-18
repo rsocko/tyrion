@@ -48,29 +48,50 @@ export function attributeTransactionV1(
   const normalizedBusinessEntity = input.transaction.businessEntityName
     ? normalizeMerchant(input.transaction.businessEntityName)
     : null;
+  const normalizedDescriptors = input.transaction.statementDescriptors.map(
+    (descriptor) => normalizeMerchant(descriptor.text)
+  );
   const matchingRules = policy.merchantRules
     .filter(
       (rule) =>
         rule.enabled &&
         (rule.outcome !== 'kid' ||
           (rule.kidId !== null && activeKidIds.has(rule.kidId))) &&
-        normalizedMerchant.includes(normalizeMerchant(rule.pattern)) &&
+        (rule.pattern === null ||
+          normalizedMerchant.includes(normalizeMerchant(rule.pattern))) &&
         (rule.businessEntityPattern === null ||
           (normalizedBusinessEntity !== null &&
             normalizedBusinessEntity.includes(
               normalizeMerchant(rule.businessEntityPattern)
-            )))
+            ))) &&
+        (rule.statementDescriptorPattern === null ||
+          normalizedDescriptors.some((descriptor) =>
+            descriptor.includes(
+              normalizeMerchant(rule.statementDescriptorPattern!)
+            )
+          )) &&
+        matchesLocation(
+          input.transaction.locationEvidence,
+          rule.locationPredicate,
+          evaluatedAt
+        )
     );
   const accountScopedRules = matchingRules.filter(
     (rule) =>
       rule.scope === 'accounts' &&
       rule.accountRefs.includes(input.transaction.accountRef)
   );
-  const merchantCandidates = (
+  const scopedRules =
     accountScopedRules.length > 0
       ? accountScopedRules
-      : matchingRules.filter((rule) => rule.scope === 'global')
-  ).map(toCandidate);
+      : matchingRules.filter((rule) => rule.scope === 'global');
+  const highestSpecificity =
+    scopedRules.length === 0
+      ? 0
+      : Math.max(...scopedRules.map(ruleSpecificity));
+  const merchantCandidates = scopedRules
+    .filter((rule) => ruleSpecificity(rule) === highestSpecificity)
+    .map(toCandidate);
   const merchantResult = evaluateCandidates(
     input,
     policy,
@@ -412,6 +433,44 @@ function toCandidate(rule: PolicySnapshotV1['merchantRules'][number]): RuleCandi
 
 function normalizeMerchant(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
+}
+
+function matchesLocation(
+  evidence: AttributionInputV1['transaction']['locationEvidence'],
+  predicate: PolicySnapshotV1['merchantRules'][number]['locationPredicate'],
+  evaluatedAt: string
+): boolean {
+  if (predicate === null) return true;
+  if (
+    evidence === null ||
+    evidence.confidence < predicate.minimumConfidence ||
+    Date.parse(evidence.evaluatedAt) > Date.parse(evaluatedAt) ||
+    Date.parse(evidence.staleAfter) < Date.parse(evaluatedAt)
+  ) {
+    return false;
+  }
+  return (
+    (predicate.countryCode === null ||
+      evidence.countryCode === predicate.countryCode) &&
+    (predicate.region === null || evidence.region === predicate.region) &&
+    (predicate.locality === null || evidence.locality === predicate.locality)
+  );
+}
+
+function ruleSpecificity(
+  rule: PolicySnapshotV1['merchantRules'][number]
+): number {
+  return (
+    (rule.pattern === null ? 0 : 1) +
+    (rule.businessEntityPattern === null ? 0 : 1) +
+    (rule.statementDescriptorPattern === null ? 0 : 1) +
+    (rule.locationPredicate === null
+      ? 0
+      : 1 +
+        Number(rule.locationPredicate.countryCode !== null) +
+        Number(rule.locationPredicate.region !== null) +
+        Number(rule.locationPredicate.locality !== null))
+  );
 }
 
 function requireTimestamp(value: string): string {

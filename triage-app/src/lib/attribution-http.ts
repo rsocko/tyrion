@@ -168,6 +168,8 @@ export function handleAttributionError(
         ? 409
         : error.code === "merchant_rule_confirmation_required" ||
             error.code === "merchant_rule_confirmation_expired" ||
+            error.code === "location_only_rule_confirmation_required" ||
+            error.code === "location_only_rule_confirmation_expired" ||
             error.code === "merchant_rule_account_not_found"
           ? 422
           : 503;

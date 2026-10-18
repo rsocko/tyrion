@@ -17,7 +17,7 @@ describe('internal package manifest', () => {
     ) as PackageManifest;
     expect(manifest).toMatchObject({
       name: '@rsocko/tyrion-kid-engine',
-      version: '2.0.0',
+      version: '2.1.0',
       private: true,
     });
     expect(manifest.publishConfig).toBeUndefined();

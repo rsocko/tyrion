@@ -40,10 +40,10 @@ describe('v1 attribution correction and exception actions', () => {
     const result = await service.act(actor, explainRequest());
 
     expect(result).toMatchObject({
-      contractVersion: '2.0',
+      contractVersion: '2.1',
       sourceRef: inputFixture.source.recordRef,
       policyVersion: 1,
-      engineVersion: '2.0.0',
+      engineVersion: '2.1.0',
       stateVersion: 1,
       attribution: {
         status: 'pending',
@@ -139,7 +139,7 @@ describe('v1 attribution correction and exception actions', () => {
         provenance: {
           decisionSource: 'manual',
           policyVersion: 1,
-          engineVersion: '2.0.0',
+          engineVersion: '2.1.0',
           ruleIds: [],
           evaluatedAt: now,
         },

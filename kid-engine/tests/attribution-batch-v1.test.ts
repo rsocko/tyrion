@@ -25,8 +25,8 @@ describe('v1 attribution policy discovery service', () => {
     const service = new AttributionPolicyService(repository());
 
     await expect(service.discover(actor)).resolves.toEqual({
-      contractVersion: '2.0',
-      engineVersion: '2.0.0',
+      contractVersion: '2.1',
+      engineVersion: '2.1.0',
       policyVersion: policyFixture.policyVersion,
       policyUpdatedAt: policyFixture.updatedAt,
       householdCurrency: policyFixture.currency,
@@ -107,9 +107,9 @@ describe('v1 batch attribution service', () => {
     const response = await service.attribute(actor, request([item('source-one'), item('source-two')]));
 
     expect(response).toMatchObject({
-      contractVersion: '2.0',
+      contractVersion: '2.1',
       policyVersion: 1,
-      engineVersion: '2.0.0',
+      engineVersion: '2.1.0',
     });
     expect(response.results).toHaveLength(2);
     expect(response.results[0]).toMatchObject({
@@ -120,7 +120,7 @@ describe('v1 batch attribution service', () => {
       reviewStatus: 'pending',
       reasons: ['low-confidence'],
       policyVersion: 1,
-      engineVersion: '2.0.0',
+      engineVersion: '2.1.0',
       evaluatedAt: '2026-08-08T13:00:00.000Z',
     });
     expect(JSON.stringify(response)).not.toContain('merchantName');
