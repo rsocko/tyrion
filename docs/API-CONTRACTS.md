@@ -105,10 +105,12 @@ the upload, so process interruption cannot publish an uncertain upload as final.
 Reconciliation changes the OWL intake result only through Tyrion's optimistic
 revision boundary.
 
-Bill Matching v1 remains the fallback when native Monarch evidence is not decisive.
-Callers submit the normalized bill fields to the existing
-`POST /api/connector/v1/bill-matches`; receipt orchestration does not add headers,
-weights, a second scorer, or payment-settlement state.
+Bill Matching v1 remains available unchanged. Bill Matching v2 is the on-demand OWL
+payment-check contract and returns decision-grade normalized candidate values,
+configured-eligible-account scope, ranking gaps, and source/search freshness while
+reusing the v1 scorer. Optional receipt association remains separate supporting
+evidence and never settles an obligation. See
+[`BILL-TRANSACTION-MATCHING-V2.md`](./BILL-TRANSACTION-MATCHING-V2.md).
 
 ## Mission Control connector gateway
 
@@ -161,7 +163,7 @@ Insights projection:
 | `GET` | `/document-expectation-signals` | No query or body; latest promoted snapshot across connector scope; read gate and 12 MiB projection bound |
 | `GET` | `/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; no body; read gate and 12 MiB projection bound |
 | `GET` | `/payee-patterns/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; immutable privacy-safe transaction/recurring evidence; no body; read gate and 12 MiB projection bound |
-| `POST` | `/bill-matches` | Strict normalized bill-derived JSON only; 1 KiB request; derived transaction lookup of at most 100 rows; at most 10 privacy-bounded ranked candidates |
+| `POST` | `/bill-matches` | Strict Bill Matching v1 or v2 JSON; 1 KiB request; v2 queries at most 20 server-configured eligible accounts with at most 100 rows each and returns at most 10 decision-grade candidates without account IDs |
 
 Unknown routes, methods, parameters, duplicate singleton parameters, malformed values,
 and request bodies on bodyless operations fail before a bridge call. `/auth/*`,

@@ -272,7 +272,8 @@ async function proxyConnectorRequest(
       return await matchBillToTransactionsV1(
         parsedBody,
         bridge.baseUrl,
-        authentication.token
+        authentication.token,
+        process.env.TYRION_BILL_MATCH_ELIGIBLE_ACCOUNT_REFS
       );
     } catch (error) {
       return handleFinanceInsightError(error);
