@@ -56,9 +56,12 @@ Missing or invalid configuration fails with HTTP 503 and
 
 Unknown fields are rejected. `requestRef` and `billRef` are caller-owned opaque
 references. `dueDate` and `billDate` are optional individually, but at least one is
-required; `dueDate` is the search anchor when both are present. `reference` is
-bounded caller context and is not a ranking signal. Amount, currency, window,
-tolerance, and candidate limits use the v1 bounds.
+required; `dueDate` is the scoring anchor when both are present. It is not a search
+cutoff. V2 searches through the current check date so late payments remain eligible.
+The search begins at `billDate - dateWindowDays` when a bill date is available,
+otherwise at `dueDate - dateWindowDays`, and is capped to the Bridge's 366-day
+inclusive range. `reference` is bounded caller context and is not a ranking signal.
+Amount, currency, tolerance, and candidate limits use the v1 bounds.
 
 `receiptEvidence` is optional supporting evidence from the bounded receipt workflow.
 It is not added to the numeric score and is never proof that the obligation is
@@ -160,8 +163,11 @@ states from a single search.
 
 `sourceAsOf` is the oldest Bridge `provenance.fetchedAt` value across the eligible
 account queries, so consumers can make a conservative freshness decision.
-`searchedAt` is when Tyrion assembled the response. The exact search window,
-tolerance, eligible-account count, and pre-limit candidate pool size are included.
+`searchedAt` is when Tyrion assembled the response. `windowEnd` is always the current
+UTC check date; a future due date remains only a scoring anchor and cannot move the
+search window forward or exclude an already-submitted payment. The exact bounded
+search window, tolerance, eligible-account count, and pre-limit candidate pool size
+are included.
 
 V2 preserves all v1 failure codes and adds:
 

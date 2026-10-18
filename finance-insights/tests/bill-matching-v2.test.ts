@@ -200,4 +200,30 @@ describe('bill matching v2', () => {
     expect(result.searchContext.amountToleranceMinor).toBe(2_000_000);
     expect(result.matchStatus).toBe('noMatch');
   });
+
+  it('can decisively match a payment well after the due date', () => {
+    const result = rankBillMatchCandidatesV2(
+      { ...request(), receiptEvidence: undefined },
+      [
+        transaction({
+          occurredOn: '2026-10-15',
+        }),
+      ],
+      {
+        ...searchContext,
+        windowEnd: '2026-10-17',
+      }
+    );
+
+    expect(result.matchStatus).toBe('matched');
+    expect(result.paymentStatus).toBe('paid');
+    expect(result.candidates[0]?.scoreBasisPoints).toBe(7_500);
+    expect(
+      result.candidates[0]?.signals.find((signal) => signal.kind === 'date')
+    ).toEqual({
+      kind: 'date',
+      strength: 'none',
+      contributionBasisPoints: 0,
+    });
+  });
 });

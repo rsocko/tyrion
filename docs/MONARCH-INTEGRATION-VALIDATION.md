@@ -12,8 +12,9 @@ IDs. Both versions derive bounded Bridge v1
 normalized transaction DTO. Deterministic automated coverage uses invented transactions
 and verifies v1 compatibility plus v2 paid, pending, unmatched, ambiguous,
 configured-account scope, actual candidate values, receipt support, freshness,
-authorization, browser rejection, invalid caller scope, malformed response, and
-unavailable dependency behavior. No live bill or transaction fixture is permitted.
+late-payment search through the current check date, authorization, browser rejection,
+invalid caller scope, malformed response, and unavailable dependency behavior. No
+live bill or transaction fixture is permitted.
 
 For a future Bridge client-version upgrade, the controlled read-only live matrix must
 also confirm that the existing transaction DTO still provides `id`, `date`, `amount`,

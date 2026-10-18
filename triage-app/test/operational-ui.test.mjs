@@ -3444,6 +3444,7 @@ test("bill matching returns a deterministic privacy-bounded paid result", async 
 
 test("bill matching v2 returns decision-grade values from configured eligible accounts", async () => {
   bridgeTransactions[0].account.mask = "4321";
+  const expectedSearchEnd = new Date().toISOString().slice(0, 10);
   const before = receivedRequests.length;
   const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
     method: "POST",
@@ -3513,7 +3514,7 @@ test("bill matching v2 returns decision-grade values from configured eligible ac
   });
   assert.equal(result.searchContext.anchorDate, "2026-08-15");
   assert.equal(result.searchContext.windowStart, "2026-08-08");
-  assert.equal(result.searchContext.windowEnd, "2026-08-22");
+  assert.equal(result.searchContext.windowEnd, expectedSearchEnd);
   assert.equal(result.searchContext.eligibleAccountCount, 1);
   assert.equal(result.searchContext.candidatePoolSize, 1);
   assert.match(result.searchContext.sourceAsOf, /Z$/);
@@ -3521,7 +3522,39 @@ test("bill matching v2 returns decision-grade values from configured eligible ac
   const lookups = receivedRequests.slice(before);
   assert.equal(lookups.length, 1);
   assert.match(lookups[0].path, /account_id=account-invented-checking/);
+  assert.match(lookups[0].path, new RegExp(`end_date=${expectedSearchEnd}`));
   assert.doesNotMatch(JSON.stringify(result), /account-invented-checking/);
+});
+
+test("bill matching v2 does not let a future due date exclude an early payment", async () => {
+  const expectedSearchEnd = new Date().toISOString().slice(0, 10);
+  const before = receivedRequests.length;
+  const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      contractVersion: "2.0",
+      requestRef: "payment-check-invented-future-due",
+      billRef: "bill-invented-future-due",
+      payee: "Invented Utility Company",
+      expectedAmountMinor: 12345,
+      currency: "USD",
+      billDate: "2026-08-01",
+      dueDate: "2027-11-30",
+      accountScope: "configuredEligible",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.matchStatus, "matched");
+  assert.equal(result.searchContext.anchorDate, "2027-11-30");
+  assert.equal(result.searchContext.windowStart, "2026-07-25");
+  assert.equal(result.searchContext.windowEnd, expectedSearchEnd);
+  const lookups = receivedRequests.slice(before);
+  assert.equal(lookups.length, 1);
+  assert.match(lookups[0].path, /start_date=2026-07-25/);
+  assert.match(lookups[0].path, new RegExp(`end_date=${expectedSearchEnd}`));
 });
 
 test("bill matching exposes ambiguity and pending without leaking transaction detail", async () => {

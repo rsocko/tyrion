@@ -14,6 +14,7 @@ import { getFinanceInsightRuntime } from "@/lib/finance-insight-runtime";
 const BRIDGE_TIMEOUT_MS = 30_000;
 const MAX_BRIDGE_RESPONSE_BYTES = 512 * 1024;
 const MAX_ELIGIBLE_ACCOUNTS = 20;
+const MAX_TRANSACTION_SEARCH_SPAN_DAYS = 365;
 const ACCOUNT_REF = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 interface BridgeTransactionSource {
@@ -100,14 +101,31 @@ async function matchBillToTransactionsV2(
   const tolerance =
     input.amountToleranceMinor ??
     defaultBillAmountToleranceMinorV1(input.expectedAmountMinor);
+  const searchedAt = new Date().toISOString();
+  const windowEnd = searchedAt.slice(0, 10);
+  const startAnchor =
+    input.billDate ??
+    (anchorDate < windowEnd ? anchorDate : windowEnd);
+  const requestedWindowStart = shiftDate(
+    startAnchor,
+    -input.dateWindowDays
+  );
+  const maximumWindowStart = shiftDate(
+    windowEnd,
+    -MAX_TRANSACTION_SEARCH_SPAN_DAYS
+  );
+  const windowStart =
+    requestedWindowStart < maximumWindowStart
+      ? maximumWindowStart
+      : requestedWindowStart;
   const sources = await Promise.all(
     eligibleAccounts.map((accountRef) =>
       fetchBridgeTransactions(
         bridgeBaseUrl,
         bridgeToken,
-        createTransactionQuery(
-          anchorDate,
-          input.dateWindowDays,
+        createTransactionQueryForWindow(
+          windowStart,
+          windowEnd,
           input.expectedAmountMinor,
           tolerance,
           accountRef
@@ -150,11 +168,11 @@ async function matchBillToTransactionsV2(
   return financeInsightJson(
     rankBillMatchCandidatesV2(input, transactions, {
       anchorDate,
-      windowStart: shiftDate(anchorDate, -input.dateWindowDays),
-      windowEnd: shiftDate(anchorDate, input.dateWindowDays),
+      windowStart,
+      windowEnd,
       dateWindowDays: input.dateWindowDays,
       sourceAsOf,
-      searchedAt: new Date().toISOString(),
+      searchedAt,
       eligibleAccountCount: eligibleAccounts.length,
       candidatePoolSize: transactions.length,
     })
@@ -206,6 +224,23 @@ function createTransactionQuery(
   });
   if (accountRef) query.set("account_id", accountRef);
   return query;
+}
+
+function createTransactionQueryForWindow(
+  windowStart: string,
+  windowEnd: string,
+  amountMinor: number,
+  tolerance: number,
+  accountRef: string
+): URLSearchParams {
+  return new URLSearchParams({
+    start_date: windowStart,
+    end_date: windowEnd,
+    min_amount: minorToMoney(-(amountMinor + tolerance)),
+    max_amount: minorToMoney(-Math.max(0, amountMinor - tolerance)),
+    limit: "100",
+    account_id: accountRef,
+  });
 }
 
 async function fetchBridgeTransactions(
