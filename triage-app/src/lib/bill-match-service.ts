@@ -1,8 +1,10 @@
 import {
   defaultBillAmountToleranceMinorV1,
   parseBillMatchRequestV1,
+  parseBillMatchRequestV2,
   rankBillMatchCandidatesV1,
-  type BillMatchTransactionV1,
+  rankBillMatchCandidatesV2,
+  type BillMatchTransactionV2,
 } from "@rsocko/tyrion-finance-insights";
 import { FinanceInsightContractValidationError } from "@rsocko/tyrion-finance-insights";
 import { NextResponse } from "next/server";
@@ -11,51 +13,207 @@ import { getFinanceInsightRuntime } from "@/lib/finance-insight-runtime";
 
 const BRIDGE_TIMEOUT_MS = 30_000;
 const MAX_BRIDGE_RESPONSE_BYTES = 512 * 1024;
+const MAX_ELIGIBLE_ACCOUNTS = 20;
+const ACCOUNT_REF = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+interface BridgeTransactionSource {
+  transactions: BillMatchTransactionV2[];
+  incomplete: boolean;
+  sourceAsOf: string;
+}
 
 export async function matchBillToTransactionsV1(
+  body: unknown,
+  bridgeBaseUrl: URL,
+  bridgeToken: string,
+  eligibleAccountConfiguration?: string
+): Promise<NextResponse> {
+  if (plainObject(body) && body.contractVersion === "2.0") {
+    return matchBillToTransactionsV2(
+      body,
+      bridgeBaseUrl,
+      bridgeToken,
+      eligibleAccountConfiguration
+    );
+  }
+  return matchBillToTransactionsLegacyV1(body, bridgeBaseUrl, bridgeToken);
+}
+
+async function matchBillToTransactionsLegacyV1(
   body: unknown,
   bridgeBaseUrl: URL,
   bridgeToken: string
 ): Promise<NextResponse> {
   const input = parseBillMatchRequestV1(body);
-  let householdCurrency: string;
-  try {
-    const runtime = await getFinanceInsightRuntime();
-    const policy = await runtime.store.policies.current();
-    if (!policy) {
-      return gatewayError(
-        503,
-        "bill_match_configuration_unavailable",
-        "Bill matching configuration is unavailable"
-      );
-    }
-    householdCurrency = policy.currency;
-  } catch {
+  const householdCurrency = await readHouseholdCurrency();
+  if (householdCurrency instanceof NextResponse) return householdCurrency;
+  if (input.currency !== householdCurrency) return currencyMismatch();
+
+  const tolerance =
+    input.amountToleranceMinor ??
+    defaultBillAmountToleranceMinorV1(input.amountMinor);
+  const query = createTransactionQuery(
+    input.dueDate,
+    input.dateWindowDays,
+    input.amountMinor,
+    tolerance,
+    input.accountRef
+  );
+  const source = await fetchBridgeTransactions(
+    bridgeBaseUrl,
+    bridgeToken,
+    query,
+    false
+  );
+  if (source instanceof NextResponse) return source;
+  if (source.incomplete) return queryTooBroad();
+  return financeInsightJson(
+    rankBillMatchCandidatesV1(input, source.transactions)
+  );
+}
+
+async function matchBillToTransactionsV2(
+  body: unknown,
+  bridgeBaseUrl: URL,
+  bridgeToken: string,
+  eligibleAccountConfiguration?: string
+): Promise<NextResponse> {
+  const input = parseBillMatchRequestV2(body);
+  const householdCurrency = await readHouseholdCurrency();
+  if (householdCurrency instanceof NextResponse) return householdCurrency;
+  if (input.currency !== householdCurrency) return currencyMismatch();
+
+  const eligibleAccounts = parseEligibleAccounts(eligibleAccountConfiguration);
+  if (!eligibleAccounts) {
     return gatewayError(
       503,
-      "bill_match_configuration_unavailable",
-      "Bill matching configuration is unavailable"
+      "bill_match_eligible_accounts_unavailable",
+      "Bill matching eligible accounts are unavailable"
     );
   }
-  if (input.currency !== householdCurrency) {
-    return gatewayError(
-      422,
-      "bill_currency_mismatch",
-      "Bill currency does not match the configured household currency"
+  const anchorDate = input.dueDate ?? input.billDate;
+  if (!anchorDate) {
+    throw new FinanceInsightContractValidationError(
+      "Invalid bill match request v2: dueDate or billDate is required"
     );
   }
   const tolerance =
     input.amountToleranceMinor ??
-    defaultBillAmountToleranceMinorV1(input.amountMinor);
+    defaultBillAmountToleranceMinorV1(input.expectedAmountMinor);
+  const sources = await Promise.all(
+    eligibleAccounts.map((accountRef) =>
+      fetchBridgeTransactions(
+        bridgeBaseUrl,
+        bridgeToken,
+        createTransactionQuery(
+          anchorDate,
+          input.dateWindowDays,
+          input.expectedAmountMinor,
+          tolerance,
+          accountRef
+        ),
+        true
+      )
+    )
+  );
+  const resolvedSources: BridgeTransactionSource[] = [];
+  for (const source of sources) {
+    if (source instanceof NextResponse) return source;
+    resolvedSources.push(source);
+  }
+  if (resolvedSources.some((source) => source.incomplete)) {
+    return queryTooBroad();
+  }
+
+  const transactionsByRef = new Map<string, BillMatchTransactionV2>();
+  for (let index = 0; index < resolvedSources.length; index += 1) {
+    const expectedAccountRef = eligibleAccounts[index];
+    for (const transaction of resolvedSources[index].transactions) {
+      if (transaction.accountRef !== expectedAccountRef) {
+        return invalidSourceResponse();
+      }
+      const previous = transactionsByRef.get(transaction.transactionRef);
+      if (previous && JSON.stringify(previous) !== JSON.stringify(transaction)) {
+        return invalidSourceResponse();
+      }
+      transactionsByRef.set(transaction.transactionRef, transaction);
+    }
+  }
+  const transactions = [...transactionsByRef.values()];
+  const sourceAsOf = resolvedSources
+    .map((source) => source.sourceAsOf)
+    .reduce((oldest, candidate) =>
+      Date.parse(candidate) < Date.parse(oldest) ? candidate : oldest
+    );
+  if (!sourceAsOf) return invalidSourceResponse();
+
+  return financeInsightJson(
+    rankBillMatchCandidatesV2(input, transactions, {
+      anchorDate,
+      windowStart: shiftDate(anchorDate, -input.dateWindowDays),
+      windowEnd: shiftDate(anchorDate, input.dateWindowDays),
+      dateWindowDays: input.dateWindowDays,
+      sourceAsOf,
+      searchedAt: new Date().toISOString(),
+      eligibleAccountCount: eligibleAccounts.length,
+      candidatePoolSize: transactions.length,
+    })
+  );
+}
+
+async function readHouseholdCurrency(): Promise<string | NextResponse> {
+  try {
+    const runtime = await getFinanceInsightRuntime();
+    const policy = await runtime.store.policies.current();
+    if (policy) return policy.currency;
+  } catch {
+    // Return the stable configuration error below.
+  }
+  return gatewayError(
+    503,
+    "bill_match_configuration_unavailable",
+    "Bill matching configuration is unavailable"
+  );
+}
+
+function parseEligibleAccounts(value: string | undefined): string[] | null {
+  if (!value) return null;
+  const accounts = value.split(",").map((account) => account.trim());
+  if (
+    accounts.length < 1 ||
+    accounts.length > MAX_ELIGIBLE_ACCOUNTS ||
+    accounts.some((account) => !ACCOUNT_REF.test(account)) ||
+    new Set(accounts).size !== accounts.length
+  ) {
+    return null;
+  }
+  return accounts;
+}
+
+function createTransactionQuery(
+  anchorDate: string,
+  dateWindowDays: number,
+  amountMinor: number,
+  tolerance: number,
+  accountRef?: string
+): URLSearchParams {
   const query = new URLSearchParams({
-    start_date: shiftDate(input.dueDate, -input.dateWindowDays),
-    end_date: shiftDate(input.dueDate, input.dateWindowDays),
-    min_amount: minorToMoney(-(input.amountMinor + tolerance)),
-    max_amount: minorToMoney(-Math.max(0, input.amountMinor - tolerance)),
+    start_date: shiftDate(anchorDate, -dateWindowDays),
+    end_date: shiftDate(anchorDate, dateWindowDays),
+    min_amount: minorToMoney(-(amountMinor + tolerance)),
+    max_amount: minorToMoney(-Math.max(0, amountMinor - tolerance)),
     limit: "100",
   });
-  if (input.accountRef) query.set("account_id", input.accountRef);
+  if (accountRef) query.set("account_id", accountRef);
+  return query;
+}
 
+async function fetchBridgeTransactions(
+  bridgeBaseUrl: URL,
+  bridgeToken: string,
+  query: URLSearchParams,
+  requireDecisionGradeFields: boolean
+): Promise<BridgeTransactionSource | NextResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
   try {
@@ -73,14 +231,13 @@ export async function matchBillToTransactionsV1(
     );
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      return gatewayError(
-        503,
-        "bill_match_source_unavailable",
-        "Transaction source is unavailable"
-      );
+      return sourceUnavailable();
     }
     if (
-      !response.headers.get("content-type")?.toLowerCase().includes("application/json")
+      !response.headers
+        .get("content-type")
+        ?.toLowerCase()
+        .includes("application/json")
     ) {
       await response.body?.cancel().catch(() => undefined);
       return invalidSourceResponse();
@@ -88,27 +245,13 @@ export async function matchBillToTransactionsV1(
     const payload = await readBoundedJson(response);
     if (payload === null) return invalidSourceResponse();
     try {
-      const source = parseBridgeTransactions(payload);
-      if (source.incomplete) {
-        return gatewayError(
-          422,
-          "bill_match_query_too_broad",
-          "Bill match lookup must be narrowed"
-        );
-      }
-      return financeInsightJson(
-        rankBillMatchCandidatesV1(input, source.transactions)
-      );
+      return parseBridgeTransactions(payload, requireDecisionGradeFields);
     } catch {
       return invalidSourceResponse();
     }
   } catch (error) {
     if (error instanceof FinanceInsightContractValidationError) throw error;
-    return gatewayError(
-      503,
-      "bill_match_source_unavailable",
-      "Transaction source is unavailable"
-    );
+    return sourceUnavailable();
   } finally {
     clearTimeout(timeout);
   }
@@ -152,11 +295,19 @@ async function readBoundedJson(response: Response): Promise<unknown | null> {
   }
 }
 
-function parseBridgeTransactions(value: unknown): {
-  transactions: BillMatchTransactionV1[];
-  incomplete: boolean;
-} {
-  if (!plainObject(value) || value.contractVersion !== "1.0") {
+function parseBridgeTransactions(
+  value: unknown,
+  requireDecisionGradeFields: boolean
+): BridgeTransactionSource {
+  const normalizedSourceAsOf =
+    plainObject(value) && plainObject(value.provenance)
+      ? normalizeUtcTimestamp(value.provenance.fetchedAt)
+      : "";
+  if (
+    !plainObject(value) ||
+    value.contractVersion !== "1.0" ||
+    (requireDecisionGradeFields && !normalizedSourceAsOf)
+  ) {
     throw new Error("invalid bridge transaction response");
   }
   if (!Array.isArray(value.transactions) || value.transactions.length > 100) {
@@ -189,12 +340,18 @@ function parseBridgeTransactions(value: unknown): {
       !Number.isFinite(candidate.amount) ||
       !plainObject(candidate.merchant) ||
       typeof candidate.merchant.name !== "string" ||
-      !candidate.merchant.name.trim() ||
-      candidate.merchant.name.length > 120 ||
-      /[\u0000-\u001f\u007f-\u009f]/.test(candidate.merchant.name) ||
+      !validDisplay(candidate.merchant.name, 160) ||
       !plainObject(candidate.account) ||
       typeof candidate.account.id !== "string" ||
       !validReference(candidate.account.id) ||
+      (requireDecisionGradeFields &&
+        (typeof candidate.account.displayName !== "string" ||
+          !validDisplay(candidate.account.displayName, 120) ||
+          !(
+            candidate.account.mask === null ||
+            candidate.account.mask === undefined ||
+            typeof candidate.account.mask === "string"
+          ))) ||
       typeof candidate.isPending !== "boolean"
     ) {
       throw new Error("invalid bridge transaction response");
@@ -206,12 +363,21 @@ function parseBridgeTransactions(value: unknown): {
     ) {
       throw new Error("invalid bridge transaction response");
     }
+    const displayName = candidate.account.displayName;
+    const mask = candidate.account.mask;
     return {
       transactionRef: candidate.id,
       occurredOn: candidate.date,
       amountMinor,
       merchantName: candidate.merchant.name,
+      payee: candidate.merchant.name,
       accountRef: candidate.account.id,
+      accountDisplayName:
+        typeof displayName === "string" && validDisplay(displayName, 120)
+          ? displayName
+          : "Unavailable",
+      accountLastFour:
+        typeof mask === "string" && /^[0-9]{4}$/.test(mask) ? mask : null,
       pending: candidate.isPending,
     };
   });
@@ -220,6 +386,7 @@ function parseBridgeTransactions(value: unknown): {
     incomplete:
       (value.total as number) > transactions.length ||
       value.page.nextCursor !== null,
+    sourceAsOf: normalizedSourceAsOf || "1970-01-01T00:00:00.000Z",
   };
 }
 
@@ -244,7 +411,31 @@ function validReference(value: string): boolean {
 function validCalendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+}
+
+function normalizeUtcTimestamp(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const parsed = new Date(value);
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value) ||
+    Number.isNaN(parsed.getTime())
+  ) {
+    return "";
+  }
+  return parsed.toISOString();
+}
+
+function validDisplay(value: string, maximum: number): boolean {
+  return (
+    value === value.trim() &&
+    value.length >= 1 &&
+    value.length <= maximum &&
+    !/[\u0000-\u001f\u007f-\u009f]/.test(value)
+  );
 }
 
 function plainObject(value: unknown): value is Record<string, unknown> {
@@ -261,6 +452,30 @@ function invalidSourceResponse(): NextResponse {
     502,
     "invalid_bill_match_source_response",
     "Transaction source returned an invalid response"
+  );
+}
+
+function sourceUnavailable(): NextResponse {
+  return gatewayError(
+    503,
+    "bill_match_source_unavailable",
+    "Transaction source is unavailable"
+  );
+}
+
+function queryTooBroad(): NextResponse {
+  return gatewayError(
+    422,
+    "bill_match_query_too_broad",
+    "Bill match lookup must be narrowed"
+  );
+}
+
+function currencyMismatch(): NextResponse {
+  return gatewayError(
+    422,
+    "bill_currency_mismatch",
+    "Bill currency does not match the configured household currency"
   );
 }
 

@@ -229,6 +229,7 @@ Runtime configuration:
 | --- | --- |
 | `BRIDGE_URL` | Private server-side bridge endpoint |
 | `BRIDGE_API_TOKEN` | Shared server-only bearer token (minimum 32 characters); authenticates protected Bridge, connector, attribution, re-attribution, and finance calls |
+| `TYRION_BILL_MATCH_ELIGIBLE_ACCOUNT_REFS` | Required for Bill Matching v2; comma-separated server-only normalized Bridge account references, maximum 20 |
 | `MISSION_CONTROL_RETURN_URL` | Optional exact HTTPS return page shown only after verified authentication and bounded sync |
 | `MISSION_CONTROL_RETURN_ALLOWED_ORIGINS` | Optional exact HTTPS origin allowlist for the return page |
 | `TYRION_POLICY_STORE_PATH` | External absolute policy/audit store path |

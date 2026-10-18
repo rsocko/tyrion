@@ -2,17 +2,24 @@
 
 ## Bill matching contract
 
-`POST /api/connector/v1/bill-matches` derives a bounded Bridge v1
+`POST /api/connector/v1/bill-matches` supports unchanged Bill Matching v1 and the
+decision-grade v2 contract. V2 performs one bounded Bridge v1 transaction query for
+each server-configured eligible account, rejects unexpected account leakage, and
+returns actual normalized payee, amount, date, pending state, account display/mask,
+ranking, receipt-association, and conservative freshness context without raw account
+IDs. Both versions derive bounded Bridge v1
 `GET /transactions` lookup from strict normalized bill fields and scores only the
 normalized transaction DTO. Deterministic automated coverage uses invented transactions
-and verifies paid, pending, unmatched, ambiguous, authorization, browser rejection,
-invalid caller scope, malformed response, and unavailable dependency behavior. No live
-bill or transaction fixture is permitted.
+and verifies v1 compatibility plus v2 paid, pending, unmatched, ambiguous,
+configured-account scope, actual candidate values, receipt support, freshness,
+authorization, browser rejection, invalid caller scope, malformed response, and
+unavailable dependency behavior. No live bill or transaction fixture is permitted.
 
 For a future Bridge client-version upgrade, the controlled read-only live matrix must
 also confirm that the existing transaction DTO still provides `id`, `date`, `amount`,
-`merchant.name`, `account.id`, and `isPending`. Do not capture the response or add it as
-a fixture. Bill matching does not add a live mutation.
+`merchant.name`, `account.id`, `account.displayName`, optional `account.mask`,
+`isPending`, and response `provenance.fetchedAt`. Do not capture the response or add it
+as a fixture. Bill matching does not add a live mutation.
 
 ## Receipt evidence orchestration
 
