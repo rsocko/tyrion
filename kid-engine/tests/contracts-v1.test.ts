@@ -141,6 +141,8 @@ describe('v1 domain contract validation', () => {
       kidId: 'kid-alpha',
       pattern: 'LEGACY SHOP',
       businessEntityPattern: null,
+      statementDescriptorPattern: null,
+      locationPredicate: null,
       scope: 'global',
       accountRefs: [],
       confidence: 'likely',

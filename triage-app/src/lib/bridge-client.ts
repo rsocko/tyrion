@@ -3,7 +3,7 @@ const BRIDGE_PROXY_BASE = "/api/bridge";
 export type AuthState = "unauthenticated" | "connected" | "expired" | "degraded";
 
 export interface ContractEnvelope {
-  contractVersion: "1.0";
+  contractVersion: "1.1";
 }
 
 export interface BridgeResponse<T> {

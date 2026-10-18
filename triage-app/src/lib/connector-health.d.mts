@@ -1,11 +1,12 @@
 export const CONNECTOR_HEALTH_RESPONSE_BYTES: number;
 export const CONNECTOR_HEALTH_TIMEOUT_MS: number;
-export const MONARCH_CONTRACT_VERSION: "1.0";
+export const MONARCH_CONTRACT_VERSION: "1.1";
+export const SUPPORTED_MONARCH_CONTRACT_VERSIONS: Set<string>;
 
 export type ComposedHealth = {
   ok: true;
   body: {
-    contractVersion: "1.0";
+    contractVersion: "1.1";
     status: "ok" | "degraded";
     mode: "demo" | "live";
     reachable: boolean;

@@ -1,5 +1,7 @@
-export const TYRION_DOMAIN_CONTRACT_VERSION = '2.0' as const;
-export const KID_ATTRIBUTION_ENGINE_VERSION = '2.0.0' as const;
+export const TYRION_DOMAIN_CONTRACT_VERSION = '2.1' as const;
+export const KID_ATTRIBUTION_ENGINE_VERSION = '2.1.0' as const;
+const LEGACY_TYRION_DOMAIN_CONTRACT_VERSION = '2.0' as const;
+const LEGACY_KID_ATTRIBUTION_ENGINE_VERSION = '2.0.0' as const;
 const SUPPORTED_CURRENCIES = new Set(Intl.supportedValuesOf('currency'));
 const SUPPORTED_TIMEZONES = new Set(Intl.supportedValuesOf('timeZone'));
 
@@ -43,8 +45,10 @@ export interface MerchantAttributionRuleV1 {
   id: string;
   outcome: MerchantRuleOutcomeV1;
   kidId: string | null;
-  pattern: string;
+  pattern: string | null;
   businessEntityPattern: string | null;
+  statementDescriptorPattern: string | null;
+  locationPredicate: AttributionLocationPredicateV1 | null;
   scope: MerchantRuleScopeV1;
   accountRefs: string[];
   confidence: Exclude<AttributionConfidenceV1, 'none'>;
@@ -130,8 +134,43 @@ export interface AttributionSourceV1 {
 export interface NormalizedAttributionTransactionV1 {
   merchantName: string;
   businessEntityName: string | null;
+  statementDescriptors: AttributionStatementDescriptorV1[];
+  locationEvidence: AttributionLocationEvidenceV1 | null;
   accountRef: string;
   occurredOn: string;
+}
+
+export type AttributionDescriptorKindV1 =
+  | 'statement'
+  | 'provider-description';
+
+export interface AttributionStatementDescriptorV1 {
+  kind: AttributionDescriptorKindV1;
+  text: string;
+  source: 'monarch';
+}
+
+export type AttributionLocationSourceKindV1 =
+  | 'private-ai-inference'
+  | 'user-confirmed';
+
+export interface AttributionLocationEvidenceV1 {
+  countryCode: string;
+  region: string;
+  locality: string | null;
+  confidence: number;
+  sourceKind: AttributionLocationSourceKindV1;
+  model: string | null;
+  modelVersion: string | null;
+  evaluatedAt: string;
+  staleAfter: string;
+}
+
+export interface AttributionLocationPredicateV1 {
+  countryCode: string | null;
+  region: string | null;
+  locality: string | null;
+  minimumConfidence: number;
 }
 
 export interface HistoricalAttributionV1 {
@@ -281,7 +320,7 @@ export function parseReattributionPreviewRequestV1(
     'expectedPolicyVersion',
     'sourceRefs',
   ]);
-  literal(request.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
+  supportedDomainContractVersion(request.contractVersion, 'contractVersion');
   const sourceRefs = array(request.sourceRefs, 'sourceRefs').map((sourceRef, index) =>
     identifier(sourceRef, `sourceRefs[${index}]`)
   );
@@ -309,7 +348,7 @@ export function parseReattributionApplyRequestV1(
     'expectedPolicyVersion',
     'confirm',
   ]);
-  literal(request.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
+  supportedDomainContractVersion(request.contractVersion, 'contractVersion');
   if (request.confirm !== true) invalid('confirm must be true');
   return {
     contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
@@ -336,7 +375,9 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
     'review',
     'provenance',
   ]);
-  literal(result.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
+  const legacyResult =
+    result.contractVersion === LEGACY_TYRION_DOMAIN_CONTRACT_VERSION;
+  supportedDomainContractVersion(result.contractVersion, 'contractVersion');
   const status = enumeration(
     result.status,
     ['attributed', 'unassigned', 'pending'] as const,
@@ -390,7 +431,9 @@ export function parseAttributionResultV1(value: unknown): AttributionResultV1 {
   ]);
   literal(
     provenance.engineVersion,
-    KID_ATTRIBUTION_ENGINE_VERSION,
+    legacyResult
+      ? LEGACY_KID_ATTRIBUTION_ENGINE_VERSION
+      : KID_ATTRIBUTION_ENGINE_VERSION,
     'provenance.engineVersion'
   );
   const ruleIds = array(provenance.ruleIds, 'provenance.ruleIds').map(
@@ -451,7 +494,7 @@ export function parseReattributionPreviewV1(
     'expiresAt',
     'items',
   ]);
-  literal(preview.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
+  supportedDomainContractVersion(preview.contractVersion, 'contractVersion');
   const createdAt = timestamp(preview.createdAt, 'createdAt');
   const expiresAt = timestamp(preview.expiresAt, 'expiresAt');
   if (Date.parse(expiresAt) <= Date.parse(createdAt)) {
@@ -548,7 +591,7 @@ export function parsePolicyAuditEventV1(value: unknown): PolicyAuditEventV1 {
     'policyVersion',
     'occurredAt',
   ]);
-  literal(event.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
+  supportedDomainContractVersion(event.contractVersion, 'contractVersion');
   const previousPolicyVersion =
     event.previousPolicyVersion === null
       ? null
@@ -601,8 +644,16 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
       ...(hasBillMatchExclusions ? ['billMatchExcludedAccountRefs'] : []),
     ]
   );
-  literal(snapshot.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
-  literal(snapshot.engineVersion, KID_ATTRIBUTION_ENGINE_VERSION, 'engineVersion');
+  const isLegacySnapshot =
+    snapshot.contractVersion === LEGACY_TYRION_DOMAIN_CONTRACT_VERSION;
+  supportedDomainContractVersion(snapshot.contractVersion, 'contractVersion');
+  literal(
+    snapshot.engineVersion,
+    isLegacySnapshot
+      ? LEGACY_KID_ATTRIBUTION_ENGINE_VERSION
+      : KID_ATTRIBUTION_ENGINE_VERSION,
+    'engineVersion'
+  );
   const householdId = identifier(snapshot.householdId, 'householdId');
   const policyVersion = positiveInteger(snapshot.policyVersion, 'policyVersion');
   const updatedAt = timestamp(snapshot.updatedAt, 'updatedAt');
@@ -718,11 +769,14 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
     (item, index) => {
       const rule = object(item, `merchantRules[${index}]`);
       const isLegacyRule = !('outcome' in rule);
+      const isPreviousRule =
+        !isLegacyRule && !('statementDescriptorPattern' in rule);
       exactKeys(
         rule,
         isLegacyRule
           ? ['id', 'kidId', 'pattern', 'confidence', 'enabled']
-          : [
+          : isPreviousRule
+            ? [
               'id',
               'outcome',
               'kidId',
@@ -733,6 +787,19 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
               'confidence',
               'enabled',
             ]
+            : [
+                'id',
+                'outcome',
+                'kidId',
+                'pattern',
+                'businessEntityPattern',
+                'statementDescriptorPattern',
+                'locationPredicate',
+                'scope',
+                'accountRefs',
+                'confidence',
+                'enabled',
+              ]
       );
       const outcome = isLegacyRule
         ? 'kid'
@@ -783,21 +850,49 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
           `merchantRules[${index}].accountRefs must be empty for global scope or contain 1-32 references for accounts scope`
         );
       }
+      const pattern =
+        rule.pattern === null
+          ? null
+          : merchantRulePattern(
+              rule.pattern,
+              `merchantRules[${index}].pattern`,
+            );
+      const businessEntityPattern =
+        isLegacyRule || rule.businessEntityPattern === null
+          ? null
+          : merchantRulePattern(
+              rule.businessEntityPattern,
+              `merchantRules[${index}].businessEntityPattern`,
+            );
+      const statementDescriptorPattern =
+        isLegacyRule ||
+        isPreviousRule ||
+        rule.statementDescriptorPattern === null
+          ? null
+          : merchantRulePattern(
+              rule.statementDescriptorPattern,
+              `merchantRules[${index}].statementDescriptorPattern`,
+            );
+      const locationPredicate =
+        isLegacyRule || isPreviousRule || rule.locationPredicate === null
+          ? null
+          : parseLocationPredicate(
+              rule.locationPredicate,
+              `merchantRules[${index}].locationPredicate`
+            );
+      if (pattern === null && locationPredicate === null) {
+        invalid(
+          `merchantRules[${index}] requires a merchant pattern or location predicate`
+        );
+      }
       return {
         id: identifier(rule.id, `merchantRules[${index}].id`),
         outcome,
         kidId,
-        pattern: merchantRulePattern(
-          rule.pattern,
-          `merchantRules[${index}].pattern`,
-        ),
-        businessEntityPattern:
-          isLegacyRule || rule.businessEntityPattern === null
-            ? null
-            : merchantRulePattern(
-                rule.businessEntityPattern,
-                `merchantRules[${index}].businessEntityPattern`,
-              ),
+        pattern,
+        businessEntityPattern,
+        statementDescriptorPattern,
+        locationPredicate,
         scope,
         accountRefs,
         confidence: confidence(
@@ -898,7 +993,7 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
     'historicalAttributions',
     'existingManualDecision',
   ]);
-  literal(input.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
+  supportedDomainContractVersion(input.contractVersion, 'contractVersion');
   const source = object(input.source, 'source');
   exactKeys(source, ['system', 'recordRef', 'observedAt']);
   literal(source.system, 'monarch-bridge', 'source.system');
@@ -906,9 +1001,38 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
   exactKeys(transaction, [
     'merchantName',
     ...('businessEntityName' in transaction ? ['businessEntityName'] : []),
+    ...('statementDescriptors' in transaction ? ['statementDescriptors'] : []),
+    ...('locationEvidence' in transaction ? ['locationEvidence'] : []),
     'accountRef',
     'occurredOn',
   ]);
+  const statementDescriptors =
+    'statementDescriptors' in transaction
+      ? array(
+          transaction.statementDescriptors,
+          'transaction.statementDescriptors'
+        ).map((value, index) =>
+          parseStatementDescriptor(
+            value,
+            `transaction.statementDescriptors[${index}]`
+          )
+        )
+      : [];
+  if (statementDescriptors.length > 2) {
+    invalid('transaction.statementDescriptors must contain at most 2 entries');
+  }
+  unique(
+    statementDescriptors.map((descriptor) => descriptor.kind),
+    'transaction statement descriptor kinds'
+  );
+  const locationEvidence =
+    !('locationEvidence' in transaction) ||
+    transaction.locationEvidence === null
+      ? null
+      : parseLocationEvidence(
+          transaction.locationEvidence,
+          'transaction.locationEvidence'
+        );
   const historicalAttributions = array(
     input.historicalAttributions,
     'historicalAttributions'
@@ -999,6 +1123,8 @@ export function parseAttributionInputV1(value: unknown): AttributionInputV1 {
               1,
               160
             ),
+      statementDescriptors,
+      locationEvidence,
       accountRef: accountRef(transaction.accountRef, 'transaction.accountRef'),
       occurredOn: calendarDate(transaction.occurredOn, 'transaction.occurredOn'),
     },
@@ -1057,6 +1183,171 @@ function merchantRulePattern(value: unknown, field: string): string {
     invalid(`${field} contains unsupported control characters`);
   }
   return normalized.replace(/ {2,}/g, ' ');
+}
+
+function parseStatementDescriptor(
+  value: unknown,
+  field: string
+): AttributionStatementDescriptorV1 {
+  const descriptor = object(value, field);
+  exactKeys(descriptor, ['kind', 'text', 'source']);
+  literal(descriptor.source, 'monarch', `${field}.source`);
+  return {
+    kind: enumeration(
+      descriptor.kind,
+      ['statement', 'provider-description'] as const,
+      `${field}.kind`
+    ),
+    text: exactDescriptorText(descriptor.text, `${field}.text`),
+    source: 'monarch',
+  };
+}
+
+function parseLocationEvidence(
+  value: unknown,
+  field: string
+): AttributionLocationEvidenceV1 {
+  const evidence = object(value, field);
+  exactKeys(evidence, [
+    'countryCode',
+    'region',
+    'locality',
+    'confidence',
+    'sourceKind',
+    'model',
+    'modelVersion',
+    'evaluatedAt',
+    'staleAfter',
+  ]);
+  const sourceKind = enumeration(
+    evidence.sourceKind,
+    ['private-ai-inference', 'user-confirmed'] as const,
+    `${field}.sourceKind`
+  );
+  const model =
+    evidence.model === null
+      ? null
+      : boundedString(evidence.model, `${field}.model`, 1, 120);
+  const modelVersion =
+    evidence.modelVersion === null
+      ? null
+      : boundedString(evidence.modelVersion, `${field}.modelVersion`, 1, 120);
+  if (
+    (sourceKind === 'private-ai-inference' &&
+      (model === null || modelVersion === null)) ||
+    (sourceKind === 'user-confirmed' &&
+      (model !== null || modelVersion !== null))
+  ) {
+    invalid(`${field} source and model provenance are inconsistent`);
+  }
+  const evaluatedAt = timestamp(evidence.evaluatedAt, `${field}.evaluatedAt`);
+  const staleAfter = timestamp(evidence.staleAfter, `${field}.staleAfter`);
+  if (Date.parse(staleAfter) <= Date.parse(evaluatedAt)) {
+    invalid(`${field}.staleAfter must be later than evaluatedAt`);
+  }
+  return {
+    countryCode: countryCode(evidence.countryCode, `${field}.countryCode`),
+    region: normalizedLocationText(evidence.region, `${field}.region`, 80),
+    locality:
+      evidence.locality === null
+        ? null
+        : normalizedLocationText(evidence.locality, `${field}.locality`, 80),
+    confidence: confidenceScore(evidence.confidence, `${field}.confidence`),
+    sourceKind,
+    model,
+    modelVersion,
+    evaluatedAt,
+    staleAfter,
+  };
+}
+
+function parseLocationPredicate(
+  value: unknown,
+  field: string
+): AttributionLocationPredicateV1 {
+  const predicate = object(value, field);
+  exactKeys(predicate, [
+    'countryCode',
+    'region',
+    'locality',
+    'minimumConfidence',
+  ]);
+  const result = {
+    countryCode:
+      predicate.countryCode === null
+        ? null
+        : countryCode(predicate.countryCode, `${field}.countryCode`),
+    region:
+      predicate.region === null
+        ? null
+        : normalizedLocationText(predicate.region, `${field}.region`, 80),
+    locality:
+      predicate.locality === null
+        ? null
+        : normalizedLocationText(predicate.locality, `${field}.locality`, 80),
+    minimumConfidence: confidenceScore(
+      predicate.minimumConfidence,
+      `${field}.minimumConfidence`
+    ),
+  };
+  if (
+    result.countryCode === null &&
+    result.region === null &&
+    result.locality === null
+  ) {
+    invalid(`${field} must constrain countryCode, region, or locality`);
+  }
+  return result;
+}
+
+function exactDescriptorText(value: unknown, field: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    Buffer.byteLength(value, 'utf8') > 2_048 ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(value)
+  ) {
+    invalid(`${field} is invalid`);
+  }
+  return value;
+}
+
+function normalizedLocationText(
+  value: unknown,
+  field: string,
+  maximum: number
+): string {
+  const normalized = boundedString(value, field, 1, maximum)
+    .replace(/\s+/g, ' ')
+    .toLocaleUpperCase('en-US');
+  if (/[\u0000-\u001f\u007f]/.test(normalized)) {
+    invalid(`${field} contains unsupported control characters`);
+  }
+  return normalized;
+}
+
+function countryCode(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !/^[A-Za-z]{2}$/.test(value)) {
+    invalid(`${field} must be an ISO 3166-1 alpha-2 code`);
+  }
+  return value.toUpperCase();
+}
+
+function confidenceScore(value: unknown, field: string): number {
+  const result = finiteNumber(value, field);
+  if (result < 0 || result > 1) {
+    invalid(`${field} must be between 0 and 1`);
+  }
+  return result;
+}
+
+function supportedDomainContractVersion(value: unknown, field: string): void {
+  if (
+    value !== TYRION_DOMAIN_CONTRACT_VERSION &&
+    value !== LEGACY_TYRION_DOMAIN_CONTRACT_VERSION
+  ) {
+    invalid(`${field} is unsupported`);
+  }
 }
 
 function identifier(value: unknown, field: string): string {

@@ -12,6 +12,7 @@ import {
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import {
   TYRION_DOMAIN_CONTRACT_VERSION,
+  KID_ATTRIBUTION_ENGINE_VERSION,
   parsePolicyAuditEventV1,
   parsePolicySnapshotV1,
   type PolicyAuditEventV1,
@@ -373,7 +374,7 @@ function parseStoredPolicies(raw: string): StoredPolicies {
       candidate = {
         ...snapshot,
         contractVersion: TYRION_DOMAIN_CONTRACT_VERSION,
-        engineVersion: '2.0.0',
+        engineVersion: KID_ATTRIBUTION_ENGINE_VERSION,
         accountDefaults: [],
       };
     }

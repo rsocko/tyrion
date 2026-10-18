@@ -9,7 +9,8 @@ import {
   sourceManifestKindDigestV1,
 } from "@rsocko/tyrion-finance-insights";
 
-const BRIDGE_CONTRACT_VERSION = "1.0";
+const BRIDGE_CONTRACT_VERSION = "1.1";
+const BRIDGE_CONTRACT_VERSIONS = new Set(["1.0", BRIDGE_CONTRACT_VERSION]);
 const CONNECTOR_REF = "monarch-current-document-expectations";
 const MAX_BRIDGE_RESPONSE_BYTES = 8 * 1024 * 1024;
 const FACT_KINDS = ["transaction", "recurring", "category", "account", "tag"];
@@ -148,7 +149,9 @@ async function fetchBridgeJson(baseUrl, path, token, fetchImpl) {
   }
   if (
     !response.ok ||
-    response.headers.get("x-monarch-contract-version") !== BRIDGE_CONTRACT_VERSION ||
+    !BRIDGE_CONTRACT_VERSIONS.has(
+      response.headers.get("x-monarch-contract-version")
+    ) ||
     !response.headers.get("content-type")?.toLowerCase().includes("application/json")
   ) {
     await response.body?.cancel().catch(() => undefined);
@@ -201,7 +204,7 @@ async function readBoundedResponse(response) {
 function requireEnvelope(value, itemKey, maximumItems) {
   if (
     !isPlainObject(value) ||
-    value.contractVersion !== BRIDGE_CONTRACT_VERSION ||
+    !BRIDGE_CONTRACT_VERSIONS.has(value.contractVersion) ||
     !isPlainObject(value.provenance) ||
     !["demo", "live"].includes(value.provenance.provider) ||
     !validTimestamp(value.provenance.fetchedAt) ||

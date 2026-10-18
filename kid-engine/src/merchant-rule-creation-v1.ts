@@ -29,6 +29,10 @@ export interface MerchantRuleCreationRequestV1 {
     confirmed: true;
     confirmedAt: string;
   };
+  locationOnlyConfirmation: {
+    confirmed: true;
+    confirmedAt: string;
+  } | null;
   rule: Omit<MerchantAttributionRuleV1, 'id' | 'enabled'>;
 }
 
@@ -99,6 +103,19 @@ export class MerchantRuleCreationService {
     }
 
     validateFreshConfirmation(request.confirmation.confirmedAt, this.now());
+    if (rule.pattern === null) {
+      if (request.locationOnlyConfirmation === null) {
+        throw new MerchantRuleCreationError(
+          'location_only_rule_confirmation_required',
+          'Separate explicit confirmation is required for a location-only rule'
+        );
+      }
+      validateFreshConfirmation(
+        request.locationOnlyConfirmation.confirmedAt,
+        this.now(),
+        'location_only_rule_confirmation_expired'
+      );
+    }
     if (current.policyVersion !== request.expectedPolicyVersion) {
       throw new MerchantRuleCreationError(
         'policy_version_conflict',
@@ -191,6 +208,8 @@ export class MerchantRuleCreationError extends Error {
       | 'merchant_rule_idempotency_conflict'
       | 'merchant_rule_confirmation_required'
       | 'merchant_rule_confirmation_expired'
+      | 'location_only_rule_confirmation_required'
+      | 'location_only_rule_confirmation_expired'
       | 'merchant_rule_account_not_found',
     message: string
   ) {
@@ -202,14 +221,21 @@ export class MerchantRuleCreationError extends Error {
 function parseMerchantRuleCreationRequestV1(
   value: unknown
 ): MerchantRuleCreationRequestV1 {
+  const rawRequest = plainObject(value);
   const request = strictObject(value, [
     'contractVersion',
     'expectedPolicyVersion',
     'idempotencyKey',
     'confirmation',
+    ...('locationOnlyConfirmation' in rawRequest
+      ? ['locationOnlyConfirmation']
+      : []),
     'rule',
   ]);
-  if (request.contractVersion !== TYRION_DOMAIN_CONTRACT_VERSION) {
+  if (
+    request.contractVersion !== TYRION_DOMAIN_CONTRACT_VERSION &&
+    request.contractVersion !== '2.0'
+  ) {
     invalid('contractVersion is unsupported');
   }
   const expectedPolicyVersion = positiveInteger(
@@ -235,11 +261,45 @@ function parseMerchantRuleCreationRequestV1(
     confirmation.confirmedAt,
     'confirmation.confirmedAt'
   );
+  let locationOnlyConfirmation: MerchantRuleCreationRequestV1['locationOnlyConfirmation'] =
+    null;
+  if (
+    'locationOnlyConfirmation' in request &&
+    request.locationOnlyConfirmation !== null
+  ) {
+    const separateConfirmation = strictObject(request.locationOnlyConfirmation, [
+      'confirmed',
+      'confirmedAt',
+    ]);
+    if (separateConfirmation.confirmed !== true) {
+      throw new MerchantRuleCreationError(
+        'location_only_rule_confirmation_required',
+        'Separate explicit confirmation is required for a location-only rule'
+      );
+    }
+    locationOnlyConfirmation = {
+      confirmed: true,
+      confirmedAt: parseTimestampV1(
+        separateConfirmation.confirmedAt,
+        'locationOnlyConfirmation.confirmedAt'
+      ),
+    };
+  }
   const rule = strictObject(request.rule, [
     'outcome',
     'kidId',
     'pattern',
     'businessEntityPattern',
+    ...(
+      plainObject(request.rule).statementDescriptorPattern !== undefined
+        ? ['statementDescriptorPattern']
+        : []
+    ),
+    ...(
+      plainObject(request.rule).locationPredicate !== undefined
+        ? ['locationPredicate']
+        : []
+    ),
     'scope',
     'accountRefs',
     'confidence',
@@ -256,6 +316,12 @@ function parseMerchantRuleCreationRequestV1(
       {
         id: 'rule-provisional',
         ...rule,
+        statementDescriptorPattern:
+          'statementDescriptorPattern' in rule
+            ? rule.statementDescriptorPattern
+            : null,
+        locationPredicate:
+          'locationPredicate' in rule ? rule.locationPredicate : null,
         enabled: true,
       },
     ],
@@ -272,11 +338,14 @@ function parseMerchantRuleCreationRequestV1(
     expectedPolicyVersion,
     idempotencyKey,
     confirmation: { confirmed: true, confirmedAt },
+    locationOnlyConfirmation,
     rule: {
       outcome: parsedRule.outcome,
       kidId: parsedRule.kidId,
       pattern: parsedRule.pattern,
       businessEntityPattern: parsedRule.businessEntityPattern,
+      statementDescriptorPattern: parsedRule.statementDescriptorPattern,
+      locationPredicate: parsedRule.locationPredicate,
       scope: parsedRule.scope,
       accountRefs: parsedRule.accountRefs,
       confidence: parsedRule.confidence,
@@ -322,7 +391,14 @@ function sameRule(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function validateFreshConfirmation(confirmedAt: string, now: Date): void {
+function validateFreshConfirmation(
+  confirmedAt: string,
+  now: Date,
+  expiredCode:
+    | 'merchant_rule_confirmation_expired'
+    | 'location_only_rule_confirmation_expired' =
+    'merchant_rule_confirmation_expired'
+): void {
   const timestamp = Date.parse(confirmedAt);
   const age = now.getTime() - timestamp;
   if (
@@ -330,8 +406,10 @@ function validateFreshConfirmation(confirmedAt: string, now: Date): void {
     age < -CONFIRMATION_FUTURE_TOLERANCE_MS
   ) {
     throw new MerchantRuleCreationError(
-      'merchant_rule_confirmation_expired',
-      'Merchant rule confirmation expired'
+      expiredCode,
+      expiredCode === 'merchant_rule_confirmation_expired'
+        ? 'Merchant rule confirmation expired'
+        : 'Location-only rule confirmation expired'
     );
   }
 }
@@ -348,6 +426,7 @@ function strictObject(
   ) {
     invalid('request must be an object');
   }
+
   const result = value as Record<string, unknown>;
   const actualKeys = Object.keys(result);
   if (
@@ -357,6 +436,18 @@ function strictObject(
     invalid('request fields are invalid');
   }
   return result;
+}
+
+function plainObject(value: unknown): Record<string, unknown> {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    invalid('request must be an object');
+  }
+  return value as Record<string, unknown>;
 }
 
 function identifier(value: unknown, field: string, minimum = 1): string {

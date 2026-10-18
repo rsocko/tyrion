@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   QuickReviewValidationError,
+  prepareDescriptorInferenceV1,
   prepareVendorResearchV1,
   rankQuickReviewV1,
   suggestMerchantRuleV1,
@@ -167,6 +168,58 @@ describe('vendor research preparation v1', () => {
       })
     ).toThrow(QuickReviewValidationError);
   });
+
+  it('never copies raw descriptors into the public vendor lookup envelope', () => {
+    const rawDescriptor = '  INVENTED MARKET #42 / TRENTON, NJ  ';
+    const result = prepareVendorResearchV1({
+      contractVersion: '1.0',
+      vendorName: 'Invented Market',
+      coarseLocation: {
+        locality: 'Trenton',
+        region: 'NJ',
+        countryCode: 'US',
+      },
+      sensitiveContext: null,
+      disclosure: { shown: false, confirmedAt: null },
+      statementDescriptors: [
+        { kind: 'statement', text: rawDescriptor, source: 'monarch' },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain(rawDescriptor);
+  });
+});
+
+describe('private descriptor inference preparation v1', () => {
+  it('preserves descriptor text exactly in a private-only bounded envelope', () => {
+    const text = '  INVENTED MARKET #42 / TRENTON, NJ\t';
+    expect(
+      prepareDescriptorInferenceV1({
+        contractVersion: '1.0',
+        descriptors: [{ kind: 'statement', text, source: 'monarch' }],
+        requestedAt: '2026-10-08T12:00:00Z',
+      })
+    ).toMatchObject({
+      purpose: 'transaction-location-inference',
+      descriptors: [{ text }],
+      privacy: { execution: 'private', publicWebLookupAllowed: false },
+      expectedOutput: {
+        provenanceRequired: true,
+        stalenessRequired: true,
+      },
+    });
+  });
+
+  it('rejects oversized descriptors rather than truncating them', () => {
+    expect(() =>
+      prepareDescriptorInferenceV1({
+        contractVersion: '1.0',
+        descriptors: [
+          { kind: 'statement', text: 'x'.repeat(2_049), source: 'monarch' },
+        ],
+        requestedAt: '2026-10-08T12:00:00Z',
+      })
+    ).toThrow(QuickReviewValidationError);
+  });
 });
 
 describe('merchant rule suggestion v1', () => {
@@ -185,11 +238,14 @@ describe('merchant rule suggestion v1', () => {
         outcome: 'kid',
         merchantPattern: 'INVENTED MARKET',
         businessEntityPattern: null,
+        statementDescriptorPattern: null,
+        locationPredicate: null,
         scope: 'global',
         accountRefs: [],
         kidId: 'kid-invented',
         confidence: 'likely',
         requiresConfirmation: true,
+        requiresLocationOnlyConfirmation: false,
       },
     });
   });
@@ -226,5 +282,40 @@ describe('merchant rule suggestion v1', () => {
       scope: 'global',
       accountRefs: [],
     });
+  });
+
+    it('suggests a separately confirmed standalone location rule', () => {
+      expect(
+        suggestMerchantRuleV1({
+          contractVersion: '1.0',
+          merchantName: 'Invented Market',
+          kidId: 'kid-invented',
+          suggestReusableRule: true,
+          suggestionMode: 'location-only',
+          locationEvidence: {
+            countryCode: 'us',
+            region: 'mi',
+            locality: 'Ann Arbor',
+            confidence: 0.92,
+            sourceKind: 'private-ai-inference',
+            model: 'private-location-model',
+            modelVersion: '2026-10',
+            evaluatedAt: '2026-10-08T12:00:00Z',
+            staleAfter: '2026-10-09T12:00:00Z',
+          },
+          locationMinimumConfidence: 0.85,
+        }).suggestion
+      ).toMatchObject({
+        kind: 'location-only',
+        merchantPattern: null,
+        locationPredicate: {
+          countryCode: 'US',
+          region: 'MI',
+          locality: 'ANN ARBOR',
+          minimumConfidence: 0.85,
+        },
+        requiresConfirmation: true,
+        requiresLocationOnlyConfirmation: true,
+      });
   });
 });

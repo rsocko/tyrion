@@ -4,6 +4,8 @@ import {
   parseAttributionInputV1,
   parseTimestampV1,
   type AttributionInputV1,
+  type AttributionLocationEvidenceV1,
+  type AttributionStatementDescriptorV1,
   type HistoricalAttributionV1,
   type ManualAttributionDecisionV1,
 } from './contracts/v1.js';
@@ -14,6 +16,14 @@ export interface NormalizedBridgeTransactionV1 {
   amount: number;
   merchant: { name: string; logoUrl: string | null };
   businessContext?: string | null;
+  statementDescriptors?: Array<{
+    kind: AttributionStatementDescriptorV1['kind'];
+    text: string;
+    source: {
+      system: 'monarch';
+      field: 'plaidName' | 'dataProviderDescription';
+    };
+  }>;
   category: { id: string; name: string } | null;
   account: { id: string; displayName: string; mask: string | null };
   isPending: boolean;
@@ -23,7 +33,7 @@ export interface NormalizedBridgeTransactionV1 {
 }
 
 export interface NormalizedBridgeTransactionsPageV1 {
-  contractVersion: '1.0';
+  contractVersion: '1.0' | '1.1';
   provenance: {
     provider: 'demo' | 'live';
     fetchedAt: string;
@@ -41,6 +51,7 @@ export interface AttributionInputAdapterContextV1 {
   sourceRef: string;
   observedAt: string;
   accountRef: string;
+  locationEvidence: AttributionLocationEvidenceV1 | null;
   historicalAttributions: HistoricalAttributionV1[];
   existingManualDecision: ManualAttributionDecisionV1 | null;
 }
@@ -61,6 +72,7 @@ export function createAttributionInputFromBridgeTransactionV1(
     'sourceRef',
     'observedAt',
     'accountRef',
+    'locationEvidence',
     'historicalAttributions',
     'existingManualDecision',
   ]);
@@ -85,6 +97,7 @@ export function createAttributionInputsFromBridgePageV1(
     exactKeys(context, [
       'sourceRef',
       'accountRef',
+      'locationEvidence',
       'historicalAttributions',
       'existingManualDecision',
     ]);
@@ -93,6 +106,7 @@ export function createAttributionInputsFromBridgePageV1(
       sourceRef: context.sourceRef,
       observedAt: page.provenance.fetchedAt,
       accountRef: context.accountRef,
+      locationEvidence: context.locationEvidence,
       historicalAttributions: context.historicalAttributions,
       existingManualDecision: context.existingManualDecision,
     });
@@ -119,6 +133,14 @@ function buildAttributionInput(
     transaction: {
       merchantName: transaction.merchant.name,
       businessEntityName: transaction.businessContext ?? null,
+      statementDescriptors: (transaction.statementDescriptors ?? []).map(
+        (descriptor) => ({
+          kind: descriptor.kind,
+          text: descriptor.text,
+          source: 'monarch',
+        })
+      ),
+      locationEvidence: context.locationEvidence,
       accountRef: context.accountRef,
       occurredOn: transaction.date,
     },
@@ -147,6 +169,10 @@ export function parseNormalizedBridgeTransactionV1(
   if (!Array.isArray(transaction.tags) || transaction.tags.length > 1_000) {
     invalid('tags must be a bounded array');
   }
+  const statementDescriptors =
+    transaction.statementDescriptors === undefined
+      ? []
+      : parseStatementDescriptors(transaction.statementDescriptors);
   return {
     id: string(transaction.id, 'id', 1, 256),
     date: calendarDate(transaction.date, 'date'),
@@ -162,6 +188,7 @@ export function parseNormalizedBridgeTransactionV1(
       transaction.businessContext == null
         ? null
         : string(transaction.businessContext, 'businessContext', 1, 120),
+    statementDescriptors,
     category,
     account: {
       id: string(account.id, 'account.id', 1, 256),
@@ -187,8 +214,11 @@ export function parseNormalizedBridgeTransactionsPageV1(
   value: unknown
 ): NormalizedBridgeTransactionsPageV1 {
   const response = object(value, 'bridge transactions response');
-  if (response.contractVersion !== '1.0') {
-    invalid('contractVersion must be 1.0');
+  if (
+    response.contractVersion !== '1.0' &&
+    response.contractVersion !== '1.1'
+  ) {
+    invalid('contractVersion must be 1.0 or 1.1');
   }
   const provenance = object(response.provenance, 'provenance');
   if (provenance.provider !== 'demo' && provenance.provider !== 'live') {
@@ -216,7 +246,7 @@ export function parseNormalizedBridgeTransactionsPageV1(
     invalid('page.limit must be between 1 and 5000');
   }
   return {
-    contractVersion: '1.0',
+    contractVersion: response.contractVersion,
     provenance: { provider: provenance.provider, fetchedAt },
     transactions: response.transactions.map(parseNormalizedBridgeTransactionV1),
     total: response.total as number,
@@ -228,6 +258,72 @@ export function parseNormalizedBridgeTransactionsPageV1(
           : string(page.nextCursor, 'page.nextCursor', 1, 2_000),
     },
   };
+}
+
+function parseStatementDescriptors(
+  value: unknown
+): NonNullable<NormalizedBridgeTransactionV1['statementDescriptors']> {
+  if (!Array.isArray(value) || value.length > 2) {
+    invalid('statementDescriptors must be an array with at most 2 items');
+  }
+  const descriptors = value.map((item, index) => {
+    const descriptor = object(item, `statementDescriptors[${index}]`);
+    const source = object(
+      descriptor.source,
+      `statementDescriptors[${index}].source`
+    );
+    if (
+      descriptor.kind !== 'statement' &&
+      descriptor.kind !== 'provider-description'
+    ) {
+      invalid(`statementDescriptors[${index}].kind is invalid`);
+    }
+    if (
+      source.system !== 'monarch' ||
+      (source.field !== 'plaidName' &&
+        source.field !== 'dataProviderDescription')
+    ) {
+      invalid(`statementDescriptors[${index}].source is invalid`);
+    }
+    const kind = descriptor.kind as
+      | 'statement'
+      | 'provider-description';
+    const field = source.field as
+      | 'plaidName'
+      | 'dataProviderDescription';
+    if (
+      (kind === 'statement' && field !== 'plaidName') ||
+      (kind === 'provider-description' &&
+        field !== 'dataProviderDescription')
+    ) {
+      invalid(`statementDescriptors[${index}].source is invalid`);
+    }
+    const text = exactDescriptorText(
+      descriptor.text,
+      `statementDescriptors[${index}].text`
+    );
+    return {
+      kind,
+      text,
+      source: { system: 'monarch' as const, field },
+    };
+  });
+  if (new Set(descriptors.map((descriptor) => descriptor.kind)).size !== descriptors.length) {
+    invalid('statementDescriptors kinds must be unique');
+  }
+  return descriptors;
+}
+
+function exactDescriptorText(value: unknown, field: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    Buffer.byteLength(value, 'utf8') > 2_048 ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(value)
+  ) {
+    invalid(`${field} is invalid`);
+  }
+  return value;
 }
 
 function object(value: unknown, field: string): Record<string, unknown> {

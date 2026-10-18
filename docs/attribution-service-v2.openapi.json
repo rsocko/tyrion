@@ -227,6 +227,59 @@
         }
       ]
     },
+    "AttributionStatementDescriptorV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "text", "source"],
+      "properties": {
+        "kind": { "enum": ["statement", "provider-description"] },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "Exact Bridge descriptor text. Whitespace and punctuation are preserved; oversized input is rejected rather than truncated."
+        },
+        "source": { "const": "monarch" }
+      }
+    },
+    "AttributionLocationEvidenceV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "countryCode",
+        "region",
+        "locality",
+        "confidence",
+        "sourceKind",
+        "model",
+        "modelVersion",
+        "evaluatedAt",
+        "staleAfter"
+      ],
+      "properties": {
+        "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "region": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "locality": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sourceKind": { "enum": ["private-ai-inference", "user-confirmed"] },
+        "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 120 },
+        "modelVersion": { "type": ["string", "null"], "minLength": 1, "maxLength": 120 },
+        "evaluatedAt": { "$ref": "#/$defs/Timestamp" },
+        "staleAfter": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "AttributionLocationPredicateV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["countryCode", "region", "locality", "minimumConfidence"],
+      "properties": {
+        "countryCode": { "type": ["string", "null"], "pattern": "^[A-Z]{2}$" },
+        "region": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
+        "locality": { "type": ["string", "null"], "minLength": 1, "maxLength": 80 },
+        "minimumConfidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "description": "At least one geographic field must be non-null. All populated fields and the explicit confidence threshold must match."
+    },
     "AttributionBatchItemV2": {
       "type": "object",
       "additionalProperties": false,
@@ -234,6 +287,8 @@
         "sourceRef",
         "occurredOn",
         "merchantName",
+        "statementDescriptors",
+        "locationEvidence",
         "accountRef",
         "observedAt",
         "existingManualDecision"
@@ -256,6 +311,43 @@
           "maxLength": 160,
           "description": "Optional normalized business-entity display label; never an upstream identifier or raw object."
         },
+        "statementDescriptors": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/AttributionStatementDescriptorV2" },
+          "allOf": [
+            {
+              "not": {
+                "contains": {
+                  "type": "object",
+                  "required": ["kind"],
+                  "properties": { "kind": { "const": "statement" } }
+                },
+                "minContains": 2
+              }
+            },
+            {
+              "not": {
+                "contains": {
+                  "type": "object",
+                  "required": ["kind"],
+                  "properties": {
+                    "kind": { "const": "provider-description" }
+                  }
+                },
+                "minContains": 2
+              }
+            }
+          ],
+          "description": "At most one descriptor of each kind, matching runtime validation."
+        },
+        "locationEvidence": {
+          "oneOf": [
+            { "$ref": "#/$defs/AttributionLocationEvidenceV2" },
+            { "type": "null" }
+          ]
+        },
         "accountRef": {
           "$ref": "#/$defs/AccountRef"
         },
@@ -273,8 +365,8 @@
         "items"
       ],
       "properties": {
-        "contractVersion": { "const": "2.0" },
-        "provenance": { "const": "mission-control-normalized-v2" },
+        "contractVersion": { "const": "2.1" },
+        "provenance": { "const": "mission-control-normalized-v3" },
         "expectedPolicyVersion": {
           "type": ["integer", "null"],
           "minimum": 1
@@ -295,6 +387,8 @@
         "kidId",
         "pattern",
         "businessEntityPattern",
+        "statementDescriptorPattern",
+        "locationPredicate",
         "scope",
         "accountRefs",
         "confidence"
@@ -309,7 +403,7 @@
           "description": "Required only for kid outcome; null otherwise."
         },
         "pattern": {
-          "type": "string",
+          "type": ["string", "null"],
           "minLength": 2,
           "maxLength": 160
         },
@@ -317,6 +411,17 @@
           "type": ["string", "null"],
           "minLength": 2,
           "maxLength": 160
+        },
+        "statementDescriptorPattern": {
+          "type": ["string", "null"],
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "locationPredicate": {
+          "oneOf": [
+            { "$ref": "#/$defs/AttributionLocationPredicateV2" },
+            { "type": "null" }
+          ]
         },
         "scope": { "enum": ["global", "accounts"] },
         "accountRefs": {
@@ -338,6 +443,8 @@
         "kidId",
         "pattern",
         "businessEntityPattern",
+        "statementDescriptorPattern",
+        "locationPredicate",
         "scope",
         "accountRefs",
         "confidence",
@@ -352,11 +459,22 @@
             { "type": "null" }
           ]
         },
-        "pattern": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "pattern": { "type": ["string", "null"], "minLength": 2, "maxLength": 160 },
         "businessEntityPattern": {
           "type": ["string", "null"],
           "minLength": 2,
           "maxLength": 160
+        },
+        "statementDescriptorPattern": {
+          "type": ["string", "null"],
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "locationPredicate": {
+          "oneOf": [
+            { "$ref": "#/$defs/AttributionLocationPredicateV2" },
+            { "type": "null" }
+          ]
         },
         "scope": { "enum": ["global", "accounts"] },
         "accountRefs": {
@@ -377,10 +495,11 @@
         "expectedPolicyVersion",
         "idempotencyKey",
         "confirmation",
+        "locationOnlyConfirmation",
         "rule"
       ],
       "properties": {
-        "contractVersion": { "const": "2.0" },
+        "contractVersion": { "const": "2.1" },
         "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
         "idempotencyKey": {
           "type": "string",
@@ -397,6 +516,21 @@
             "confirmedAt": { "$ref": "#/$defs/Timestamp" }
           }
         },
+        "locationOnlyConfirmation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["confirmed", "confirmedAt"],
+              "properties": {
+                "confirmed": { "const": true },
+                "confirmedAt": { "$ref": "#/$defs/Timestamp" }
+              }
+            },
+            { "type": "null" }
+          ],
+          "description": "Must be a distinct fresh confirmation for a rule whose merchant pattern is null."
+        },
         "rule": { "$ref": "#/$defs/MerchantRuleDraftV2" }
       }
     },
@@ -405,7 +539,7 @@
       "additionalProperties": false,
       "required": ["contractVersion", "outcome", "policyVersion", "rule"],
       "properties": {
-        "contractVersion": { "const": "2.0" },
+        "contractVersion": { "const": "2.1" },
         "outcome": { "enum": ["created", "replayed"] },
         "policyVersion": { "type": "integer", "minimum": 1 },
         "rule": { "$ref": "#/$defs/MerchantRuleV2" }
@@ -430,7 +564,7 @@
         "evaluatedAt"
       ],
       "properties": {
-        "contractVersion": { "const": "2.0" },
+        "contractVersion": { "const": "2.1" },
         "sourceRef": { "$ref": "#/$defs/Identifier" },
         "status": {
           "enum": ["attributed", "unassigned", "pending"]
@@ -479,7 +613,7 @@
           "enum": ["manual", "automated", "fallback"]
         },
         "policyVersion": { "type": "integer", "minimum": 1 },
-        "engineVersion": { "const": "2.0.0" },
+        "engineVersion": { "const": "2.1.0" },
         "evaluatedAt": { "$ref": "#/$defs/Timestamp" }
       }
     },
@@ -493,9 +627,9 @@
         "results"
       ],
       "properties": {
-        "contractVersion": { "const": "2.0" },
+        "contractVersion": { "const": "2.1" },
         "policyVersion": { "type": "integer", "minimum": 1 },
-        "engineVersion": { "const": "2.0.0" },
+        "engineVersion": { "const": "2.1.0" },
         "results": {
           "type": "array",
           "minItems": 1,
@@ -516,8 +650,8 @@
         "subjects"
       ],
       "properties": {
-        "contractVersion": { "const": "2.0" },
-        "engineVersion": { "const": "2.0.0" },
+        "contractVersion": { "const": "2.1" },
+        "engineVersion": { "const": "2.1.0" },
         "policyVersion": { "type": "integer", "minimum": 1 },
         "policyUpdatedAt": { "$ref": "#/$defs/Timestamp" },
         "householdCurrency": {
@@ -540,8 +674,8 @@
           "additionalProperties": false,
           "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action"],
           "properties": {
-            "contractVersion": { "const": "2.0" },
-            "provenance": { "const": "mission-control-normalized-v2" },
+            "contractVersion": { "const": "2.1" },
+            "provenance": { "const": "mission-control-normalized-v3" },
             "sourceRef": { "$ref": "#/$defs/Identifier" },
             "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
             "action": { "const": "explain" }
@@ -552,8 +686,8 @@
           "additionalProperties": false,
           "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm", "kidId"],
           "properties": {
-            "contractVersion": { "const": "2.0" },
-            "provenance": { "const": "mission-control-normalized-v2" },
+            "contractVersion": { "const": "2.1" },
+            "provenance": { "const": "mission-control-normalized-v3" },
             "sourceRef": { "$ref": "#/$defs/Identifier" },
             "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
             "action": { "const": "assign-kid" },
@@ -568,8 +702,8 @@
           "additionalProperties": false,
           "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm"],
           "properties": {
-            "contractVersion": { "const": "2.0" },
-            "provenance": { "const": "mission-control-normalized-v2" },
+            "contractVersion": { "const": "2.1" },
+            "provenance": { "const": "mission-control-normalized-v3" },
             "sourceRef": { "$ref": "#/$defs/Identifier" },
             "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
             "action": { "enum": ["mark-parent-expense", "unassign", "resolve-exception"] },
@@ -583,8 +717,8 @@
           "additionalProperties": false,
           "required": ["contractVersion", "provenance", "sourceRef", "expectedPolicyVersion", "action", "expectedStateVersion", "idempotencyKey", "confirm", "deferUntil"],
           "properties": {
-            "contractVersion": { "const": "2.0" },
-            "provenance": { "const": "mission-control-normalized-v2" },
+            "contractVersion": { "const": "2.1" },
+            "provenance": { "const": "mission-control-normalized-v3" },
             "sourceRef": { "$ref": "#/$defs/Identifier" },
             "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
             "action": { "const": "defer-exception" },
@@ -601,7 +735,7 @@
       "additionalProperties": false,
       "required": ["contractVersion", "sourceRef", "status", "kidId", "confidence", "method", "explanation", "review", "provenance"],
       "properties": {
-        "contractVersion": { "const": "2.0" },
+        "contractVersion": { "const": "2.1" },
         "sourceRef": { "$ref": "#/$defs/Identifier" },
         "status": { "enum": ["attributed", "unassigned", "pending"] },
         "kidId": {
@@ -638,7 +772,7 @@
                 { "type": "null" }
               ]
             },
-            "engineVersion": { "const": "2.0.0" },
+            "engineVersion": { "const": "2.1.0" },
             "ruleIds": {
               "type": "array",
               "uniqueItems": true,
@@ -707,10 +841,10 @@
       "additionalProperties": false,
       "required": ["contractVersion", "sourceRef", "policyVersion", "engineVersion", "stateVersion", "attribution", "exception", "availableActions", "assignableKidIds", "authoritativeDeepLink", "provenance", "audit"],
       "properties": {
-        "contractVersion": { "const": "2.0" },
+        "contractVersion": { "const": "2.1" },
         "sourceRef": { "$ref": "#/$defs/Identifier" },
         "policyVersion": { "type": "integer", "minimum": 1 },
-        "engineVersion": { "const": "2.0.0" },
+        "engineVersion": { "const": "2.1.0" },
         "stateVersion": { "type": "integer", "minimum": 1 },
         "attribution": { "$ref": "#/$defs/AttributionActionResultV2" },
         "exception": { "$ref": "#/$defs/AttributionExceptionStateV2" },

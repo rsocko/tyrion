@@ -80,7 +80,7 @@ describe('policy service authorization and versioning', () => {
     const audit = await service.listAudit(writer, 'household-demo');
     expect(audit).toEqual([
       {
-        contractVersion: '2.0',
+        contractVersion: '2.1',
         eventId: 'audit-event-demo',
         householdId: 'household-demo',
         actorId: 'actor-demo',
@@ -292,13 +292,13 @@ describe('durable file policy repository', () => {
 
     const repository = new FilePolicyRepository(path);
     await expect(repository.load(policyFixture.householdId)).resolves.toMatchObject({
-      contractVersion: '2.0',
-      engineVersion: '2.0.0',
+      contractVersion: '2.1',
+      engineVersion: '2.1.0',
       accountDefaults: [],
     });
 
     await expect(repository.listAudit(policyFixture.householdId)).resolves.toMatchObject([
-      { contractVersion: '2.0', eventId: 'audit-event-v1' },
+      { contractVersion: '2.1', eventId: 'audit-event-v1' },
     ]);
 
     legacyCardRules = [

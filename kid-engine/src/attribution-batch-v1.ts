@@ -6,6 +6,8 @@ import {
   parsePolicyActorV1,
   parsePolicySnapshotV1,
   type AttributionInputV1,
+  type AttributionLocationEvidenceV1,
+  type AttributionStatementDescriptorV1,
   type AttributionResultV1,
   type PolicyActorV1,
 } from './contracts/v1.js';
@@ -18,7 +20,7 @@ import {
 export const ATTRIBUTION_BATCH_MAX_ITEMS = 100;
 export const ATTRIBUTION_POLICY_MAX_SUBJECTS = 100;
 export const ATTRIBUTION_BATCH_PROVENANCE =
-  'mission-control-normalized-v2' as const;
+  'mission-control-normalized-v3' as const;
 
 export interface AttributionBatchManualDecisionV1 {
   action: 'assign-kid' | 'parent-expense' | 'unassign';
@@ -31,6 +33,8 @@ export interface AttributionBatchItemV1 {
   occurredOn: string;
   merchantName: string;
   businessEntityName: string | null;
+  statementDescriptors: AttributionStatementDescriptorV1[];
+  locationEvidence: AttributionLocationEvidenceV1 | null;
   accountRef: string;
   observedAt: string;
   existingManualDecision: AttributionBatchManualDecisionV1 | null;
@@ -213,10 +217,16 @@ function parseAttributionBatchRequestV1(
     'expectedPolicyVersion',
     'items',
   ]);
-  if (request.contractVersion !== TYRION_DOMAIN_CONTRACT_VERSION) {
+  if (
+    request.contractVersion !== TYRION_DOMAIN_CONTRACT_VERSION &&
+    request.contractVersion !== '2.0'
+  ) {
     invalid('contractVersion is unsupported');
   }
-  if (request.provenance !== ATTRIBUTION_BATCH_PROVENANCE) {
+  if (
+    request.provenance !== ATTRIBUTION_BATCH_PROVENANCE &&
+    request.provenance !== 'mission-control-normalized-v2'
+  ) {
     invalid('provenance is unsupported');
   }
   const expectedPolicyVersion =
@@ -261,6 +271,8 @@ function parseBatchItem(
       'occurredOn',
       'merchantName',
       ...('businessEntityName' in raw ? ['businessEntityName'] : []),
+      ...('statementDescriptors' in raw ? ['statementDescriptors'] : []),
+      ...('locationEvidence' in raw ? ['locationEvidence'] : []),
       'accountRef',
       'observedAt',
       'existingManualDecision',
@@ -299,6 +311,10 @@ function parseBatchItem(
       merchantName: item.merchantName,
       businessEntityName:
         'businessEntityName' in item ? item.businessEntityName : null,
+      statementDescriptors:
+        'statementDescriptors' in item ? item.statementDescriptors : [],
+      locationEvidence:
+        'locationEvidence' in item ? item.locationEvidence : null,
       accountRef: item.accountRef,
       occurredOn: item.occurredOn,
     },
@@ -310,6 +326,8 @@ function parseBatchItem(
     occurredOn: parsed.transaction.occurredOn,
     merchantName: parsed.transaction.merchantName,
     businessEntityName: parsed.transaction.businessEntityName,
+    statementDescriptors: parsed.transaction.statementDescriptors,
+    locationEvidence: parsed.transaction.locationEvidence,
     accountRef: parsed.transaction.accountRef,
     observedAt: parsed.source.observedAt,
     existingManualDecision:
@@ -338,6 +356,8 @@ function toAttributionInput(
     transaction: {
       merchantName: item.merchantName,
       businessEntityName: item.businessEntityName,
+      statementDescriptors: item.statementDescriptors,
+      locationEvidence: item.locationEvidence,
       accountRef: item.accountRef,
       occurredOn: item.occurredOn,
     },

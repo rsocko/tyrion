@@ -12,6 +12,13 @@ const bridgeTransaction: NormalizedBridgeTransactionV1 = {
   amount: -12.34,
   merchant: { name: 'Synthetic Shop', logoUrl: null },
   businessContext: 'Synthetic Holdings',
+  statementDescriptors: [
+    {
+      kind: 'statement',
+      text: '  Synthetic Shop #42 / NJ  ',
+      source: { system: 'monarch', field: 'plaidName' },
+    },
+  ],
   category: { id: 'category-demo', name: 'Synthetic Category' },
   account: {
     id: 'account-demo',
@@ -28,6 +35,7 @@ const mappingContext = {
   sourceRef: 'consumer-safe-ref',
   accountRef:
     'bridge-account-alpha',
+  locationEvidence: null,
   historicalAttributions: [],
   existingManualDecision: null,
 };
@@ -43,7 +51,7 @@ describe('normalized bridge v1 attribution adapter', () => {
       }
     );
     expect(input).toEqual({
-      contractVersion: '2.0',
+      contractVersion: '2.1',
       householdId: 'household-demo',
       source: {
         system: 'monarch-bridge',
@@ -53,6 +61,14 @@ describe('normalized bridge v1 attribution adapter', () => {
       transaction: {
         merchantName: 'Synthetic Shop',
         businessEntityName: 'Synthetic Holdings',
+        statementDescriptors: [
+          {
+            kind: 'statement',
+            text: '  Synthetic Shop #42 / NJ  ',
+            source: 'monarch',
+          },
+        ],
+        locationEvidence: null,
         accountRef:
           'bridge-account-alpha',
         occurredOn: '2026-08-08',
@@ -144,6 +160,39 @@ describe('normalized bridge v1 attribution adapter', () => {
         amount: Number.NaN,
       })
     ).toThrow('amount must be a finite number');
+  });
+
+  it('rejects oversized bridge descriptors rather than truncating them', () => {
+    expect(() =>
+      parseNormalizedBridgeTransactionV1({
+        ...bridgeTransaction,
+        statementDescriptors: [
+          {
+            kind: 'statement',
+            text: 'x'.repeat(2_049),
+            source: { system: 'monarch', field: 'plaidName' },
+          },
+        ],
+      })
+    ).toThrow('statementDescriptors[0].text is invalid');
+  });
+
+  it('rejects descriptor kinds with contradictory Monarch field provenance', () => {
+    expect(() =>
+      parseNormalizedBridgeTransactionV1({
+        ...bridgeTransaction,
+        statementDescriptors: [
+          {
+            kind: 'statement',
+            text: 'Invented provider description',
+            source: {
+              system: 'monarch',
+              field: 'dataProviderDescription',
+            },
+          },
+        ],
+      })
+    ).toThrow('statementDescriptors[0].source is invalid');
   });
 
   it('rejects page/context cardinality mismatches', () => {

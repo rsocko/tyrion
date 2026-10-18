@@ -1,6 +1,7 @@
 export const CONNECTOR_HEALTH_RESPONSE_BYTES = 4 * 1_024;
 export const CONNECTOR_HEALTH_TIMEOUT_MS = 30_000;
-export const MONARCH_CONTRACT_VERSION = "1.0";
+export const MONARCH_CONTRACT_VERSION = "1.1";
+export const SUPPORTED_MONARCH_CONTRACT_VERSIONS = new Set(["1.0", "1.1"]);
 
 const authStates = new Set([
   "unauthenticated",
@@ -74,7 +75,7 @@ async function fetchBridgeComponent({
     }
 
     const headerVersion = response.headers.get("x-monarch-contract-version");
-    if (headerVersion !== MONARCH_CONTRACT_VERSION) {
+    if (!SUPPORTED_MONARCH_CONTRACT_VERSIONS.has(headerVersion)) {
       await response.body?.cancel().catch(() => undefined);
       return failure(
         502,
@@ -98,7 +99,10 @@ async function fetchBridgeComponent({
     } catch {
       return invalidResponse();
     }
-    if (payload?.contractVersion !== MONARCH_CONTRACT_VERSION) {
+    if (
+      !SUPPORTED_MONARCH_CONTRACT_VERSIONS.has(payload?.contractVersion) ||
+      payload.contractVersion !== headerVersion
+    ) {
       return failure(
         502,
         "bridge_contract_mismatch",

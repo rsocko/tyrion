@@ -287,6 +287,8 @@ class DemoProvider:
                     "id": f"tx-{tx_id}",
                     "date": current.strftime("%Y-%m-%d"),
                     "merchant": {"name": merchant},
+                    "plaidName": f"{merchant}  #{tx_id} / DEMO",
+                    "dataProviderDescription": "Synthetic demo transaction",
                     "businessEntity": (
                         {"id": f"business-{tx_id}", "name": business_context}
                         if business_context

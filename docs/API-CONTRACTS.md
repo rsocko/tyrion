@@ -2,7 +2,7 @@
 
 ## Versioning
 
-The current stable contract is **1.0**.
+The current stable contract is **1.1**.
 
 These contracts support the Tyrion domain defined in
 [`PRODUCT-BOUNDARY.md`](./PRODUCT-BOUNDARY.md). Monarch remains the system of
@@ -11,9 +11,11 @@ the synchronized operational context and review/action references needed for
 exceptions and cross-domain action. The bridge does not define a standalone product
 surface.
 
-- `GET /contract` returns the implemented and supported contract versions.
-- Every JSON response contains `"contractVersion": "1.0"`.
-- Every response includes `X-Monarch-Contract-Version: 1.0`.
+- `GET /contract` returns `1.1` as implemented and reports `1.0` and `1.1` as
+  recognized rollout versions. Responses use `1.1`; consumers should accept `1.0`
+  while older Bridge instances are drained, then require `1.1`.
+- Every JSON response contains `"contractVersion": "1.1"`.
+- Every response includes `X-Monarch-Contract-Version: 1.1`.
 - Additive optional fields may be introduced within v1. Removing a field, changing its type or meaning, or changing a URL requires a new major contract version.
 - Consumers must use these DTOs, not fields from `monarchmoneycommunity`.
 
@@ -191,15 +193,15 @@ not become a public gateway route. A successful verification proves that the pri
 Bridge is reachable and supplies every dynamic field required to normalize the
 existing `HealthResponse`, so the gateway does not also call coarse `/health`.
 
-The response must be 2xx JSON, no larger than 4 KiB, and must carry
-`X-Monarch-Contract-Version: 1.0` plus a body `contractVersion` of `1.0`. The gateway
-validates the explicit Bridge `AuthStatusResponse` field types, enumerations, and
-authentication-state consistency. It then emits only the existing v1
-`HealthResponse` fields:
+The response must be 2xx JSON, no larger than 4 KiB, and must carry matching
+`X-Monarch-Contract-Version` and body `contractVersion` values of `1.0` or `1.1`
+during rollout. The gateway validates the explicit Bridge `AuthStatusResponse` field
+types, enumerations, and authentication-state consistency. It then emits only the
+current `1.1` `HealthResponse` fields:
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "status": "ok",
   "mode": "live",
   "reachable": true,
@@ -216,7 +218,7 @@ sets `reachable: true`. `status` is `ok` for verified `connected` and
 verification result, and each gateway health request performs exactly one verification.
 
 The composed response is `200`, `Cache-Control: no-store`, and
-`X-Monarch-Contract-Version: 1.0` only when verification validates. A private
+`X-Monarch-Contract-Version: 1.1` only when verification validates. A private
 non-2xx maps to `502 bridge_health_check_failed`; network failure maps to
 `502 bridge_unavailable`; the 30-second bound maps to `504 bridge_timeout`;
 non-JSON, malformed JSON, malformed shape, or an oversized response maps to
@@ -361,7 +363,7 @@ All bridge-generated errors have one shape:
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "error": {
     "code": "transaction_not_found",
     "message": "Transaction tx-123 was not found"
@@ -385,7 +387,7 @@ Stable codes include `invalid_request`, `invalid_cursor`, `invalid_date_range`,
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "stability": "stable",
   "supportedVersions": ["1.0"]
 }
@@ -395,7 +397,7 @@ Stable codes include `invalid_request`, `invalid_cursor`, `invalid_date_range`,
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "status": "ok",
   "mode": "demo",
   "reachable": true,
@@ -424,7 +426,7 @@ Successful authentication and `POST /auth/logout` return:
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "status": "success",
   "message": "Authenticated successfully",
   "email": "<email>"
@@ -437,7 +439,7 @@ Successful authentication and `POST /auth/logout` return:
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "authenticated": true,
   "authState": "connected",
   "email": "<email>",
@@ -488,7 +490,7 @@ filters.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "transactions": [
     {
@@ -503,6 +505,21 @@ filters.
       "isRecurring": false,
       "reviewStatus": "needs_review",
       "reviewAssignee": { "id": "member-1", "name": "Household Member" },
+      "statementDescriptors": [
+        {
+          "kind": "statement",
+          "text": "  STORE #42 / TRENTON, NJ  ",
+          "source": { "system": "monarch", "field": "plaidName" }
+        },
+        {
+          "kind": "provider-description",
+          "text": "Card purchase",
+          "source": {
+            "system": "monarch",
+            "field": "dataProviderDescription"
+          }
+        }
+      ],
       "notes": null,
       "tags": ["Household"],
       "tagReferences": [
@@ -519,6 +536,13 @@ filters.
 `notes` are nullable. `businessContext` is only the normalized bounded display
 label supplied by Monarch. Business-entity identifiers, type metadata, and raw
 upstream objects are never exposed.
+`statementDescriptors` contains at most one exact `plaidName` statement descriptor
+and one exact `dataProviderDescription` value selected by the pinned client. The
+Bridge preserves descriptor whitespace and punctuation without normalization or
+truncation. Empty values are omitted; non-text, control-bearing, or values above
+2,048 UTF-8 bytes fail the complete transaction response with a sanitized upstream
+error. The source object records the allowlisted Monarch field without exposing a
+raw transaction object or identifier.
 The existing `tags` display-name array remains for v1 compatibility.
 `tagReferences` is the additive stable identity used for reference joins and tag
 filters. It is empty when a transaction has no tags.
@@ -530,7 +554,7 @@ investigation. It returns at most 100 normalized split items:
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "transactionId": "tx-123",
   "splits": [
@@ -556,7 +580,7 @@ Request: `{ "categoryId": "cat-shopping" }`
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "status": "updated",
   "transactionId": "tx-123",
   "categoryId": "cat-shopping"
@@ -573,7 +597,7 @@ Request: `{ "merchantName": "Invented Market" }`
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "status": "updated",
   "transactionId": "tx-123",
   "merchantName": "Invented Market"
@@ -592,7 +616,7 @@ Request: `{ "reviewed": true }`
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "status": "reviewed",
   "transactionId": "tx-123",
   "reviewStatus": "reviewed"
@@ -619,7 +643,7 @@ return sanitized `502 upstream_error`.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "accounts": [
     {
@@ -643,7 +667,7 @@ return sanitized `502 upstream_error`.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "categories": [
     {
@@ -668,7 +692,7 @@ when Monarch marks the category disabled.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "categoryGroups": [
     {
@@ -686,7 +710,7 @@ when Monarch marks the category disabled.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "tags": [
     {
@@ -741,7 +765,7 @@ version, ambiguity, and audit history remain authoritative in Tyrion.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "recurring": [
     {
@@ -765,7 +789,7 @@ version, ambiguity, and audit history remain authoritative in Tyrion.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "periodStart": "2026-08-01",
   "periodEnd": "2026-08-31",
@@ -792,7 +816,7 @@ is nullable when `budgeted` is zero.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "startDate": "2026-08-01",
   "endDate": "2026-08-08",
@@ -811,7 +835,7 @@ is nullable when `budgeted` is zero.
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersion": "1.1",
   "provenance": { "provider": "live", "fetchedAt": "2026-08-08T12:30:00Z" },
   "status": "complete",
   "transactionsFetched": 142,

@@ -352,6 +352,8 @@ export default function ConfigurationPage() {
           pattern: newMerchantPattern.trim(),
           businessEntityPattern:
             newMerchantBusinessEntity.trim() || null,
+          statementDescriptorPattern: null,
+          locationPredicate: null,
           scope: newMerchantScope,
           accountRefs:
             newMerchantScope === "accounts" ? newMerchantAccounts : [],

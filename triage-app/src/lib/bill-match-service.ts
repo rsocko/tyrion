@@ -407,7 +407,7 @@ function parseBridgeTransactions(
       : "";
   if (
     !plainObject(value) ||
-    value.contractVersion !== "1.0" ||
+    (value.contractVersion !== "1.0" && value.contractVersion !== "1.1") ||
     (requireDecisionGradeFields && !normalizedSourceAsOf)
   ) {
     throw new Error("invalid bridge transaction response");

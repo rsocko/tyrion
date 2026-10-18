@@ -60,6 +60,11 @@ export interface VendorResearchRequestV1 {
     shown: boolean;
     confirmedAt: string | null;
   };
+  statementDescriptors?: Array<{
+    kind: 'statement' | 'provider-description';
+    text: string;
+    source: 'monarch';
+  }>;
 }
 
 export interface VendorResearchEnvelopeV1 {
@@ -85,21 +90,62 @@ export interface MerchantRuleSuggestionRequestV1 {
   scope?: 'global' | 'accounts';
   kidId: string;
   suggestReusableRule: boolean;
+  suggestionMode?: 'merchant' | 'merchant-and-location' | 'location-only';
+  statementDescriptors?: VendorResearchRequestV1['statementDescriptors'];
+  locationEvidence?: {
+    countryCode: string;
+    region: string;
+    locality: string | null;
+    confidence: number;
+    sourceKind: 'private-ai-inference' | 'user-confirmed';
+    model: string | null;
+    modelVersion: string | null;
+    evaluatedAt: string;
+    staleAfter: string;
+  } | null;
+  locationMinimumConfidence?: number | null;
 }
 
 export interface MerchantRuleSuggestionResponseV1 {
   contractVersion: typeof QUICK_REVIEW_CONTRACT_VERSION;
   suggestion: {
-    kind: 'merchant';
+    kind: 'merchant' | 'location-only';
     outcome: 'kid';
-    merchantPattern: string;
+    merchantPattern: string | null;
     businessEntityPattern: string | null;
+    statementDescriptorPattern: string | null;
+    locationPredicate: {
+      countryCode: string;
+      region: string;
+      locality: string | null;
+      minimumConfidence: number;
+    } | null;
     scope: 'global' | 'accounts';
     accountRefs: string[];
     kidId: string;
     confidence: 'likely';
     requiresConfirmation: true;
+    requiresLocationOnlyConfirmation: boolean;
   } | null;
+}
+
+export interface DescriptorInferenceEnvelopeV1 {
+  contractVersion: typeof QUICK_REVIEW_CONTRACT_VERSION;
+  purpose: 'transaction-location-inference';
+  descriptors: NonNullable<VendorResearchRequestV1['statementDescriptors']>;
+  requestedAt: string;
+  privacy: {
+    execution: 'private';
+    publicWebLookupAllowed: false;
+  };
+  expectedOutput: {
+    countryCode: 'iso-3166-1-alpha-2';
+    region: 'normalized-region';
+    locality: 'optional-normalized-locality';
+    confidence: 'zero-to-one';
+    provenanceRequired: true;
+    stalenessRequired: true;
+  };
 }
 
 export class QuickReviewValidationError extends Error {
@@ -199,13 +245,17 @@ export function rankQuickReviewV1(value: unknown): QuickReviewRankResponseV1 {
 export function prepareVendorResearchV1(
   value: unknown
 ): VendorResearchEnvelopeV1 {
-  const request = strictObject(value, [
-    'contractVersion',
-    'vendorName',
-    'coarseLocation',
-    'sensitiveContext',
-    'disclosure',
-  ]);
+  const request = objectWithOptionalKeys(
+    value,
+    [
+      'contractVersion',
+      'vendorName',
+      'coarseLocation',
+      'sensitiveContext',
+      'disclosure',
+    ],
+    ['statementDescriptors']
+  );
   contractVersion(request.contractVersion);
   const vendorName = normalizedText(request.vendorName, 'vendorName', 120);
   const coarseLocation =
@@ -213,6 +263,9 @@ export function prepareVendorResearchV1(
       ? null
       : parseCoarseLocation(request.coarseLocation);
   const disclosure = strictObject(request.disclosure, ['shown', 'confirmedAt']);
+  if (request.statementDescriptors !== undefined) {
+    parseStatementDescriptors(request.statementDescriptors, 'statementDescriptors');
+  }
   if (typeof disclosure.shown !== 'boolean') invalid('disclosure.shown is invalid');
   const confirmedAt =
     disclosure.confirmedAt === null
@@ -228,6 +281,7 @@ export function prepareVendorResearchV1(
         'Visible confirmation is required before sharing amount or date'
       );
     }
+
     const context = strictObject(request.sensitiveContext, [
       'amount',
       'occurredOn',
@@ -254,13 +308,55 @@ export function prepareVendorResearchV1(
   };
 }
 
+export function prepareDescriptorInferenceV1(
+  value: unknown
+): DescriptorInferenceEnvelopeV1 {
+  const request = strictObject(value, [
+    'contractVersion',
+    'descriptors',
+    'requestedAt',
+  ]);
+  contractVersion(request.contractVersion);
+  const descriptors = parseStatementDescriptors(
+    request.descriptors,
+    'descriptors'
+  );
+  if (descriptors.length === 0) invalid('descriptors must not be empty');
+  return {
+    contractVersion: QUICK_REVIEW_CONTRACT_VERSION,
+    purpose: 'transaction-location-inference',
+    descriptors,
+    requestedAt: timestamp(request.requestedAt, 'requestedAt'),
+    privacy: {
+      execution: 'private',
+      publicWebLookupAllowed: false,
+    },
+    expectedOutput: {
+      countryCode: 'iso-3166-1-alpha-2',
+      region: 'normalized-region',
+      locality: 'optional-normalized-locality',
+      confidence: 'zero-to-one',
+      provenanceRequired: true,
+      stalenessRequired: true,
+    },
+  };
+}
+
 export function suggestMerchantRuleV1(
   value: unknown
 ): MerchantRuleSuggestionResponseV1 {
   const request = objectWithOptionalKeys(
     value,
     ['contractVersion', 'merchantName', 'kidId', 'suggestReusableRule'],
-    ['businessEntityName', 'accountRef', 'scope']
+    [
+      'businessEntityName',
+      'accountRef',
+      'scope',
+      'suggestionMode',
+      'statementDescriptors',
+      'locationEvidence',
+      'locationMinimumConfidence',
+    ]
   );
   contractVersion(request.contractVersion);
   const merchantName = normalizedText(request.merchantName, 'merchantName', 120);
@@ -293,6 +389,50 @@ export function suggestMerchantRuleV1(
     invalid('accountRef is inconsistent with scope');
   }
   const kidId = opaqueIdentifier(request.kidId, 'kidId');
+  const suggestionMode =
+    request.suggestionMode === undefined
+      ? 'merchant'
+      : enumeration(
+          request.suggestionMode,
+          ['merchant', 'merchant-and-location', 'location-only'] as const,
+          'suggestionMode'
+        );
+  const descriptors =
+    request.statementDescriptors === undefined
+      ? []
+      : parseStatementDescriptors(
+          request.statementDescriptors,
+          'statementDescriptors'
+        );
+  const locationEvidence =
+    request.locationEvidence === undefined || request.locationEvidence === null
+      ? null
+      : parseLocationEvidence(request.locationEvidence, 'locationEvidence');
+  const locationMinimumConfidence =
+    request.locationMinimumConfidence === undefined ||
+    request.locationMinimumConfidence === null
+      ? null
+      : confidenceScore(
+          request.locationMinimumConfidence,
+          'locationMinimumConfidence'
+        );
+  const needsLocation = suggestionMode !== 'merchant';
+  if (
+    needsLocation &&
+    (locationEvidence === null || locationMinimumConfidence === null)
+  ) {
+    invalid(
+      'locationEvidence and locationMinimumConfidence are required for location suggestions'
+    );
+  }
+  const descriptorPattern =
+    suggestionMode === 'location-only'
+      ? null
+      : descriptors.find((descriptor) => descriptor.kind === 'statement')?.text ??
+        null;
+  if (descriptorPattern !== null && descriptorPattern.length > 160) {
+    invalid('statement descriptor is too long to become a rule pattern');
+  }
   if (typeof request.suggestReusableRule !== 'boolean') {
     invalid('suggestReusableRule is invalid');
   }
@@ -300,17 +440,36 @@ export function suggestMerchantRuleV1(
     contractVersion: QUICK_REVIEW_CONTRACT_VERSION,
     suggestion: request.suggestReusableRule
       ? {
-          kind: 'merchant',
+          kind:
+            suggestionMode === 'location-only' ? 'location-only' : 'merchant',
           outcome: 'kid',
-          merchantPattern: merchantName.toLocaleUpperCase('en-US'),
-          businessEntityPattern: businessEntityName
+          merchantPattern:
+            suggestionMode === 'location-only'
+              ? null
+              : merchantName.toLocaleUpperCase('en-US'),
+          businessEntityPattern:
+            suggestionMode === 'location-only'
+              ? null
+              : businessEntityName
             ? businessEntityName.toLocaleUpperCase('en-US')
             : null,
+          statementDescriptorPattern: descriptorPattern,
+          locationPredicate:
+            needsLocation && locationEvidence && locationMinimumConfidence !== null
+              ? {
+                  countryCode: locationEvidence.countryCode,
+                  region: locationEvidence.region,
+                  locality: locationEvidence.locality,
+                  minimumConfidence: locationMinimumConfidence,
+                }
+              : null,
           scope,
           accountRefs: accountRef ? [accountRef] : [],
           kidId,
           confidence: 'likely',
           requiresConfirmation: true,
+          requiresLocationOnlyConfirmation:
+            suggestionMode === 'location-only',
         }
       : null,
   };
@@ -404,6 +563,130 @@ function parseCoarseLocation(
     countryCode = location.countryCode.toUpperCase();
   }
   return { locality, region, countryCode };
+}
+
+function parseStatementDescriptors(
+  value: unknown,
+  field: string
+): NonNullable<VendorResearchRequestV1['statementDescriptors']> {
+  if (!Array.isArray(value) || value.length > 2) {
+    invalid(`${field} must contain at most 2 descriptors`);
+  }
+  const descriptors = value.map((item, index) => {
+    const descriptor = strictObject(item, ['kind', 'text', 'source']);
+    const kind = enumeration(
+      descriptor.kind,
+      ['statement', 'provider-description'] as const,
+      `${field}[${index}].kind`
+    );
+    if (descriptor.source !== 'monarch') {
+      invalid(`${field}[${index}].source is invalid`);
+    }
+    return {
+      kind,
+      text: exactDescriptorText(descriptor.text, `${field}[${index}].text`),
+      source: 'monarch' as const,
+    };
+  });
+  if (new Set(descriptors.map((descriptor) => descriptor.kind)).size !== descriptors.length) {
+    invalid(`${field} kinds must be unique`);
+  }
+  return descriptors;
+}
+
+function parseLocationEvidence(
+  value: unknown,
+  field: string
+): NonNullable<MerchantRuleSuggestionRequestV1['locationEvidence']> {
+  const evidence = strictObject(value, [
+    'countryCode',
+    'region',
+    'locality',
+    'confidence',
+    'sourceKind',
+    'model',
+    'modelVersion',
+    'evaluatedAt',
+    'staleAfter',
+  ]);
+  const sourceKind = enumeration(
+    evidence.sourceKind,
+    ['private-ai-inference', 'user-confirmed'] as const,
+    `${field}.sourceKind`
+  );
+  const model =
+    evidence.model === null
+      ? null
+      : normalizedText(evidence.model, `${field}.model`, 120);
+  const modelVersion =
+    evidence.modelVersion === null
+      ? null
+      : normalizedText(evidence.modelVersion, `${field}.modelVersion`, 120);
+  if (
+    (sourceKind === 'private-ai-inference' &&
+      (model === null || modelVersion === null)) ||
+    (sourceKind === 'user-confirmed' &&
+      (model !== null || modelVersion !== null))
+  ) {
+    invalid(`${field} source and model provenance are inconsistent`);
+  }
+  const evaluatedAt = timestamp(evidence.evaluatedAt, `${field}.evaluatedAt`);
+  const staleAfter = timestamp(evidence.staleAfter, `${field}.staleAfter`);
+  if (Date.parse(staleAfter) <= Date.parse(evaluatedAt)) {
+    invalid(`${field}.staleAfter must be later than evaluatedAt`);
+  }
+  return {
+    countryCode: requiredCountryCode(
+      evidence.countryCode,
+      `${field}.countryCode`
+    ),
+    region: normalizedText(evidence.region, `${field}.region`, 80).toUpperCase(),
+    locality:
+      evidence.locality === null
+        ? null
+        : normalizedText(
+            evidence.locality,
+            `${field}.locality`,
+            80
+          ).toUpperCase(),
+    confidence: confidenceScore(evidence.confidence, `${field}.confidence`),
+    sourceKind,
+    model,
+    modelVersion,
+    evaluatedAt,
+    staleAfter,
+  };
+}
+
+function exactDescriptorText(value: unknown, name: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    Buffer.byteLength(value, 'utf8') > 2_048 ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(value)
+  ) {
+    invalid(`${name} is invalid`);
+  }
+  return value;
+}
+
+function requiredCountryCode(value: unknown, name: string): string {
+  if (typeof value !== 'string' || !/^[A-Za-z]{2}$/.test(value)) {
+    invalid(`${name} is invalid`);
+  }
+  return value.toUpperCase();
+}
+
+function confidenceScore(value: unknown, name: string): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    value < 0 ||
+    value > 1
+  ) {
+    invalid(`${name} is invalid`);
+  }
+  return value;
 }
 
 function contractVersion(value: unknown): void {

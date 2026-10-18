@@ -195,7 +195,7 @@ class DemoReattributionRepository implements ReattributionRepository {
     [
       "demo-record-manual",
       demoRecord("demo-record-manual", {
-        contractVersion: "2.0",
+        contractVersion: "2.1",
         sourceRef: "demo-record-manual",
         status: "attributed",
         kidId: "demo-kid",
@@ -206,7 +206,7 @@ class DemoReattributionRepository implements ReattributionRepository {
         provenance: {
           decisionSource: "manual",
           policyVersion: null,
-          engineVersion: "2.0.0",
+          engineVersion: "2.1.0",
           ruleIds: [],
           evaluatedAt: "2026-01-01T00:00:00.000Z",
         },
@@ -746,16 +746,20 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
           "date",
           "amount",
           "merchant",
+          "businessContext",
           "category",
           "account",
           "isPending",
           "isRecurring",
           "reviewStatus",
           "reviewAssignee",
+          "statementDescriptors",
           "notes",
           "tags",
           "tagReferences",
         ]);
+        parseBridgeBusinessContext(transaction.businessContext);
+        parseBridgeStatementDescriptors(transaction.statementDescriptors);
         if (!Array.isArray(transaction.tagReferences)) {
           throw new ReattributionIntegrationError();
         }
@@ -1082,6 +1086,49 @@ function parseMonarchTag(value: unknown): MonarchTagV1 {
     throw new ReattributionIntegrationError();
   }
   return { id: tag.id, name: tag.name, isActive: tag.isActive };
+}
+
+function parseBridgeStatementDescriptors(value: unknown): void {
+  if (!Array.isArray(value) || value.length > 2) {
+    throw new ReattributionIntegrationError();
+  }
+  const kinds = value.map((item) => {
+    const descriptor = exactObject(item, ["kind", "text", "source"]);
+    const source = exactObject(descriptor.source, ["system", "field"]);
+    if (
+      typeof descriptor.text !== "string" ||
+      descriptor.text.length === 0 ||
+      new TextEncoder().encode(descriptor.text).byteLength > 2_048 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(
+        descriptor.text
+      ) ||
+      source.system !== "monarch" ||
+      !(
+        (descriptor.kind === "statement" && source.field === "plaidName") ||
+        (descriptor.kind === "provider-description" &&
+          source.field === "dataProviderDescription")
+      )
+    ) {
+      throw new ReattributionIntegrationError();
+    }
+    return descriptor.kind;
+  });
+  if (new Set(kinds).size !== kinds.length) {
+    throw new ReattributionIntegrationError();
+  }
+}
+
+function parseBridgeBusinessContext(value: unknown): void {
+  if (value === null) return;
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > 120 ||
+    value !== value.split(/\s+/u).join(" ") ||
+    /[\u0000-\u001f\u007f-\u009f]/.test(value)
+  ) {
+    throw new ReattributionIntegrationError();
+  }
 }
 
 function sameStringSet(left: string[], right: string[]): boolean {
