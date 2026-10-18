@@ -423,13 +423,19 @@ before(async () => {
         return;
       }
       if (request.url.startsWith("/transactions?") && request.method === "GET") {
-        const accountRef = new URL(request.url, "http://bridge.invalid")
-          .searchParams.get("account_id");
-        const transactions = accountRef
-          ? bridgeTransactions.filter(
-              (transaction) => transaction.account.id === accountRef
-            )
-          : bridgeTransactions;
+        const searchParams = new URL(
+          request.url,
+          "http://bridge.invalid"
+        ).searchParams;
+        const accountRef = searchParams.get("account_id");
+        const startDate = searchParams.get("start_date");
+        const endDate = searchParams.get("end_date");
+        const transactions = bridgeTransactions.filter(
+          (transaction) =>
+            (!accountRef || transaction.account.id === accountRef) &&
+            (!startDate || transaction.date >= startDate) &&
+            (!endDate || transaction.date <= endDate)
+        );
         const total =
           bridgeTransactionTotal === bridgeTransactions.length
             ? transactions.length
@@ -3470,7 +3476,6 @@ test("bill matching v2 searches every catalog account without account environmen
     isActive: true,
   });
   bridgeTransactions[0].account.mask = "4321";
-  const expectedSearchEnd = new Date().toISOString().slice(0, 10);
   const before = receivedRequests.length;
   const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
     method: "POST",
@@ -3540,7 +3545,7 @@ test("bill matching v2 searches every catalog account without account environmen
   });
   assert.equal(result.searchContext.anchorDate, "2026-08-15");
   assert.equal(result.searchContext.windowStart, "2026-08-08");
-  assert.equal(result.searchContext.windowEnd, expectedSearchEnd);
+  assert.equal(result.searchContext.windowEnd, "2026-09-14");
   assert.equal(result.searchContext.candidatePoolSize, 1);
   assert.match(result.searchContext.sourceAsOf, /Z$/);
   assert.match(result.searchContext.searchedAt, /Z$/);
@@ -3556,7 +3561,7 @@ test("bill matching v2 searches every catalog account without account environmen
   );
   assert.ok(
     lookups.every((lookup) =>
-      new RegExp(`end_date=${expectedSearchEnd}`).test(lookup.path)
+      /end_date=2026-09-14/.test(lookup.path)
     )
   );
   assert.doesNotMatch(JSON.stringify(result), /account-invented-checking/);
@@ -3606,6 +3611,167 @@ test("bill matching v2 does not let a future due date exclude an early payment",
       new RegExp(`end_date=${expectedSearchEnd}`).test(lookup.path)
     )
   );
+});
+
+test("bill matching v2 preserves an old bill and due-date interval before expanding toward today", async () => {
+  bridgeAccounts = [
+    {
+      id: "account-invented-checking",
+      displayName: "Invented Checking",
+      type: "checking",
+      mask: "4321",
+      institution: null,
+      currentBalance: 0,
+      isActive: true,
+    },
+  ];
+  bridgeTransactions = [
+    {
+      ...bridgeTransactions[0],
+      date: "2025-01-13",
+      account: {
+        id: "account-invented-checking",
+        displayName: "Invented Checking",
+        mask: "4321",
+      },
+    },
+  ];
+  bridgeTransactionTotal = bridgeTransactions.length;
+  const before = receivedRequests.length;
+  const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      contractVersion: "2.0",
+      requestRef: "payment-check-invented-old-bill",
+      billRef: "bill-invented-old",
+      payee: "Invented Utility Company",
+      expectedAmountMinor: 12345,
+      currency: "USD",
+      billDate: "2024-04-09",
+      dueDate: "2025-01-13",
+      accountScope: "configuredEligible",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.matchStatus, "matched");
+  assert.equal(result.searchContext.windowStart, "2024-04-02");
+  assert.equal(result.searchContext.windowEnd, "2025-02-12");
+  const lookups = receivedRequests
+    .slice(before)
+    .filter((request) => request.path.startsWith("/transactions?"));
+  assert.equal(lookups.length, 1);
+  assert.match(lookups[0].path, /start_date=2024-04-02/);
+  assert.match(lookups[0].path, /end_date=2025-02-12/);
+  assert.doesNotMatch(lookups[0].path, /start_date=2025-10-/);
+});
+
+test("bill matching v2 expands in bounded chunks only when the primary interval has no decisive match", async () => {
+  bridgeAccounts = [
+    {
+      id: "account-invented-checking",
+      displayName: "Invented Checking",
+      type: "checking",
+      mask: null,
+      institution: null,
+      currentBalance: 0,
+      isActive: true,
+    },
+  ];
+  bridgeTransactions = [
+    {
+      ...bridgeTransactions[0],
+      date: new Date().toISOString().slice(0, 10),
+      account: {
+        id: "account-invented-checking",
+        displayName: "Invented Checking",
+        mask: null,
+      },
+    },
+  ];
+  bridgeTransactionTotal = bridgeTransactions.length;
+  const before = receivedRequests.length;
+  const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      contractVersion: "2.0",
+      requestRef: "payment-check-invented-expanded",
+      billRef: "bill-invented-expanded",
+      payee: "Invented Utility Company",
+      expectedAmountMinor: 12345,
+      currency: "USD",
+      billDate: "2024-04-09",
+      dueDate: "2025-01-13",
+      accountScope: "configuredEligible",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).matchStatus, "matched");
+  const lookups = receivedRequests
+    .slice(before)
+    .filter((request) => request.path.startsWith("/transactions?"));
+  assert.ok(lookups.length >= 3);
+  for (const lookup of lookups) {
+    const params = new URL(lookup.path, "http://bridge.invalid").searchParams;
+    const start = Date.parse(`${params.get("start_date")}T00:00:00Z`);
+    const end = Date.parse(`${params.get("end_date")}T00:00:00Z`);
+    assert.ok((end - start) / 86_400_000 <= 365);
+  }
+  assert.match(lookups[0].path, /start_date=2024-04-02/);
+  assert.match(lookups[0].path, /end_date=2025-02-12/);
+});
+
+test("bill matching v2 clamps calendar arithmetic and bounds extreme historical expansion", async () => {
+  bridgeAccounts = [
+    {
+      id: "account-invented-checking",
+      displayName: "Invented Checking",
+      type: "checking",
+      mask: null,
+      institution: null,
+      currentBalance: 0,
+      isActive: true,
+    },
+  ];
+  bridgeTransactions = [];
+  bridgeTransactionTotal = 0;
+  const before = receivedRequests.length;
+  const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      contractVersion: "2.0",
+      requestRef: "payment-check-invented-ancient",
+      billRef: "bill-invented-ancient",
+      payee: "Invented Utility Company",
+      expectedAmountMinor: 12345,
+      currency: "USD",
+      billDate: "0000-01-01",
+      dueDate: "0000-01-01",
+      accountScope: "configuredEligible",
+    }),
+  });
+
+  assert.equal(response.status, 422);
+  assert.equal((await response.json()).error.code, "bill_match_query_too_broad");
+  const lookups = receivedRequests
+    .slice(before)
+    .filter((request) => request.path.startsWith("/transactions?"));
+  assert.equal(lookups.length, 11);
+  assert.ok(
+    lookups.every((lookup) => {
+      const params = new URL(lookup.path, "http://bridge.invalid").searchParams;
+      return (
+        /^\d{4}-\d{2}-\d{2}$/.test(params.get("start_date") ?? "") &&
+        /^\d{4}-\d{2}-\d{2}$/.test(params.get("end_date") ?? "")
+      );
+    })
+  );
+  assert.match(lookups[0].path, /start_date=0000-01-01/);
 });
 
 test("bill matching v2 stops scheduling account queries after a source failure", async () => {

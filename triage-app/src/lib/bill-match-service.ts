@@ -20,12 +20,21 @@ import { getPolicyRuntime } from "@/lib/policy-runtime";
 const BRIDGE_TIMEOUT_MS = 30_000;
 const MAX_BRIDGE_RESPONSE_BYTES = 512 * 1024;
 const ACCOUNT_QUERY_CONCURRENCY = 8;
-const MAX_TRANSACTION_SEARCH_SPAN_DAYS = 365;
+const MAX_BRIDGE_QUERY_SPAN_DAYS = 365;
+const MAX_EXPANSION_CHUNKS = 10;
+const POST_DUE_SEARCH_BUFFER_DAYS = 30;
+const MIN_CALENDAR_DATE = "0000-01-01";
+const MAX_CALENDAR_DATE = "9999-12-31";
 
 interface BridgeTransactionSource {
   transactions: BillMatchTransactionV2[];
   incomplete: boolean;
   sourceAsOf: string;
+}
+
+interface TransactionSearchWindow {
+  start: string;
+  end: string;
 }
 
 export async function matchBillToTransactionsV1(
@@ -94,33 +103,112 @@ async function matchBillToTransactionsV2(
     input.amountToleranceMinor ??
     defaultBillAmountToleranceMinorV1(input.expectedAmountMinor);
   const searchedAt = new Date().toISOString();
-  const windowEnd = searchedAt.slice(0, 10);
-  const startAnchor =
-    input.billDate ??
-    (anchorDate < windowEnd ? anchorDate : windowEnd);
-  const requestedWindowStart = shiftDate(
-    startAnchor,
-    -input.dateWindowDays
+  const observableEnd = searchedAt.slice(0, 10);
+  const primaryWindow = createPrimarySearchWindow(
+    input.billDate,
+    input.dueDate,
+    input.dateWindowDays,
+    observableEnd
   );
-  const maximumWindowStart = shiftDate(
-    windowEnd,
-    -MAX_TRANSACTION_SEARCH_SPAN_DAYS
-  );
-  const windowStart =
-    requestedWindowStart < maximumWindowStart
-      ? maximumWindowStart
-      : requestedWindowStart;
+  const primaryChunks = chunkSearchWindow(primaryWindow);
+  const allExpansionChunks =
+    primaryWindow.end < observableEnd
+      ? chunkSearchWindow({
+          start: shiftDate(primaryWindow.end, 1),
+          end: observableEnd,
+        })
+      : [];
+  const expansionChunks = allExpansionChunks.slice(0, MAX_EXPANSION_CHUNKS);
+  const expansionTruncated =
+    expansionChunks.length < allExpansionChunks.length;
   const queryController = new AbortController();
   const queryTimeout = setTimeout(
     () => queryController.abort(),
     BRIDGE_TIMEOUT_MS
   );
-  let sourceResults: Array<{
-    accountRef: string;
-    source: BridgeTransactionSource | NextResponse;
-  }>;
+  const transactionsByRef = new Map<string, BillMatchTransactionV2>();
+  const sourceAsOfValues: string[] = [];
+  let searchedWindowEnd = primaryWindow.end;
   try {
-    sourceResults = await mapWithConcurrency(
+    const primaryError = await searchTransactionWindows(
+      primaryChunks,
+      eligibleAccounts,
+      bridgeBaseUrl,
+      bridgeToken,
+      input.expectedAmountMinor,
+      tolerance,
+      queryController,
+      transactionsByRef,
+      sourceAsOfValues
+    );
+    if (primaryError) return primaryError;
+
+    let ranked = rankBillMatchCandidatesV2(
+      input,
+      [...transactionsByRef.values()],
+      createSearchContext(
+        anchorDate,
+        primaryWindow.start,
+        searchedWindowEnd,
+        input.dateWindowDays,
+        sourceAsOfValues,
+        searchedAt,
+        eligibleAccounts.length,
+        transactionsByRef.size
+      )
+    );
+    for (const expansionChunk of expansionChunks) {
+      if (ranked.matchStatus === "matched") break;
+      const expansionError = await searchTransactionWindows(
+        [expansionChunk],
+        eligibleAccounts,
+        bridgeBaseUrl,
+        bridgeToken,
+        input.expectedAmountMinor,
+        tolerance,
+        queryController,
+        transactionsByRef,
+        sourceAsOfValues
+      );
+      if (expansionError) return expansionError;
+      searchedWindowEnd = expansionChunk.end;
+      ranked = rankBillMatchCandidatesV2(
+        input,
+        [...transactionsByRef.values()],
+        createSearchContext(
+          anchorDate,
+          primaryWindow.start,
+          searchedWindowEnd,
+          input.dateWindowDays,
+          sourceAsOfValues,
+          searchedAt,
+          eligibleAccounts.length,
+          transactionsByRef.size
+        )
+      );
+    }
+    if (ranked.matchStatus !== "matched" && expansionTruncated) {
+      return queryTooBroad();
+    }
+    return financeInsightJson(ranked);
+  } finally {
+    clearTimeout(queryTimeout);
+  }
+}
+
+async function searchTransactionWindows(
+  windows: readonly TransactionSearchWindow[],
+  eligibleAccounts: readonly string[],
+  bridgeBaseUrl: URL,
+  bridgeToken: string,
+  amountMinor: number,
+  tolerance: number,
+  queryController: AbortController,
+  transactionsByRef: Map<string, BillMatchTransactionV2>,
+  sourceAsOfValues: string[]
+): Promise<NextResponse | null> {
+  for (const window of windows) {
+    const sourceResults = await mapWithConcurrency(
       eligibleAccounts,
       ACCOUNT_QUERY_CONCURRENCY,
       async (accountRef) => ({
@@ -129,9 +217,9 @@ async function matchBillToTransactionsV2(
           bridgeBaseUrl,
           bridgeToken,
           createTransactionQueryForWindow(
-            windowStart,
-            windowEnd,
-            input.expectedAmountMinor,
+            window.start,
+            window.end,
+            amountMinor,
             tolerance,
             accountRef
           ),
@@ -142,59 +230,94 @@ async function matchBillToTransactionsV2(
       (result) => result.source instanceof NextResponse,
       () => queryController.abort()
     );
-  } finally {
-    clearTimeout(queryTimeout);
-  }
-  const resolvedSources: Array<{
-    accountRef: string;
-    source: BridgeTransactionSource;
-  }> = [];
-  for (const result of sourceResults) {
-    if (result.source instanceof NextResponse) return result.source;
-    resolvedSources.push({
-      accountRef: result.accountRef,
-      source: result.source,
-    });
-  }
-  if (resolvedSources.some(({ source }) => source.incomplete)) {
-    return queryTooBroad();
-  }
-
-  const transactionsByRef = new Map<string, BillMatchTransactionV2>();
-  for (const { accountRef, source } of resolvedSources) {
-    for (const transaction of source.transactions) {
-      if (transaction.accountRef !== accountRef) {
-        return invalidSourceResponse();
+    for (const result of sourceResults) {
+      if (result.source instanceof NextResponse) return result.source;
+      if (result.source.incomplete) return queryTooBroad();
+      sourceAsOfValues.push(result.source.sourceAsOf);
+      for (const transaction of result.source.transactions) {
+        if (transaction.accountRef !== result.accountRef) {
+          return invalidSourceResponse();
+        }
+        const previous = transactionsByRef.get(transaction.transactionRef);
+        if (
+          previous &&
+          JSON.stringify(previous) !== JSON.stringify(transaction)
+        ) {
+          return invalidSourceResponse();
+        }
+        transactionsByRef.set(transaction.transactionRef, transaction);
       }
-      const previous = transactionsByRef.get(transaction.transactionRef);
-      if (previous && JSON.stringify(previous) !== JSON.stringify(transaction)) {
-        return invalidSourceResponse();
-      }
-      transactionsByRef.set(transaction.transactionRef, transaction);
     }
   }
-  const transactions = [...transactionsByRef.values()];
-  const sourceAsOf =
-    resolvedSources.length === 0
-      ? searchedAt
-      : resolvedSources
-          .map(({ source }) => source.sourceAsOf)
-          .reduce((oldest, candidate) =>
-            Date.parse(candidate) < Date.parse(oldest) ? candidate : oldest
-          );
+  return null;
+}
 
-  return financeInsightJson(
-    rankBillMatchCandidatesV2(input, transactions, {
-      anchorDate,
-      windowStart,
-      windowEnd,
-      dateWindowDays: input.dateWindowDays,
-      sourceAsOf,
-      searchedAt,
-      eligibleAccountCount: eligibleAccounts.length,
-      candidatePoolSize: transactions.length,
-    })
+function createPrimarySearchWindow(
+  billDate: string | undefined,
+  dueDate: string | undefined,
+  dateWindowDays: number,
+  observableEnd: string
+): TransactionSearchWindow {
+  const meaningfulDates = [billDate, dueDate].filter(
+    (value): value is string => value !== undefined
   );
+  const earliestMeaningfulDate = meaningfulDates.reduce((earliest, candidate) =>
+    candidate < earliest ? candidate : earliest
+  );
+  const latestMeaningfulDate = meaningfulDates.reduce((latest, candidate) =>
+    candidate > latest ? candidate : latest
+  );
+  const requestedStart = shiftDate(earliestMeaningfulDate, -dateWindowDays);
+  const requestedEnd = shiftDate(
+    latestMeaningfulDate,
+    Math.max(dateWindowDays, POST_DUE_SEARCH_BUFFER_DAYS)
+  );
+  return {
+    start: requestedStart > observableEnd ? observableEnd : requestedStart,
+    end: requestedEnd > observableEnd ? observableEnd : requestedEnd,
+  };
+}
+
+function chunkSearchWindow(
+  window: TransactionSearchWindow
+): TransactionSearchWindow[] {
+  const chunks: TransactionSearchWindow[] = [];
+  let start = window.start;
+  while (start <= window.end) {
+    const maximumEnd = shiftDate(start, MAX_BRIDGE_QUERY_SPAN_DAYS);
+    const end = maximumEnd < window.end ? maximumEnd : window.end;
+    chunks.push({ start, end });
+    start = shiftDate(end, 1);
+  }
+  return chunks;
+}
+
+function createSearchContext(
+  anchorDate: string,
+  windowStart: string,
+  windowEnd: string,
+  dateWindowDays: number,
+  sourceAsOfValues: readonly string[],
+  searchedAt: string,
+  eligibleAccountCount: number,
+  candidatePoolSize: number
+) {
+  const sourceAsOf =
+    sourceAsOfValues.length === 0
+      ? searchedAt
+      : sourceAsOfValues.reduce((oldest, candidate) =>
+          Date.parse(candidate) < Date.parse(oldest) ? candidate : oldest
+        );
+  return {
+    anchorDate,
+    windowStart,
+    windowEnd,
+    dateWindowDays,
+    sourceAsOf,
+    searchedAt,
+    eligibleAccountCount,
+    candidatePoolSize,
+  };
 }
 
 async function readHouseholdCurrency(): Promise<string | NextResponse> {
@@ -242,7 +365,7 @@ async function readBillMatchAccountRefs(): Promise<string[] | NextResponse> {
 }
 
 async function mapWithConcurrency<T, R>(
-  values: T[],
+  values: readonly T[],
   concurrency: number,
   operation: (value: T) => Promise<R>,
   shouldStop: (result: R) => boolean = () => false,
@@ -493,9 +616,13 @@ function parseBridgeTransactions(
 }
 
 function shiftDate(value: string, days: number): string {
-  const date = new Date(`${value}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
+  const shifted =
+    Date.parse(`${value}T00:00:00Z`) + days * 24 * 60 * 60 * 1_000;
+  const minimum = Date.parse(`${MIN_CALENDAR_DATE}T00:00:00Z`);
+  const maximum = Date.parse(`${MAX_CALENDAR_DATE}T00:00:00Z`);
+  if (shifted <= minimum) return MIN_CALENDAR_DATE;
+  if (shifted >= maximum) return MAX_CALENDAR_DATE;
+  return new Date(shifted).toISOString().slice(0, 10);
 }
 
 function minorToMoney(value: number): string {
