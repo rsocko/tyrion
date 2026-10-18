@@ -29,7 +29,7 @@ Tyrion loads the normalized Bridge account catalog and searches every account by
 default. Operators may exclude specific accounts in **Settings → Bill matching**.
 Those exclusions are stored in Tyrion's versioned household policy. An empty
 exclusion set means all catalog accounts, including inactive accounts that may still
-contain historical payments, are searched. Tyrion performs one bounded query per
+contain historical payments, are searched. Tyrion performs bounded queries per
 included account with bounded concurrency. Account references remain server-side and
 are never returned in bill-matching responses.
 
@@ -64,11 +64,20 @@ is needed. Existing policy stores migrate to an empty exclusion set.
 Unknown fields are rejected. `requestRef` and `billRef` are caller-owned opaque
 references. `dueDate` and `billDate` are optional individually, but at least one is
 required; `dueDate` is the scoring anchor when both are present. It is not a search
-cutoff. V2 searches through the current check date so late payments remain eligible.
-The search begins at `billDate - dateWindowDays` when a bill date is available,
-otherwise at `dueDate - dateWindowDays`, and is capped to the Bridge's 366-day
-inclusive range. `reference` is bounded caller context and is not a ranking signal.
-Amount, currency, tolerance, and candidate limits use the v1 bounds.
+cutoff. V2 first searches the meaningful bill interval, beginning
+`dateWindowDays` before the earlier of `billDate` and `dueDate` and continuing
+through 30 days after the later date (or the current check date when sooner). If
+that primary interval produces a decisive match, Tyrion returns it without scanning
+newer history. Otherwise Tyrion expands forward toward the current check date in
+non-overlapping stages. Every per-account Bridge request is limited to at most 366
+inclusive calendar days; long primary or expansion ranges are split into bounded
+chunks, then candidates are deduplicated and ranked together. The current date is
+only the latest observable bound and never shifts the primary start forward.
+Expansion is limited to ten additional chunks per request; a still-inconclusive
+search that would require more history fails closed as `bill_match_query_too_broad`
+instead of returning a false no-match or issuing unbounded requests.
+`reference` is bounded caller context and is not a ranking signal. Amount, currency,
+tolerance, and candidate limits use the v1 bounds.
 
 `receiptEvidence` is optional supporting evidence from the bounded receipt workflow.
 It is not added to the numeric score and is never proof that the obligation is
@@ -128,8 +137,8 @@ complete.
   ],
   "searchContext": {
     "anchorDate": "2026-08-15",
-    "windowStart": "2026-08-08",
-    "windowEnd": "2026-08-22",
+    "windowStart": "2026-07-25",
+    "windowEnd": "2026-08-16",
     "dateWindowDays": 7,
     "amountToleranceMinor": 250,
     "sourceAsOf": "2026-08-16T12:01:00.000Z",
@@ -170,11 +179,14 @@ states from a single search.
 
 `sourceAsOf` is the oldest Bridge `provenance.fetchedAt` value across the included
 account queries, so consumers can make a conservative freshness decision.
-`searchedAt` is when Tyrion assembled the response. `windowEnd` is always the current
-UTC check date; a future due date remains only a scoring anchor and cannot move the
-search window forward or exclude an already-submitted payment. The exact bounded
-search window, tolerance, eligible-account count, and pre-limit candidate pool size
-are included.
+`searchedAt` is when Tyrion assembled the response. `windowStart` and `windowEnd`
+describe the aggregate range actually searched: a decisive primary match can leave
+`windowEnd` at the primary post-due bound, while an expanded search advances it
+toward the current UTC check date. A future due date remains only a scoring anchor
+and cannot move the observable search window beyond today or exclude an
+already-submitted payment. The aggregate searched range may exceed one Bridge
+request's limit because Tyrion splits it into bounded stages. The tolerance,
+eligible-account count, and deduplicated pre-limit candidate pool size are included.
 
 V2 preserves all v1 failure codes and adds:
 
