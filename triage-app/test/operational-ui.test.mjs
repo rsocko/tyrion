@@ -421,6 +421,17 @@ before(async () => {
         return;
       }
       if (request.url.startsWith("/transactions?") && request.method === "GET") {
+        const accountRef = new URL(request.url, "http://bridge.invalid")
+          .searchParams.get("account_id");
+        const transactions = accountRef
+          ? bridgeTransactions.filter(
+              (transaction) => transaction.account.id === accountRef
+            )
+          : bridgeTransactions;
+        const total =
+          bridgeTransactionTotal === bridgeTransactions.length
+            ? transactions.length
+            : bridgeTransactionTotal;
         response.writeHead(200, {
           "Content-Type": "application/json",
           "X-Monarch-Contract-Version": "1.0",
@@ -431,8 +442,8 @@ before(async () => {
             provider: "live",
             fetchedAt: "2026-08-11T14:00:00.123456Z",
           },
-          transactions: bridgeTransactions,
-          total: bridgeTransactionTotal,
+          transactions,
+          total,
           page: { limit: 100, nextCursor: bridgeTransactionNextCursor },
         }));
         return;
@@ -736,8 +747,6 @@ before(async () => {
       ...process.env,
       BRIDGE_URL: fakeBridgeUrl,
       BRIDGE_API_TOKEN: serviceToken,
-      TYRION_BILL_MATCH_ELIGIBLE_ACCOUNT_REFS:
-        "account-invented-checking",
       OWL_RECEIPT_INTAKE_URL: fakeOwlUrl,
       OWL_RECEIPT_INTAKE_API_TOKEN: owlReceiptToken,
       TYRION_RECEIPT_IDENTITY_NAMESPACE:
@@ -3442,7 +3451,16 @@ test("bill matching returns a deterministic privacy-bounded paid result", async 
   assert.match(lookup.path, /account_id=account-invented-checking/);
 });
 
-test("bill matching v2 returns decision-grade values from configured eligible accounts", async () => {
+test("bill matching v2 searches every catalog account without account environment configuration", async () => {
+  bridgeAccounts.push({
+    id: "account-invented-checking",
+    displayName: "Invented Checking",
+    type: "checking",
+    mask: "4321",
+    institution: null,
+    currentBalance: 0,
+    isActive: true,
+  });
   bridgeTransactions[0].account.mask = "4321";
   const expectedSearchEnd = new Date().toISOString().slice(0, 10);
   const before = receivedRequests.length;
@@ -3515,18 +3533,37 @@ test("bill matching v2 returns decision-grade values from configured eligible ac
   assert.equal(result.searchContext.anchorDate, "2026-08-15");
   assert.equal(result.searchContext.windowStart, "2026-08-08");
   assert.equal(result.searchContext.windowEnd, expectedSearchEnd);
-  assert.equal(result.searchContext.eligibleAccountCount, 1);
   assert.equal(result.searchContext.candidatePoolSize, 1);
   assert.match(result.searchContext.sourceAsOf, /Z$/);
   assert.match(result.searchContext.searchedAt, /Z$/);
-  const lookups = receivedRequests.slice(before);
-  assert.equal(lookups.length, 1);
-  assert.match(lookups[0].path, /account_id=account-invented-checking/);
-  assert.match(lookups[0].path, new RegExp(`end_date=${expectedSearchEnd}`));
+  const lookups = receivedRequests
+    .slice(before)
+    .filter((request) => request.path.startsWith("/transactions?"));
+  assert.equal(result.searchContext.eligibleAccountCount, 3);
+  assert.equal(lookups.length, 3);
+  assert.ok(
+    lookups.some((lookup) =>
+      lookup.path.includes("account_id=account-invented-checking")
+    )
+  );
+  assert.ok(
+    lookups.every((lookup) =>
+      new RegExp(`end_date=${expectedSearchEnd}`).test(lookup.path)
+    )
+  );
   assert.doesNotMatch(JSON.stringify(result), /account-invented-checking/);
 });
 
 test("bill matching v2 does not let a future due date exclude an early payment", async () => {
+  bridgeAccounts.push({
+    id: "account-invented-checking",
+    displayName: "Invented Checking",
+    type: "checking",
+    mask: "4321",
+    institution: null,
+    currentBalance: 0,
+    isActive: true,
+  });
   const expectedSearchEnd = new Date().toISOString().slice(0, 10);
   const before = receivedRequests.length;
   const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
@@ -3551,10 +3588,52 @@ test("bill matching v2 does not let a future due date exclude an early payment",
   assert.equal(result.searchContext.anchorDate, "2027-11-30");
   assert.equal(result.searchContext.windowStart, "2026-07-25");
   assert.equal(result.searchContext.windowEnd, expectedSearchEnd);
-  const lookups = receivedRequests.slice(before);
-  assert.equal(lookups.length, 1);
-  assert.match(lookups[0].path, /start_date=2026-07-25/);
-  assert.match(lookups[0].path, new RegExp(`end_date=${expectedSearchEnd}`));
+  const lookups = receivedRequests
+    .slice(before)
+    .filter((request) => request.path.startsWith("/transactions?"));
+  assert.equal(lookups.length, 3);
+  assert.ok(lookups.every((lookup) => /start_date=2026-07-25/.test(lookup.path)));
+  assert.ok(
+    lookups.every((lookup) =>
+      new RegExp(`end_date=${expectedSearchEnd}`).test(lookup.path)
+    )
+  );
+});
+
+test("bill matching v2 stops scheduling account queries after a source failure", async () => {
+  bridgeAccounts = Array.from({ length: 1_000 }, (_, index) => ({
+    id: `invented-account-${index}`,
+    displayName: `Invented Account ${index}`,
+    type: "checking",
+    mask: null,
+    institution: null,
+    currentBalance: 0,
+    isActive: true,
+  }));
+  bridgeResponseMode = "non-2xx";
+  bridgePathResponseModes.set("/accounts", "normal");
+  const before = receivedRequests.length;
+  const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      contractVersion: "2.0",
+      requestRef: "payment-check-source-failure",
+      billRef: "bill-source-failure",
+      payee: "Invented Utility Company",
+      expectedAmountMinor: 12345,
+      currency: "USD",
+      dueDate: "2026-08-15",
+      accountScope: "configuredEligible",
+    }),
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "bill_match_source_unavailable");
+  const transactionLookups = receivedRequests
+    .slice(before)
+    .filter((request) => request.path.startsWith("/transactions?"));
+  assert.ok(transactionLookups.length > 0);
+  assert.ok(transactionLookups.length <= 8);
 });
 
 test("bill matching exposes ambiguity and pending without leaking transaction detail", async () => {
@@ -4182,6 +4261,7 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
   activePolicy = (await created.json()).policy;
   assert.equal(activePolicy.policyVersion, 1);
   assert.equal(activePolicy.householdId, policyActor.householdId);
+  assert.deepEqual(activePolicy.billMatchExcludedAccountRefs, []);
 
   const stale = await policyFetch("/api/policy", "PUT", {
     expectedPolicyVersion: null,
@@ -4189,6 +4269,90 @@ test("policy API creates a strict household-scoped policy and rejects stale writ
   });
   assert.equal(stale.status, 409);
   assert.equal((await stale.json()).error.code, "policy_version_conflict");
+});
+
+test("bill matching uses UI-managed account exclusions and permits excluding every account", async () => {
+  bridgeAccounts.push({
+    id: "account-invented-checking",
+    displayName: "Invented Checking",
+    type: "checking",
+    mask: "4321",
+    institution: null,
+    currentBalance: 0,
+    isActive: true,
+  });
+  const allAccountRefs = bridgeAccounts.map((account) => account.id);
+  const updated = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: {
+      ...policyDraft(activePolicy),
+      billMatchExcludedAccountRefs: ["invented-card", "invented-cash"],
+    },
+  });
+  assert.equal(updated.status, 200);
+  activePolicy = (await updated.json()).policy;
+
+  const before = receivedRequests.length;
+  const response = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      contractVersion: "2.0",
+      requestRef: "payment-check-exclusions",
+      billRef: "bill-exclusions",
+      payee: "Invented Utility Company",
+      expectedAmountMinor: 12345,
+      currency: "USD",
+      dueDate: "2026-08-15",
+      accountScope: "configuredEligible",
+    }),
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.searchContext.eligibleAccountCount, 1);
+  const lookups = receivedRequests
+    .slice(before)
+    .filter((request) => request.path.startsWith("/transactions?"));
+  assert.equal(lookups.length, 1);
+  assert.match(lookups[0].path, /account_id=account-invented-checking/);
+
+  const excludedAll = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: {
+      ...policyDraft(activePolicy),
+      billMatchExcludedAccountRefs: allAccountRefs,
+    },
+  });
+  assert.equal(excludedAll.status, 200);
+  activePolicy = (await excludedAll.json()).policy;
+  const noAccounts = await fetch(`${uiUrl}/api/connector/v1/bill-matches`, {
+    method: "POST",
+    headers: insightHeaders({ Host: undefined }),
+    body: JSON.stringify({
+      contractVersion: "2.0",
+      requestRef: "payment-check-no-accounts",
+      billRef: "bill-no-accounts",
+      payee: "Invented Utility Company",
+      expectedAmountMinor: 12345,
+      currency: "USD",
+      dueDate: "2026-08-15",
+      accountScope: "configuredEligible",
+    }),
+  });
+  assert.equal(noAccounts.status, 200);
+  const noAccountResult = await noAccounts.json();
+  assert.equal(noAccountResult.matchStatus, "noMatch");
+  assert.equal(noAccountResult.searchContext.eligibleAccountCount, 0);
+
+  const restored = await policyFetch("/api/policy", "PUT", {
+    expectedPolicyVersion: activePolicy.policyVersion,
+    policy: {
+      ...policyDraft(activePolicy),
+      billMatchExcludedAccountRefs: [],
+    },
+  });
+  assert.equal(restored.status, 200);
+  activePolicy = (await restored.json()).policy;
 });
 
 test("attribution policy discovery returns active metadata and authoritative household currency", async () => {
@@ -5314,6 +5478,7 @@ function policyDraft(policy) {
   return {
     timezone: policy.timezone,
     currency: policy.currency,
+    billMatchExcludedAccountRefs: policy.billMatchExcludedAccountRefs,
     kids: policy.kids,
     accountDefaults: policy.accountDefaults,
     merchantRules: policy.merchantRules,

@@ -392,6 +392,28 @@ describe('durable file policy repository', () => {
     expect(migrated).not.toHaveProperty('legacyAccountRules');
   });
 
+  it('adds an empty bill matching exclusion set to existing policy stores', async () => {
+    const directory = await temporaryDirectory();
+    const path = resolve(directory, 'policies.json');
+    const {
+      billMatchExcludedAccountRefs: _discardedExclusions,
+      ...legacySnapshot
+    } = policyFixture;
+    await writeFile(
+      path,
+      JSON.stringify({
+        storageVersion: 3,
+        policies: { [policyFixture.householdId]: legacySnapshot },
+        audit: [],
+      })
+    );
+
+    const migrated = await new FilePolicyRepository(path).load(
+      policyFixture.householdId
+    );
+    expect(migrated?.billMatchExcludedAccountRefs).toEqual([]);
+  });
+
   it('enforces compare-and-swap when a writer uses a stale version', async () => {
     const directory = await temporaryDirectory();
     const repository = new FilePolicyRepository(resolve(directory, 'policies.json'));

@@ -19,16 +19,23 @@ Content-Type: application/json
 The connector authentication, browser rejection, no-store response, 1 KiB request
 bound, sanitized errors, and single-household scope documented for v1 also apply.
 
-## Eligible account configuration
+## Account search scope
 
 V2 accepts only `accountScope: "configuredEligible"`. The caller cannot provide an
-account identifier. Tyrion reads a non-empty, unique, comma-separated list of at most
-20 normalized Bridge account references from the server-only
-`TYRION_BILL_MATCH_ELIGIBLE_ACCOUNT_REFS` setting and performs one bounded query per
-configured account. The response never exposes those account references.
+account identifier. The literal is retained as part of the existing v2 request
+contract; account scope is owned entirely by Tyrion.
 
-Missing or invalid configuration fails with HTTP 503 and
-`bill_match_eligible_accounts_unavailable`.
+Tyrion loads the normalized Bridge account catalog and searches every account by
+default. Operators may exclude specific accounts in **Settings → Bill matching**.
+Those exclusions are stored in Tyrion's versioned household policy. An empty
+exclusion set means all catalog accounts, including inactive accounts that may still
+contain historical payments, are searched. Tyrion performs one bounded query per
+included account with bounded concurrency. Account references remain server-side and
+are never returned in bill-matching responses.
+
+Bill Matching v2 has no account-scope environment setting. During deployment
+upgrades, remove `TYRION_BILL_MATCH_ELIGIBLE_ACCOUNT_REFS`; no replacement variable
+is needed. Existing policy stores migrate to an empty exclusion set.
 
 ## Request
 
@@ -161,7 +168,7 @@ states from a single search.
 
 ## Freshness and failure behavior
 
-`sourceAsOf` is the oldest Bridge `provenance.fetchedAt` value across the eligible
+`sourceAsOf` is the oldest Bridge `provenance.fetchedAt` value across the included
 account queries, so consumers can make a conservative freshness decision.
 `searchedAt` is when Tyrion assembled the response. `windowEnd` is always the current
 UTC check date; a future due date remains only a scoring anchor and cannot move the
@@ -173,9 +180,11 @@ V2 preserves all v1 failure codes and adds:
 
 | Status | Stable code | Meaning |
 | ---: | --- | --- |
-| 503 | `bill_match_eligible_accounts_unavailable` | Eligible account configuration is missing, invalid, duplicated, or exceeds 20 entries. |
+| 502 | `invalid_bill_match_account_catalog` | The normalized Bridge account catalog failed contract validation. |
+| 503 | `bill_match_account_catalog_unavailable` | The normalized Bridge account catalog could not be loaded. |
+| 503 | `bill_match_configuration_unavailable` | Tyrion's persisted household configuration could not be loaded. |
 
-Any eligible-account query failure fails the whole request. Malformed account display
+Any included-account query failure fails the whole request. Malformed account display
 data, unexpected account leakage, conflicting duplicate transactions, incomplete
 pages, or invalid provenance fail closed without returning upstream bodies or
 exception text.

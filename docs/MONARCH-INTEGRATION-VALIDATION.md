@@ -4,14 +4,14 @@
 
 `POST /api/connector/v1/bill-matches` supports unchanged Bill Matching v1 and the
 decision-grade v2 contract. V2 performs one bounded Bridge v1 transaction query for
-each server-configured eligible account, rejects unexpected account leakage, and
+each normalized account not excluded by Tyrion policy, rejects unexpected account leakage, and
 returns actual normalized payee, amount, date, pending state, account display/mask,
 ranking, receipt-association, and conservative freshness context without raw account
 IDs. Both versions derive bounded Bridge v1
 `GET /transactions` lookup from strict normalized bill fields and scores only the
 normalized transaction DTO. Deterministic automated coverage uses invented transactions
 and verifies v1 compatibility plus v2 paid, pending, unmatched, ambiguous,
-configured-account scope, actual candidate values, receipt support, freshness,
+all-accounts default scope, optional persisted exclusions, actual candidate values, receipt support, freshness,
 late-payment search through the current check date, authorization, browser rejection,
 invalid caller scope, malformed response, and unavailable dependency behavior. No
 live bill or transaction fixture is permitted.
