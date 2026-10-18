@@ -61,10 +61,13 @@ export async function PUT(request: NextRequest) {
       actor,
       actor.householdId
     );
-    if (
+    const accountDefaultsChanged =
       JSON.stringify(current?.accountDefaults ?? []) !==
-      JSON.stringify(draft.accountDefaults)
-    ) {
+      JSON.stringify(draft.accountDefaults);
+    const billMatchExclusionsChanged =
+      JSON.stringify(current?.billMatchExcludedAccountRefs ?? []) !==
+      JSON.stringify(draft.billMatchExcludedAccountRefs);
+    if (accountDefaultsChanged || billMatchExclusionsChanged) {
       let accountRefs: Set<string>;
       try {
         accountRefs = new Set(
@@ -96,6 +99,18 @@ export async function PUT(request: NextRequest) {
             "account_reference_not_found",
             422,
             "Account default must reference an account in the current Bridge catalog"
+          );
+        }
+      }
+      const currentExclusions = new Set(
+        current?.billMatchExcludedAccountRefs ?? []
+      );
+      for (const accountRef of draft.billMatchExcludedAccountRefs) {
+        if (!accountRefs.has(accountRef) && !currentExclusions.has(accountRef)) {
+          throw new PolicyRequestError(
+            "account_reference_not_found",
+            422,
+            "Bill matching exclusions must reference accounts in the current Bridge catalog"
           );
         }
       }

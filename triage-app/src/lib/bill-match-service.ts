@@ -10,12 +10,17 @@ import { FinanceInsightContractValidationError } from "@rsocko/tyrion-finance-in
 import { NextResponse } from "next/server";
 import { financeInsightJson } from "@/lib/finance-insight-http";
 import { getFinanceInsightRuntime } from "@/lib/finance-insight-runtime";
+import {
+  AccountCatalogServerError,
+  loadAccountCatalogServer,
+} from "@/lib/account-catalog-server";
+import { resolveHomelabPolicyActor } from "@/lib/homelab-identity";
+import { getPolicyRuntime } from "@/lib/policy-runtime";
 
 const BRIDGE_TIMEOUT_MS = 30_000;
 const MAX_BRIDGE_RESPONSE_BYTES = 512 * 1024;
-const MAX_ELIGIBLE_ACCOUNTS = 20;
+const ACCOUNT_QUERY_CONCURRENCY = 8;
 const MAX_TRANSACTION_SEARCH_SPAN_DAYS = 365;
-const ACCOUNT_REF = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 interface BridgeTransactionSource {
   transactions: BillMatchTransactionV2[];
@@ -26,16 +31,10 @@ interface BridgeTransactionSource {
 export async function matchBillToTransactionsV1(
   body: unknown,
   bridgeBaseUrl: URL,
-  bridgeToken: string,
-  eligibleAccountConfiguration?: string
+  bridgeToken: string
 ): Promise<NextResponse> {
   if (plainObject(body) && body.contractVersion === "2.0") {
-    return matchBillToTransactionsV2(
-      body,
-      bridgeBaseUrl,
-      bridgeToken,
-      eligibleAccountConfiguration
-    );
+    return matchBillToTransactionsV2(body, bridgeBaseUrl, bridgeToken);
   }
   return matchBillToTransactionsLegacyV1(body, bridgeBaseUrl, bridgeToken);
 }
@@ -76,22 +75,15 @@ async function matchBillToTransactionsLegacyV1(
 async function matchBillToTransactionsV2(
   body: unknown,
   bridgeBaseUrl: URL,
-  bridgeToken: string,
-  eligibleAccountConfiguration?: string
+  bridgeToken: string
 ): Promise<NextResponse> {
   const input = parseBillMatchRequestV2(body);
   const householdCurrency = await readHouseholdCurrency();
   if (householdCurrency instanceof NextResponse) return householdCurrency;
   if (input.currency !== householdCurrency) return currencyMismatch();
 
-  const eligibleAccounts = parseEligibleAccounts(eligibleAccountConfiguration);
-  if (!eligibleAccounts) {
-    return gatewayError(
-      503,
-      "bill_match_eligible_accounts_unavailable",
-      "Bill matching eligible accounts are unavailable"
-    );
-  }
+  const eligibleAccounts = await readBillMatchAccountRefs();
+  if (eligibleAccounts instanceof NextResponse) return eligibleAccounts;
   const anchorDate = input.dueDate ?? input.billDate;
   if (!anchorDate) {
     throw new FinanceInsightContractValidationError(
@@ -118,36 +110,60 @@ async function matchBillToTransactionsV2(
     requestedWindowStart < maximumWindowStart
       ? maximumWindowStart
       : requestedWindowStart;
-  const sources = await Promise.all(
-    eligibleAccounts.map((accountRef) =>
-      fetchBridgeTransactions(
-        bridgeBaseUrl,
-        bridgeToken,
-        createTransactionQueryForWindow(
-          windowStart,
-          windowEnd,
-          input.expectedAmountMinor,
-          tolerance,
-          accountRef
-        ),
-        true
-      )
-    )
+  const queryController = new AbortController();
+  const queryTimeout = setTimeout(
+    () => queryController.abort(),
+    BRIDGE_TIMEOUT_MS
   );
-  const resolvedSources: BridgeTransactionSource[] = [];
-  for (const source of sources) {
-    if (source instanceof NextResponse) return source;
-    resolvedSources.push(source);
+  let sourceResults: Array<{
+    accountRef: string;
+    source: BridgeTransactionSource | NextResponse;
+  }>;
+  try {
+    sourceResults = await mapWithConcurrency(
+      eligibleAccounts,
+      ACCOUNT_QUERY_CONCURRENCY,
+      async (accountRef) => ({
+        accountRef,
+        source: await fetchBridgeTransactions(
+          bridgeBaseUrl,
+          bridgeToken,
+          createTransactionQueryForWindow(
+            windowStart,
+            windowEnd,
+            input.expectedAmountMinor,
+            tolerance,
+            accountRef
+          ),
+          true,
+          queryController.signal
+        ),
+      }),
+      (result) => result.source instanceof NextResponse,
+      () => queryController.abort()
+    );
+  } finally {
+    clearTimeout(queryTimeout);
   }
-  if (resolvedSources.some((source) => source.incomplete)) {
+  const resolvedSources: Array<{
+    accountRef: string;
+    source: BridgeTransactionSource;
+  }> = [];
+  for (const result of sourceResults) {
+    if (result.source instanceof NextResponse) return result.source;
+    resolvedSources.push({
+      accountRef: result.accountRef,
+      source: result.source,
+    });
+  }
+  if (resolvedSources.some(({ source }) => source.incomplete)) {
     return queryTooBroad();
   }
 
   const transactionsByRef = new Map<string, BillMatchTransactionV2>();
-  for (let index = 0; index < resolvedSources.length; index += 1) {
-    const expectedAccountRef = eligibleAccounts[index];
-    for (const transaction of resolvedSources[index].transactions) {
-      if (transaction.accountRef !== expectedAccountRef) {
+  for (const { accountRef, source } of resolvedSources) {
+    for (const transaction of source.transactions) {
+      if (transaction.accountRef !== accountRef) {
         return invalidSourceResponse();
       }
       const previous = transactionsByRef.get(transaction.transactionRef);
@@ -158,12 +174,14 @@ async function matchBillToTransactionsV2(
     }
   }
   const transactions = [...transactionsByRef.values()];
-  const sourceAsOf = resolvedSources
-    .map((source) => source.sourceAsOf)
-    .reduce((oldest, candidate) =>
-      Date.parse(candidate) < Date.parse(oldest) ? candidate : oldest
-    );
-  if (!sourceAsOf) return invalidSourceResponse();
+  const sourceAsOf =
+    resolvedSources.length === 0
+      ? searchedAt
+      : resolvedSources
+          .map(({ source }) => source.sourceAsOf)
+          .reduce((oldest, candidate) =>
+            Date.parse(candidate) < Date.parse(oldest) ? candidate : oldest
+          );
 
   return financeInsightJson(
     rankBillMatchCandidatesV2(input, transactions, {
@@ -194,18 +212,64 @@ async function readHouseholdCurrency(): Promise<string | NextResponse> {
   );
 }
 
-function parseEligibleAccounts(value: string | undefined): string[] | null {
-  if (!value) return null;
-  const accounts = value.split(",").map((account) => account.trim());
-  if (
-    accounts.length < 1 ||
-    accounts.length > MAX_ELIGIBLE_ACCOUNTS ||
-    accounts.some((account) => !ACCOUNT_REF.test(account)) ||
-    new Set(accounts).size !== accounts.length
-  ) {
-    return null;
+async function readBillMatchAccountRefs(): Promise<string[] | NextResponse> {
+  try {
+    const actor = resolveHomelabPolicyActor();
+    const [accounts, policy] = await Promise.all([
+      loadAccountCatalogServer(),
+      getPolicyRuntime().policyService.getPolicy(actor, actor.householdId),
+    ]);
+    const excluded = new Set(policy?.billMatchExcludedAccountRefs ?? []);
+    return accounts
+      .map((account) => account.accountRef)
+      .filter((accountRef) => !excluded.has(accountRef));
+  } catch (error) {
+    if (error instanceof AccountCatalogServerError) {
+      return gatewayError(
+        error.code === "invalid" ? 502 : 503,
+        error.code === "invalid"
+          ? "invalid_bill_match_account_catalog"
+          : "bill_match_account_catalog_unavailable",
+        "Bill matching account catalog is unavailable"
+      );
+    }
+    return gatewayError(
+      503,
+      "bill_match_configuration_unavailable",
+      "Bill matching configuration is unavailable"
+    );
   }
-  return accounts;
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  operation: (value: T) => Promise<R>,
+  shouldStop: (result: R) => boolean = () => false,
+  onStop: () => void = () => undefined
+): Promise<R[]> {
+  const results: R[] = [];
+  let nextIndex = 0;
+  let stopped = false;
+  async function worker() {
+    while (!stopped && nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const result = await operation(values[index]);
+      results.push(result);
+      if (shouldStop(result)) {
+        stopped = true;
+        onStop();
+      }
+    }
+  }
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, values.length) },
+      () => worker()
+    )
+  );
+  return results;
 }
 
 function createTransactionQuery(
@@ -247,10 +311,13 @@ async function fetchBridgeTransactions(
   bridgeBaseUrl: URL,
   bridgeToken: string,
   query: URLSearchParams,
-  requireDecisionGradeFields: boolean
+  requireDecisionGradeFields: boolean,
+  externalSignal?: AbortSignal
 ): Promise<BridgeTransactionSource | NextResponse> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+  const controller = externalSignal ? null : new AbortController();
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS)
+    : null;
   try {
     const headers = new Headers({ Accept: "application/json" });
     headers.set("Authorization", ["Bearer", bridgeToken].join(" "));
@@ -261,7 +328,7 @@ async function fetchBridgeTransactions(
         headers,
         cache: "no-store",
         redirect: "error",
-        signal: controller.signal,
+        signal: externalSignal ?? controller?.signal,
       }
     );
     if (!response.ok) {
@@ -288,7 +355,7 @@ async function fetchBridgeTransactions(
     if (error instanceof FinanceInsightContractValidationError) throw error;
     return sourceUnavailable();
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
 }
 

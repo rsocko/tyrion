@@ -85,3 +85,14 @@ rejected by the lease.
 For local/demo development, run the bridge with `python main.py --demo` and the UI with
 `npm run dev`; the homelab compose file is the production contract, not the local
 development launcher.
+
+## Bill matching account-scope cutover
+
+Bill Matching v2 searches every normalized Bridge account by default. Optional
+account exclusions are managed in Tyrion at **Settings → Bill matching** and persist
+in `TYRION_POLICY_STORE_PATH`.
+
+Remove `TYRION_BILL_MATCH_ELIGIBLE_ACCOUNT_REFS` from Dockhand and from any copied
+Compose or container environment configuration. No replacement environment variable
+is required. Existing policy stores migrate with an empty exclusion set, which means
+all accounts remain searchable until an operator explicitly excludes one in Tyrion.

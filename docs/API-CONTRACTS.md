@@ -163,7 +163,7 @@ Insights projection:
 | `GET` | `/document-expectation-signals` | No query or body; latest promoted snapshot across connector scope; read gate and 12 MiB projection bound |
 | `GET` | `/document-expectation-signals/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; no body; read gate and 12 MiB projection bound |
 | `GET` | `/payee-patterns/{sourceGeneration}?connectorRef={connectorRef}` | One required connector reference; immutable privacy-safe transaction/recurring evidence; no body; read gate and 12 MiB projection bound |
-| `POST` | `/bill-matches` | Strict Bill Matching v1 or v2 JSON; 1 KiB request; v2 queries at most 20 server-configured eligible accounts with at most 100 rows each and returns at most 10 decision-grade candidates without account IDs |
+| `POST` | `/bill-matches` | Strict Bill Matching v1 or v2 JSON; 1 KiB request; v2 searches every normalized Bridge account except optional Tyrion policy exclusions, reads at most 100 rows per account, and returns at most 10 decision-grade candidates without account IDs |
 
 Unknown routes, methods, parameters, duplicate singleton parameters, malformed values,
 and request bodies on bodyless operations fail before a bridge call. `/auth/*`,

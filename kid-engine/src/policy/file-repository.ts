@@ -22,7 +22,7 @@ import {
   type PolicyRepository,
 } from './service.js';
 
-const STORAGE_VERSION = 3;
+const STORAGE_VERSION = 4;
 const MAX_STORE_BYTES = 5 * 1024 * 1024;
 
 interface StoredPolicies {
@@ -329,7 +329,7 @@ function parseStoredPolicies(raw: string): StoredPolicies {
     }
     const record = value as Record<string, unknown>;
     if (
-      ![1, 2, STORAGE_VERSION].includes(record.storageVersion as number) ||
+      ![1, 2, 3, STORAGE_VERSION].includes(record.storageVersion as number) ||
       typeof record.policies !== 'object' ||
       record.policies === null ||
       Array.isArray(record.policies) ||
@@ -387,14 +387,22 @@ function parseStoredPolicies(raw: string): StoredPolicies {
     }
 
     const legacy = candidate as Record<string, unknown>;
-    const hasAccountRules = 'accountRules' in legacy;
-    const hasLegacyAccountRules = 'legacyAccountRules' in legacy;
+    if (!('billMatchExcludedAccountRefs' in legacy)) {
+      candidate = {
+        ...legacy,
+        billMatchExcludedAccountRefs: [],
+      };
+    }
+
+    const normalized = candidate as Record<string, unknown>;
+    const hasAccountRules = 'accountRules' in normalized;
+    const hasLegacyAccountRules = 'legacyAccountRules' in normalized;
     if (!hasAccountRules && !hasLegacyAccountRules) {
       return candidate;
     }
     if (
-      (hasAccountRules && !Array.isArray(legacy.accountRules)) ||
-      (hasLegacyAccountRules && !Array.isArray(legacy.legacyAccountRules))
+      (hasAccountRules && !Array.isArray(normalized.accountRules)) ||
+      (hasLegacyAccountRules && !Array.isArray(normalized.legacyAccountRules))
     ) {
       throw new PolicyStoreCorruptError();
     }
@@ -403,7 +411,7 @@ function parseStoredPolicies(raw: string): StoredPolicies {
       accountRules: _discardedAccountRules,
       legacyAccountRules: _discardedLegacyAccountRules,
       ...snapshot
-    } = legacy;
+    } = normalized;
     return {
       ...snapshot,
       accountDefaults:

@@ -116,8 +116,8 @@ export const billMatchSearchContextSchemaV2 = z.strictObject({
     .max(BILL_MATCH_MAX_DERIVED_AMOUNT_TOLERANCE_MINOR_V2),
   sourceAsOf: utcTimestampSchema,
   searchedAt: utcTimestampSchema,
-  eligibleAccountCount: z.number().int().min(1).max(20),
-  candidatePoolSize: z.number().int().min(0).max(2_000),
+  eligibleAccountCount: z.number().int().min(0).max(1_000),
+  candidatePoolSize: z.number().int().min(0).max(100_000),
 });
 
 export const billMatchResponseSchemaV2 = z

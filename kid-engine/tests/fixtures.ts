@@ -10,6 +10,7 @@ import {
 export const policyDraftFixture: PolicyDraftV1 = {
   timezone: 'America/New_York',
   currency: 'USD',
+  billMatchExcludedAccountRefs: [],
   kids: [
     { id: 'kid-alpha', displayName: 'Alpha', color: 'blue', active: true },
     { id: 'kid-beta', displayName: 'Beta', color: null, active: true },

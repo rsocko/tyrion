@@ -67,6 +67,7 @@ export interface ExceptionPolicyV1 {
 export interface PolicyDraftV1 {
   timezone: string;
   currency: string;
+  billMatchExcludedAccountRefs: string[];
   kids: KidProfileV1[];
   accountDefaults: AccountDefaultV1[];
   merchantRules: MerchantAttributionRuleV1[];
@@ -86,6 +87,7 @@ export function createDefaultPolicyDraftV1(): PolicyDraftV1 {
   return {
     timezone: 'UTC',
     currency: 'USD',
+    billMatchExcludedAccountRefs: [],
     kids: [],
     accountDefaults: [],
     merchantRules: [],
@@ -110,6 +112,7 @@ export function policyDraftFromSnapshotV1(
   return {
     timezone: snapshot.timezone,
     currency: snapshot.currency,
+    billMatchExcludedAccountRefs: snapshot.billMatchExcludedAccountRefs,
     kids: snapshot.kids,
     accountDefaults: snapshot.accountDefaults,
     merchantRules: snapshot.merchantRules,
@@ -579,20 +582,25 @@ export function parseIsoCurrencyV1(
 
 export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
   const snapshot = object(value, 'policy snapshot');
-  exactKeys(snapshot, [
-    'contractVersion',
-    'engineVersion',
-    'householdId',
-    'policyVersion',
-    'updatedAt',
-    'timezone',
-    'currency',
-    'kids',
-    'accountDefaults',
-    'merchantRules',
-    'limits',
-    'exceptionPolicy',
-  ]);
+  const hasBillMatchExclusions = 'billMatchExcludedAccountRefs' in snapshot;
+  exactKeys(
+    snapshot,
+    [
+      'contractVersion',
+      'engineVersion',
+      'householdId',
+      'policyVersion',
+      'updatedAt',
+      'timezone',
+      'currency',
+      'kids',
+      'accountDefaults',
+      'merchantRules',
+      'limits',
+      'exceptionPolicy',
+      ...(hasBillMatchExclusions ? ['billMatchExcludedAccountRefs'] : []),
+    ]
+  );
   literal(snapshot.contractVersion, TYRION_DOMAIN_CONTRACT_VERSION, 'contractVersion');
   literal(snapshot.engineVersion, KID_ATTRIBUTION_ENGINE_VERSION, 'engineVersion');
   const householdId = identifier(snapshot.householdId, 'householdId');
@@ -601,6 +609,8 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
   const draft = parsePolicyDraftV1({
     timezone: snapshot.timezone,
     currency: snapshot.currency,
+    billMatchExcludedAccountRefs:
+      snapshot.billMatchExcludedAccountRefs ?? [],
     kids: snapshot.kids,
     accountDefaults: snapshot.accountDefaults,
     merchantRules: snapshot.merchantRules,
@@ -619,17 +629,38 @@ export function parsePolicySnapshotV1(value: unknown): PolicySnapshotV1 {
 
 export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
   const draft = object(value, 'policy draft');
-  exactKeys(draft, [
-    'timezone',
-    'currency',
-    'kids',
-    'accountDefaults',
-    'merchantRules',
-    'limits',
-    'exceptionPolicy',
-  ]);
+  const hasBillMatchExclusions = 'billMatchExcludedAccountRefs' in draft;
+  exactKeys(
+    draft,
+    [
+      'timezone',
+      'currency',
+      'kids',
+      'accountDefaults',
+      'merchantRules',
+      'limits',
+      'exceptionPolicy',
+      ...(hasBillMatchExclusions ? ['billMatchExcludedAccountRefs'] : []),
+    ]
+  );
   const timezone = ianaTimezone(draft.timezone, 'timezone');
   const currency = isoCurrency(draft.currency, 'currency');
+  const billMatchExcludedAccountRefs = hasBillMatchExclusions
+    ? array(
+        draft.billMatchExcludedAccountRefs,
+        'billMatchExcludedAccountRefs'
+      ).map((value, index) =>
+        accountRef(value, `billMatchExcludedAccountRefs[${index}]`)
+      )
+    : [];
+  if (billMatchExcludedAccountRefs.length > 1000) {
+    invalid('billMatchExcludedAccountRefs must contain at most 1000 references');
+  }
+  unique(
+    billMatchExcludedAccountRefs,
+    'bill match excluded account references'
+  );
+  billMatchExcludedAccountRefs.sort();
   const kids = array(draft.kids, 'kids').map((item, index) => {
     const kid = object(item, `kids[${index}]`);
     exactKeys(kid, ['id', 'displayName', 'color', 'active']);
@@ -848,6 +879,7 @@ export function parsePolicyDraftV1(value: unknown): PolicyDraftV1 {
   return {
     timezone,
     currency,
+    billMatchExcludedAccountRefs,
     kids,
     accountDefaults,
     merchantRules,

@@ -23,10 +23,33 @@ describe('v1 domain contract validation', () => {
     expect(createDefaultPolicyDraftV1()).toMatchObject({
       timezone: 'UTC',
       currency: 'USD',
+      billMatchExcludedAccountRefs: [],
       kids: [],
       exceptionPolicy: { limitWarningPercent: 80 },
     });
+
     expect(policyDraftFromSnapshotV1(policyFixture)).toEqual(policyDraftFixture);
+  });
+
+  it('validates and canonicalizes optional bill matching account exclusions', () => {
+    expect(
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        billMatchExcludedAccountRefs: ['invented-z', 'invented-a'],
+      }).billMatchExcludedAccountRefs
+    ).toEqual(['invented-a', 'invented-z']);
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        billMatchExcludedAccountRefs: ['invented-a', 'invented-a'],
+      })
+    ).toThrow('bill match excluded account references must be unique');
+    expect(() =>
+      parsePolicySnapshotV1({
+        ...policyFixture,
+        billMatchExcludedAccountRefs: ['invalid account id'],
+      })
+    ).toThrow('exact stable Bridge account id');
   });
 
   it('rejects unknown fields instead of accepting contract drift', () => {

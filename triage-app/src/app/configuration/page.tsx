@@ -75,6 +75,13 @@ const POLICY_SECTIONS = [
     keywords: "locale money currency timezone",
   },
   {
+    id: "bill-matching",
+    group: "Household",
+    title: "Bill matching",
+    description: "Account search exclusions",
+    keywords: "bill payment matching reconciliation account exclude",
+  },
+  {
     id: "kid-profiles",
     group: "Household",
     title: "Kid profiles",
@@ -304,6 +311,23 @@ export default function ConfigurationPage() {
         ),
         { accountRef, mode, kidId },
       ],
+    });
+  };
+
+  const setBillMatchAccountExcluded = (
+    accountRef: string,
+    excluded: boolean
+  ) => {
+    if (!draft) return;
+    replaceDraft({
+      ...draft,
+      billMatchExcludedAccountRefs: excluded
+        ? Array.from(
+            new Set([...draft.billMatchExcludedAccountRefs, accountRef])
+          ).sort()
+        : draft.billMatchExcludedAccountRefs.filter(
+            (item) => item !== accountRef
+          ),
     });
   };
 
@@ -553,12 +577,16 @@ export default function ConfigurationPage() {
                 : "empty";
   const workflowPresentation = policyStatePresentation(workflowState);
   const catalogAccountRefs = new Set(accounts.map((account) => account.accountRef));
+  const missingAccountRefs = new Set([
+    ...draft.accountDefaults.map((item) => item.accountRef),
+    ...draft.billMatchExcludedAccountRefs,
+  ]);
   const accountRows = [
     ...accounts.map((account) => ({ ...account, missing: false })),
-    ...draft.accountDefaults
-      .filter((accountDefault) => !catalogAccountRefs.has(accountDefault.accountRef))
-      .map((accountDefault) => ({
-        accountRef: accountDefault.accountRef,
+    ...[...missingAccountRefs]
+      .filter((accountRef) => !catalogAccountRefs.has(accountRef))
+      .map((accountRef) => ({
+        accountRef,
         displayName: "Account no longer in catalog",
         type: "Unavailable",
         maskHint: null,
@@ -688,6 +716,91 @@ export default function ConfigurationPage() {
             }
           />
         </div>
+      </Section>
+      )}
+
+      {sectionIsVisible("bill-matching") && (
+      <Section
+        id="bill-matching"
+        title="Bill matching"
+        description="Tyrion searches every normalized Monarch account by default. Exclude only accounts that should never be considered for bill payment matching."
+      >
+        <p className="mb-4 max-w-3xl text-sm leading-6 text-muted">
+          {draft.billMatchExcludedAccountRefs.length === 0
+            ? "All catalog accounts are included."
+            : `${draft.billMatchExcludedAccountRefs.length} account${draft.billMatchExcludedAccountRefs.length === 1 ? " is" : "s are"} excluded.`}
+        </p>
+        {catalogState === "loading" && (
+          <p aria-live="polite" className="text-sm text-muted">Loading Monarch accounts...</p>
+        )}
+        {catalogState === "error" && (
+          <div role="alert" className="rounded-lg border border-error bg-background p-4">
+            <p className="text-sm text-error">{catalogError}</p>
+            <p className="mt-2 text-sm text-muted">
+              Saved exclusions are preserved. Reconnect the catalog before adding another exclusion.
+            </p>
+            <button className="button-secondary mt-3" type="button" onClick={() => void refreshCatalog()}>
+              Retry account catalog
+            </button>
+          </div>
+        )}
+        {catalogState === "ready" && accountRows.length === 0 && (
+          <EmptyText>No Monarch accounts are available. Recheck the connector, then retry.</EmptyText>
+        )}
+        {accountRows.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full min-w-[38rem] border-collapse text-left text-sm">
+              <thead className="bg-elevated text-muted">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Account</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Bill matching</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {accountRows.map((account) => {
+                  const excluded = draft.billMatchExcludedAccountRefs.includes(
+                    account.accountRef
+                  );
+                  return (
+                    <tr key={account.accountRef} className="bg-background align-top">
+                      <td className="min-w-0 px-4 py-4">
+                        <p className="break-words font-medium text-parchment">
+                          {account.displayName}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-muted">
+                          {account.missing
+                            ? "Saved exclusion is preserved, but this account is not in the current catalog"
+                            : `${account.maskHint ?? "No account hint"} · ${account.isActive ? "Active" : "Inactive"}`}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4 text-muted">{account.type}</td>
+                      <td className="px-4 py-4">
+                        <label className="flex min-h-10 items-center gap-3 text-sm text-parchment">
+                          <input
+                            type="checkbox"
+                            checked={excluded}
+                            disabled={
+                              disabled ||
+                              (catalogState !== "ready" && !account.missing)
+                            }
+                            onChange={(event) =>
+                              setBillMatchAccountExcluded(
+                                account.accountRef,
+                                event.target.checked
+                              )
+                            }
+                          />
+                          Exclude from matching
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Section>
       )}
 
@@ -1534,6 +1647,7 @@ function snapshotDraft(policy: PolicySnapshotV1): PolicyDraftV1 {
   return {
     timezone: policy.timezone,
     currency: policy.currency,
+    billMatchExcludedAccountRefs: policy.billMatchExcludedAccountRefs,
     kids: policy.kids,
     accountDefaults: policy.accountDefaults,
     merchantRules: policy.merchantRules,
