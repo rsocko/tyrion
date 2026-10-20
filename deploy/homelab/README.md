@@ -27,6 +27,16 @@ The sole public finance-data transport is the backend-only
 credential on every request and has its own strict route/query/body allowlist. The
 Traefik example exposes that path over TLS without the UI private-network middleware;
 all UI routes keep the middleware and all public routers exclude `/api/internal/`.
+Durable attribution additionally requires the named `tyrion-attribution` volume,
+mounted at `/var/lib/tyrion-attribution`, owned by UID/GID `10001`, and configured
+through `TYRION_ATTRIBUTION_STORE_PATH`. Back it up as private household state
+together with the policy volume. No separate HTTP attribution-state backend is
+required. The private infrastructure stack must adopt this mount/environment
+change when rolling out the new image; the portable example alone does not deploy
+it. Bootstrap legacy Mission Control decisions before enabling corrections, and
+keep its durable outbox/sync retry driver enabled. See
+[`docs/ATTRIBUTION-PERSISTENCE.md`](../../docs/ATTRIBUTION-PERSISTENCE.md)
+for exact contracts, partial failure behavior and collision/drift reconciliation.
 The exact read-only current-snapshot and generation-addressed document-expectation
 routes for OWL delegate to Finance Insights inside the UI container and require its
 read gate and store.

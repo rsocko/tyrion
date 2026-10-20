@@ -203,7 +203,10 @@ export class AttributionActionService {
         'Household attribution policy is unavailable'
       );
     }
-    if (request.expectedPolicyVersion !== policy.policyVersion) {
+    const replay = request.action === 'explain' ? null : await this.actionRepository.loadReplay(
+      actor.householdId, request.sourceRef, request.idempotencyKey
+    );
+    if (!replay && request.expectedPolicyVersion !== policy.policyVersion) {
       throw new AttributionActionError(
         'policy_conflict',
         'Attribution policy version changed'
@@ -236,17 +239,12 @@ export class AttributionActionService {
       return response(current, policy.policyVersion, policy.kids);
     }
     const requestFingerprint = attributionActionRequestFingerprintV1(request);
-    const replay = await this.actionRepository.loadReplay(
-      actor.householdId,
-      request.sourceRef,
-      request.idempotencyKey
-    );
     if (replay) {
       const replayed = validateAppliedResult(
         replay,
         actor,
         request,
-        policy.policyVersion,
+        request.expectedPolicyVersion,
         requestFingerprint
       );
       await this.projectConfirmed(actor, request, current, policy.kids);

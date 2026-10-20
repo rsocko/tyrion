@@ -30,6 +30,8 @@ export function resolveAttributionServiceActor(
     .map((host) => host.trim().toLowerCase());
   if (
     requestHost !== INTERNAL_ATTRIBUTION_HOST ||
+    request.headers.has("origin") ||
+    request.headers.has("sec-fetch-site") ||
     forwardedHosts?.some((host) => host !== INTERNAL_ATTRIBUTION_HOST)
   ) {
     throw new AttributionAuthError(

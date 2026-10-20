@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   AttributionBatchError,
   AttributionActionError,
+  AttributionStoreError,
   AttributionEvaluationError,
   ContractValidationError,
   MerchantRuleCreationError,
@@ -215,7 +216,7 @@ export function handleAttributionError(
       "Attribution service is unavailable"
     );
   }
-  if (error instanceof ReattributionIntegrationError) {
+  if (error instanceof ReattributionIntegrationError || error instanceof AttributionStoreError) {
     return jsonError(
       503,
       "attribution_state_unavailable",

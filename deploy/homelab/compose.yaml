@@ -60,6 +60,7 @@ services:
       - traefik
     volumes:
       - tyrion-policy:/var/lib/tyrion-policy
+      - tyrion-attribution:/var/lib/tyrion-attribution
       - tyrion-finance-insights:/var/lib/tyrion-finance-insights
     environment:
       BRIDGE_URL: http://tyrion-monarch-bridge:8100
@@ -70,8 +71,7 @@ services:
       MISSION_CONTROL_RETURN_URL: ${MISSION_CONTROL_RETURN_URL:-}
       MISSION_CONTROL_RETURN_ALLOWED_ORIGINS: ${MISSION_CONTROL_RETURN_ALLOWED_ORIGINS:-}
       TYRION_POLICY_STORE_PATH: /var/lib/tyrion-policy/policies.json
-      TYRION_REATTRIBUTION_URL: ${TYRION_REATTRIBUTION_URL:-}
-      TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL: "false"
+      TYRION_ATTRIBUTION_STORE_PATH: /var/lib/tyrion-attribution/state.json
       TYRION_POLICY_DEMO_MODE: "false"
       TYRION_FINANCE_INSIGHT_STORE_PATH: /var/lib/tyrion-finance-insights/state.sqlite
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "${TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED:-false}"
@@ -161,6 +161,8 @@ volumes:
     name: ${TYRION_SESSION_VOLUME:-tyrion-session}
   tyrion-policy:
     name: ${TYRION_POLICY_VOLUME:-tyrion-policy}
+  tyrion-attribution:
+    name: ${TYRION_ATTRIBUTION_VOLUME:-tyrion-attribution}
   tyrion-finance-insights:
     name: ${TYRION_FINANCE_INSIGHT_VOLUME:-tyrion-finance-insights}
   tyrion-monarch-recovery-state:

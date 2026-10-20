@@ -207,7 +207,7 @@ export class AttributionBatchError extends Error {
   }
 }
 
-function parseAttributionBatchRequestV1(
+export function parseAttributionBatchRequestV1(
   value: unknown,
   actor: PolicyActorV1
 ): AttributionBatchRequestV1 {
@@ -341,7 +341,7 @@ function parseBatchItem(
   };
 }
 
-function toAttributionInput(
+export function toAttributionInput(
   item: AttributionBatchItemV1,
   actor: PolicyActorV1
 ): AttributionInputV1 {

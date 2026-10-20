@@ -91,6 +91,7 @@ RUN groupadd --gid "${TYRION_GID}" tyrion \
     && useradd --uid "${TYRION_UID}" --gid tyrion --create-home \
         --home-dir /home/tyrion --shell /usr/sbin/nologin tyrion \
     && install -d -m 0700 -o tyrion -g tyrion /var/lib/tyrion-policy \
+    && install -d -m 0700 -o tyrion -g tyrion /var/lib/tyrion-attribution \
     && install -d -m 0700 -o tyrion -g tyrion /var/lib/tyrion-finance-insights
 
 COPY --chown=tyrion:tyrion LICENSE THIRD-PARTY-NOTICES.md /licenses/
@@ -99,7 +100,7 @@ COPY --from=builder --chown=tyrion:tyrion /workspace/runtime-licenses /licenses/
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/standalone ./
 COPY --from=builder --chown=tyrion:tyrion /workspace/triage-app/.next/static ./triage-app/.next/static
 
-VOLUME ["/var/lib/tyrion-policy", "/var/lib/tyrion-finance-insights"]
+VOLUME ["/var/lib/tyrion-policy", "/var/lib/tyrion-attribution", "/var/lib/tyrion-finance-insights"]
 WORKDIR /app/triage-app
 USER tyrion
 EXPOSE 3000

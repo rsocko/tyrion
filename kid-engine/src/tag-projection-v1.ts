@@ -35,6 +35,7 @@ export interface TagProjectionRepositoryV1 {
     householdId: string,
     projection: TagProjectionRecordV1
   ): Promise<void>;
+  loadVerifiedManagedTagIds?(householdId: string, sourceRef: string): Promise<string[] | null>;
 }
 
 export interface MonarchTagProjectionBridgeV1 {
@@ -116,6 +117,12 @@ export class TagProjectionServiceV1 implements AttributionTagProjectorV1 {
         now,
         'transaction_tag_drift',
         'Attribution decision identity conflicts with projected state'
+      );
+    }
+    if (prior?.status === 'drift') {
+      throw await this.fail(
+        input, prior.managedTagIds, now, 'transaction_tag_drift',
+        'Managed Monarch tags changed; reconcile before retrying'
       );
     }
     let mappings = await this.repository.listMappings(input.householdId);
@@ -324,10 +331,16 @@ export class TagProjectionServiceV1 implements AttributionTagProjectorV1 {
     const currentManagedIds = currentTagIds.filter((tagId) =>
       allManagedIds.has(tagId)
     );
+    const verifiedManagedIds = await this.repository.loadVerifiedManagedTagIds?.(
+      input.householdId, input.sourceRef
+    );
     if (
-      prior?.status === 'drift' ||
       (prior?.status === 'projected' &&
-        !sameSet(currentManagedIds, prior.managedTagIds))
+        !sameSet(currentManagedIds, prior.managedTagIds)) ||
+      (verifiedManagedIds != null &&
+        prior?.status !== 'projected' &&
+        !sameSet(currentManagedIds, verifiedManagedIds) &&
+        !sameSet(currentManagedIds, prior?.managedTagIds ?? []))
     ) {
       throw await this.fail(
         input,

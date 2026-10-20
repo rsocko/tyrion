@@ -9,6 +9,7 @@ import {
   PolicyStoreUnavailableError,
   PolicyVersionConflictError,
   ReattributionError,
+  AttributionStoreError,
   TagProjectionError,
 } from "@rsocko/tyrion-kid-engine";
 import {
@@ -55,7 +56,7 @@ export function policyError(error: unknown) {
   }
   if (error instanceof ReattributionError) {
     const status =
-      error.code === "policy_version_conflict"
+      error.code === "policy_version_conflict" || error.code === "reattribution_state_conflict"
         ? 409
         : error.code === "reattribution_preview_expired"
           ? 410
@@ -75,7 +76,7 @@ export function policyError(error: unknown) {
           : 503;
     return jsonError(status, error.code, error.message);
   }
-  if (error instanceof ReattributionIntegrationError) {
+  if (error instanceof ReattributionIntegrationError || error instanceof AttributionStoreError) {
     return jsonError(503, error.code, error.message);
   }
   return jsonError(500, "policy_operation_failed", "Policy operation failed");

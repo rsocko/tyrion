@@ -1,5 +1,8 @@
 import {
   FilePolicyRepository,
+  FileAttributionRepositoryV1,
+  DurableAttributionServiceV1,
+  AttributionStoreError,
   AttributionActionService,
   AttributionBatchService,
   AttributionPolicyService,
@@ -10,9 +13,7 @@ import {
   TagProjectionError,
   TagProjectionServiceV1,
   parseAttributionInputV1,
-  parseAttributionActionRecordV1,
   parseAttributionResultV1,
-  parseReattributionPreviewV1,
   type AttributionResultV1,
   type AttributionActionApplyResultV1,
   type AttributionActionMutationV1,
@@ -42,8 +43,9 @@ export interface PolicyRuntime {
   attributionPolicyService: AttributionPolicyService;
   attributionBatchService: AttributionBatchService;
   merchantRuleCreationService: MerchantRuleCreationService;
-  getAttributionActionService(): AttributionActionService;
-  getReattributionService(): ReattributionService;
+  getAttributionActionService(): Pick<AttributionActionService, "act">;
+  getDurableAttributionService(): DurableAttributionServiceV1;
+  getReattributionService(): Pick<ReattributionService, "preview" | "apply">;
 }
 
 export class PolicyRuntimeConfigurationError extends Error {
@@ -72,6 +74,7 @@ export function getPolicyRuntime(
   if (cachedRuntime) return cachedRuntime;
 
   const demo = environment.TYRION_POLICY_DEMO_MODE === "true";
+  const durable = !demo || Boolean(environment.TYRION_ATTRIBUTION_STORE_PATH);
   if (demo && environment.NODE_ENV === "production") {
     throw new PolicyRuntimeConfigurationError();
   }
@@ -81,21 +84,29 @@ export function getPolicyRuntime(
     : createFilePolicyRepository(environment);
   let reattributionService: ReattributionService | undefined;
   let attributionActionService: AttributionActionService | undefined;
-  let integrationClient: AttributionStateIntegrationClient | undefined;
   let tagProjectionService: TagProjectionServiceV1 | undefined;
-  const getIntegrationClient = () => {
-    integrationClient ??= new AttributionStateIntegrationClient(environment);
-    return integrationClient;
+  let durableStore: FileAttributionRepositoryV1 | undefined;
+  let durableService: DurableAttributionServiceV1 | undefined;
+  const getDurableStore = () => {
+    if (!environment.TYRION_ATTRIBUTION_STORE_PATH) {
+      throw new PolicyRuntimeConfigurationError();
+    }
+    durableStore ??= new FileAttributionRepositoryV1(environment.TYRION_ATTRIBUTION_STORE_PATH);
+    return durableStore;
+  };
+  const getDurableService = () => {
+    durableService ??= new DurableAttributionServiceV1(
+      policyRepository, getDurableStore(), getTagProjectionService()
+    );
+    return durableService;
   };
   const getTagProjectionService = () => {
-    tagProjectionService ??= demo
-      ? new TagProjectionServiceV1(
-          new DemoTagProjectionRepository(),
-          new DemoMonarchTagProjectionBridge()
-        )
-      : new TagProjectionServiceV1(
-          new HttpTagProjectionRepository(getIntegrationClient()),
-          new HttpMonarchTagProjectionBridge(environment)
+    tagProjectionService ??= new TagProjectionServiceV1(
+          durable ? getDurableStore() : new DemoTagProjectionRepository(),
+          demo ? new DemoMonarchTagProjectionBridge() : new HttpMonarchTagProjectionBridge(
+            environment,
+            (sourceRef) => getDurableStore().transactionId(HOMELAB_HOUSEHOLD_ID, sourceRef)
+          )
         );
     return tagProjectionService;
   };
@@ -106,10 +117,9 @@ export function getPolicyRuntime(
     attributionBatchService: new AttributionBatchService(policyRepository),
     merchantRuleCreationService: new MerchantRuleCreationService(policyRepository),
     getAttributionActionService() {
+      if (durable) return getDurableService();
       if (!attributionActionService) {
-        const repository: AttributionActionRepository = demo
-          ? new DemoAttributionActionRepository()
-          : new HttpAttributionActionRepository(getIntegrationClient());
+        const repository = new DemoAttributionActionRepository();
         attributionActionService = new AttributionActionService(
           policyRepository,
           repository,
@@ -118,18 +128,42 @@ export function getPolicyRuntime(
       }
       return attributionActionService;
     },
+    getDurableAttributionService() {
+      return getDurableService();
+    },
     getReattributionService() {
       if (!reattributionService) {
-        const repository: ReattributionRepository = demo
-          ? new DemoReattributionRepository()
-          : new HttpReattributionRepository(getIntegrationClient());
+        const repository: ReattributionRepository = durable
+          ? getDurableStore() : new DemoReattributionRepository();
         reattributionService = new ReattributionService(
           policyRepository,
           repository,
-          { tagProjector: getTagProjectionService() }
+          { tagProjector: !durable ? getTagProjectionService() : {
+            async projectConfirmed(input) {
+              const projection = await getDurableService().projectCurrent(
+                input.householdId, input.sourceRef
+              );
+              if (!projection) throw new AttributionStoreError();
+              if (projection.status !== "projected") {
+                throw new TagProjectionError(
+                  projection.errorCode ?? "tag_projection_unavailable",
+                  "Attribution is saved but Monarch tag projection requires recovery"
+                );
+              }
+              return projection;
+            },
+          } }
         );
       }
-      return reattributionService;
+      const service = reattributionService;
+      return !durable ? service : {
+        preview: (actor, request) => getDurableStore().withProjectionLease(
+          () => service.preview(actor, request)
+        ),
+        apply: (actor, request) => getDurableStore().withProjectionLease(
+          () => service.apply(actor, request)
+        ),
+      };
     },
   };
   return cachedRuntime;
@@ -261,185 +295,6 @@ class DemoReattributionRepository implements ReattributionRepository {
   }
 }
 
-class HttpReattributionRepository implements ReattributionRepository {
-  constructor(private readonly client: AttributionStateIntegrationClient) {}
-
-  async loadRecords(
-    householdId: string,
-    sourceRefs: string[]
-  ): Promise<ReattributionRecordV1[]> {
-    const value = await this.client.request("v1/reattribution/records:resolve", {
-      householdId,
-      sourceRefs,
-    });
-    const record = exactObject(value, ["records"]);
-    if (!Array.isArray(record.records)) throw new ReattributionIntegrationError();
-    try {
-      return record.records.map((item) => {
-        const candidate = exactObject(item, ["input", "current"]);
-        return {
-          input: parseAttributionInputV1(candidate.input),
-          current: parseAttributionResultV1(candidate.current),
-        };
-      });
-    } catch {
-      throw new ReattributionIntegrationError();
-    }
-  }
-
-  async savePreview(preview: ReattributionPreviewV1): Promise<void> {
-    const result = exactObject(
-      await this.client.request("v1/reattribution/previews", { preview }),
-      ["stored"]
-    );
-    if (result.stored !== true) throw new ReattributionIntegrationError();
-  }
-
-  async loadPreview(
-    householdId: string,
-    previewId: string
-  ): Promise<ReattributionPreviewV1 | null> {
-    const value = await this.client.request("v1/reattribution/previews:resolve", {
-      householdId,
-      previewId,
-    });
-    const record = exactObject(value, ["preview"]);
-    if (record.preview === null) return null;
-    try {
-      return parseReattributionPreviewV1(record.preview);
-    } catch {
-      throw new ReattributionIntegrationError();
-    }
-  }
-
-  async loadAppliedState(
-    householdId: string,
-    previewId: string
-  ): Promise<ReattributionAppliedStateV1 | null> {
-    const value = exactObject(
-      await this.client.request("v1/reattribution/previews:applied", {
-        householdId,
-        previewId,
-      }),
-      ["applied"]
-    );
-    if (value.applied === null) return null;
-    const applied = exactObject(value.applied, ["counts", "appliedAt"]);
-    const counts = exactObject(applied.counts, [
-      "applied",
-      "unchanged",
-      "manualPreserved",
-      "pendingReview",
-    ]);
-    if (typeof applied.appliedAt !== "string") {
-      throw new ReattributionIntegrationError();
-    }
-    return {
-      counts: {
-        applied: count(counts.applied),
-        unchanged: count(counts.unchanged),
-        manualPreserved: count(counts.manualPreserved),
-        pendingReview: count(counts.pendingReview),
-      },
-      appliedAt: applied.appliedAt,
-    };
-  }
-
-  async applyPreviewIfPolicyVersion(
-    preview: ReattributionPreviewV1,
-    appliedAt: string,
-    expectedPolicyVersion: number
-  ): Promise<ReattributionApplyCountsV1 | null> {
-    const value = await this.client.request("v1/reattribution/previews:apply", {
-      preview,
-      appliedAt,
-      expectedPolicyVersion,
-    });
-    const record = exactObject(value, ["counts"]);
-    if (record.counts === null) return null;
-    const counts = exactObject(record.counts, [
-      "applied",
-      "unchanged",
-      "manualPreserved",
-      "pendingReview",
-    ]);
-    return {
-      applied: count(counts.applied),
-      unchanged: count(counts.unchanged),
-      manualPreserved: count(counts.manualPreserved),
-      pendingReview: count(counts.pendingReview),
-    };
-  }
-
-}
-
-class AttributionStateIntegrationClient {
-  private readonly baseUrl: URL;
-  private readonly token: string;
-
-  constructor(environment: NodeJS.ProcessEnv) {
-    const token = environment.BRIDGE_API_TOKEN;
-    if (!token || token.length < 32) throw new ReattributionIntegrationError();
-    this.token = token;
-    const rawUrl = environment.TYRION_REATTRIBUTION_URL;
-    if (!rawUrl) throw new ReattributionIntegrationError();
-    try {
-      this.baseUrl = new URL(rawUrl);
-    } catch {
-      throw new ReattributionIntegrationError();
-    }
-    const allowInternalHttp =
-      environment.TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL === "true";
-    if (
-      (this.baseUrl.protocol !== "https:" &&
-        !(this.baseUrl.protocol === "http:" && allowInternalHttp)) ||
-      this.baseUrl.username ||
-      this.baseUrl.password ||
-      this.baseUrl.pathname !== "/" ||
-      this.baseUrl.search ||
-      this.baseUrl.hash
-    ) {
-      throw new ReattributionIntegrationError();
-    }
-  }
-
-  async request(path: string, body: unknown): Promise<unknown> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), INTEGRATION_TIMEOUT_MS);
-    try {
-      const response = await fetch(new URL(path, this.baseUrl), {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${this.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new ReattributionIntegrationError();
-      const declaredLength = Number(response.headers.get("content-length") || "0");
-      if (
-        !Number.isSafeInteger(declaredLength) ||
-        declaredLength > MAX_INTEGRATION_RESPONSE_BYTES
-      ) {
-        throw new ReattributionIntegrationError();
-      }
-      const payload = new Uint8Array(await response.arrayBuffer());
-      if (payload.byteLength > MAX_INTEGRATION_RESPONSE_BYTES) {
-        throw new ReattributionIntegrationError();
-      }
-      return JSON.parse(new TextDecoder().decode(payload));
-    } catch (error) {
-      if (error instanceof ReattributionIntegrationError) throw error;
-      throw new ReattributionIntegrationError();
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-}
-
 class DemoAttributionActionRepository implements AttributionActionRepository {
   private readonly records = new Map<string, AttributionActionRecordV1>([
     ["demo-record-1", demoActionRecord("demo-record-1")],
@@ -502,59 +357,6 @@ class DemoAttributionActionRepository implements AttributionActionRepository {
     };
     this.replays.set(mutation.request.idempotencyKey, structuredClone(result));
     return result;
-  }
-}
-
-class HttpAttributionActionRepository implements AttributionActionRepository {
-  constructor(private readonly client: AttributionStateIntegrationClient) {}
-
-  async load(
-    householdId: string,
-    sourceRef: string
-  ): Promise<AttributionActionRecordV1 | null> {
-    const value = exactObject(
-      await this.client.request("v1/attribution-actions/records:resolve", {
-        householdId,
-        sourceRef,
-      }),
-      ["record"]
-    );
-    if (value.record === null) return null;
-    try {
-      return parseAttributionActionRecordV1(value.record);
-    } catch {
-      throw new ReattributionIntegrationError();
-    }
-  }
-
-  async loadReplay(
-    householdId: string,
-    sourceRef: string,
-    idempotencyKey: string
-  ): Promise<AttributionActionApplyResultV1 | null> {
-    const value = exactObject(
-      await this.client.request("v1/attribution-actions/actions:resolve", {
-        householdId,
-        sourceRef,
-        idempotencyKey,
-      }),
-      ["result"]
-    );
-    return parseAttributionActionApplyResult(value.result);
-  }
-
-  async applyIfCurrent(
-    householdId: string,
-    mutation: AttributionActionMutationV1
-  ): Promise<AttributionActionApplyResultV1 | null> {
-    const value = exactObject(
-      await this.client.request("v1/attribution-actions/actions:apply", {
-        householdId,
-        mutation,
-      }),
-      ["result"]
-    );
-    return parseAttributionActionApplyResult(value.result);
   }
 }
 
@@ -630,70 +432,14 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
       }
     }
 
-    class HttpTagProjectionRepository implements TagProjectionRepositoryV1 {
-      constructor(private readonly client: AttributionStateIntegrationClient) {}
-
-      async listMappings(householdId: string): Promise<KidTagMappingV1[]> {
-        const value = exactObject(
-          await this.client.request("v1/tag-projection/mappings:resolve", {
-            householdId,
-          }),
-          ["mappings"]
-        );
-        if (!Array.isArray(value.mappings)) throw new ReattributionIntegrationError();
-        return value.mappings.map(parseKidTagMapping);
-      }
-
-      async saveMapping(
-        householdId: string,
-        mapping: KidTagMappingV1
-      ): Promise<void> {
-        const value = exactObject(
-          await this.client.request("v1/tag-projection/mappings:save", {
-            householdId,
-            mapping,
-          }),
-          ["stored"]
-        );
-        if (value.stored !== true) throw new ReattributionIntegrationError();
-      }
-
-      async loadProjection(
-        householdId: string,
-        sourceRef: string
-      ): Promise<TagProjectionRecordV1 | null> {
-        const value = exactObject(
-          await this.client.request("v1/tag-projection/records:resolve", {
-            householdId,
-            sourceRef,
-          }),
-          ["projection"]
-        );
-        return value.projection === null
-          ? null
-          : parseTagProjectionRecord(value.projection);
-      }
-
-      async saveProjection(
-        householdId: string,
-        projection: TagProjectionRecordV1
-      ): Promise<void> {
-        const value = exactObject(
-          await this.client.request("v1/tag-projection/records:save", {
-            householdId,
-            projection,
-          }),
-          ["stored"]
-        );
-        if (value.stored !== true) throw new ReattributionIntegrationError();
-      }
-    }
-
     class HttpMonarchTagProjectionBridge implements MonarchTagProjectionBridgeV1 {
       private readonly baseUrl: URL;
       private readonly token: string;
 
-      constructor(environment: NodeJS.ProcessEnv) {
+      constructor(
+        environment: NodeJS.ProcessEnv,
+        private readonly resolveTransactionId: (sourceRef: string) => Promise<string>
+      ) {
         const token = environment.BRIDGE_API_TOKEN;
         if (!token || token.length < 32) throw new ReattributionIntegrationError();
         this.token = token;
@@ -734,10 +480,11 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
       }
 
       async readTransactionTagIds(sourceRef: string): Promise<string[]> {
+        const transactionId = await this.resolveTransactionId(sourceRef);
         const value = exactObject(
           await this.request(
             "GET",
-            `transactions/${encodeURIComponent(sourceRef)}`
+            `transactions/${encodeURIComponent(transactionId)}`
           ),
           ["contractVersion", "provenance", "transaction"]
         );
@@ -758,6 +505,7 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
           "tags",
           "tagReferences",
         ]);
+        if (transaction.id !== transactionId) throw new ReattributionIntegrationError();
         parseBridgeBusinessContext(transaction.businessContext);
         parseBridgeStatementDescriptors(transaction.statementDescriptors);
         if (!Array.isArray(transaction.tagReferences)) {
@@ -777,11 +525,12 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
         tagIds: string[],
         expectedTagIds: string[]
       ): Promise<string[]> {
+        const transactionId = await this.resolveTransactionId(sourceRef);
         let value: unknown;
         try {
           value = await this.request(
             "PATCH",
-            `transactions/${encodeURIComponent(sourceRef)}/tags`,
+            `transactions/${encodeURIComponent(transactionId)}/tags`,
             { tagIds, expectedTagIds }
           );
         } catch (error) {
@@ -804,7 +553,7 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
         ]);
         if (
           response.status !== "updated" ||
-          response.transactionId !== sourceRef ||
+          response.transactionId !== transactionId ||
           !Array.isArray(response.tagReferences)
         ) {
           throw new ReattributionIntegrationError();
@@ -835,6 +584,7 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
             },
             body: body === undefined ? undefined : JSON.stringify(body),
             cache: "no-store",
+            redirect: "error",
             signal: controller.signal,
           });
           if (!response.ok) throw new BridgeProjectionRequestError(response.status);
@@ -845,11 +595,21 @@ class HttpAttributionActionRepository implements AttributionActionRepository {
           ) {
             throw new ReattributionIntegrationError();
           }
-          const payload = new Uint8Array(await response.arrayBuffer());
-          if (payload.byteLength > MAX_INTEGRATION_RESPONSE_BYTES) {
-            throw new ReattributionIntegrationError();
+          const reader = response.body?.getReader();
+          if (!reader) throw new ReattributionIntegrationError();
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            size += value.byteLength;
+            if (size > MAX_INTEGRATION_RESPONSE_BYTES) {
+              await reader.cancel();
+              throw new ReattributionIntegrationError();
+            }
+            chunks.push(value);
           }
-          return JSON.parse(new TextDecoder().decode(payload));
+          return JSON.parse(Buffer.concat(chunks).toString("utf8"));
         } catch (error) {
           if (
             error instanceof ReattributionIntegrationError ||
@@ -971,109 +731,6 @@ function exactObject(
     throw new ReattributionIntegrationError();
   }
   return record;
-}
-
-function parseAttributionActionApplyResult(
-  value: unknown
-): AttributionActionApplyResultV1 | null {
-  if (value === null) return null;
-  const result = exactObject(value, [
-    "record",
-    "replayed",
-    "requestFingerprint",
-  ]);
-  if (
-    typeof result.replayed !== "boolean" ||
-    typeof result.requestFingerprint !== "string"
-  ) {
-    throw new ReattributionIntegrationError();
-  }
-  try {
-    return {
-      record: parseAttributionActionRecordV1(result.record),
-      replayed: result.replayed,
-      requestFingerprint: result.requestFingerprint,
-    };
-  } catch {
-    throw new ReattributionIntegrationError();
-  }
-}
-
-function count(value: unknown): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) {
-    throw new ReattributionIntegrationError();
-  }
-  return value as number;
-}
-
-function parseKidTagMapping(value: unknown): KidTagMappingV1 {
-  const mapping = exactObject(value, [
-    "kidId",
-    "tagId",
-    "label",
-    "retiredTagIds",
-  ]);
-  if (
-    typeof mapping.kidId !== "string" ||
-    typeof mapping.tagId !== "string" ||
-    typeof mapping.label !== "string" ||
-    !Array.isArray(mapping.retiredTagIds) ||
-    !mapping.retiredTagIds.every((tagId) => typeof tagId === "string")
-  ) {
-    throw new ReattributionIntegrationError();
-  }
-  return {
-    kidId: mapping.kidId,
-    tagId: mapping.tagId,
-    label: mapping.label,
-    retiredTagIds: [...mapping.retiredTagIds] as string[],
-  };
-}
-
-function parseTagProjectionRecord(value: unknown): TagProjectionRecordV1 {
-  const projection = exactObject(value, [
-    "sourceRef",
-    "decisionVersion",
-    "kidIds",
-    "managedTagIds",
-    "status",
-    "errorCode",
-    "updatedAt",
-  ]);
-  const statuses = new Set(["pending", "projected", "failed", "drift"]);
-  const errorCodes = new Set([
-    "kid_tag_collision",
-    "kid_tag_mapping_deleted",
-    "kid_not_projectable",
-    "transaction_tag_drift",
-    "tag_projection_unavailable",
-    "tag_projection_unverified",
-  ]);
-  if (
-    typeof projection.sourceRef !== "string" ||
-    typeof projection.decisionVersion !== "string" ||
-    !Array.isArray(projection.kidIds) ||
-    !projection.kidIds.every((kidId) => typeof kidId === "string") ||
-    !Array.isArray(projection.managedTagIds) ||
-    !projection.managedTagIds.every((tagId) => typeof tagId === "string") ||
-    typeof projection.status !== "string" ||
-    !statuses.has(projection.status) ||
-    (projection.errorCode !== null &&
-      (typeof projection.errorCode !== "string" ||
-        !errorCodes.has(projection.errorCode))) ||
-    typeof projection.updatedAt !== "string"
-  ) {
-    throw new ReattributionIntegrationError();
-  }
-  return {
-    sourceRef: projection.sourceRef,
-    decisionVersion: projection.decisionVersion,
-    kidIds: [...projection.kidIds],
-    managedTagIds: [...projection.managedTagIds],
-    status: projection.status,
-    errorCode: projection.errorCode,
-    updatedAt: projection.updatedAt,
-  } as TagProjectionRecordV1;
 }
 
 function parseMonarchTag(value: unknown): MonarchTagV1 {
