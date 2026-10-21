@@ -16,6 +16,7 @@ import {
   authorizeAttributionActions,
   type PolicyRepository,
 } from './policy/service.js';
+import { isParentAssignmentV1 } from './attribution-v1.js';
 import type { AttributionTagProjectorV1 } from './tag-projection-v1.js';
 
 export const ATTRIBUTION_ACTION_PROVENANCE =
@@ -328,6 +329,10 @@ export class AttributionActionService {
         record.attribution.kidId !== null
           ? [record.attribution.kidId]
           : [],
+      parentAssigned: isParentAssignmentV1(
+        record.input.existingManualDecision,
+        record.attribution
+      ),
       kids,
     });
   }

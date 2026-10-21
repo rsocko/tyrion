@@ -8,12 +8,35 @@ import {
   type AttributionInputV1,
   type AttributionResultV1,
   type AttributionReviewReasonV1,
+  type ManualAttributionDecisionV1,
   type PolicySnapshotV1,
 } from './contracts/v1.js';
 
 export interface AttributionEvaluationOptionsV1 {
   evaluatedAt: string;
   minimumHistoricalAssignments?: number;
+}
+
+export function isParentAssignmentV1(
+  manualDecision: ManualAttributionDecisionV1 | null,
+  attribution: AttributionResultV1
+): boolean {
+  if (
+    manualDecision?.action === 'parent-expense' &&
+    attribution.method === 'manual' &&
+    attribution.status === 'unassigned'
+  ) {
+    return true;
+  }
+  return (
+    attribution.provenance.decisionSource === 'automated' &&
+    attribution.status === 'unassigned' &&
+    attribution.kidId === null &&
+    attribution.confidence === 'definite' &&
+    attribution.review.status !== 'pending' &&
+    (attribution.method === 'account-default' ||
+      attribution.method === 'merchant-rule')
+  );
 }
 
 interface RuleCandidate {

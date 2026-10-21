@@ -750,14 +750,17 @@ IDs are verified. This compare-and-verify contract lets Tyrion preserve unrelate
 tags while refusing to silently overwrite external changes.
 
 Tyrion's tag projection stores the stable `kidId` to Monarch tag-ID mapping and never
-derives identity from the `Kid: <display name>` label. Existing unmapped `Kid:` labels,
+derives identity from the `Kid: <display name>` label. It separately stores one
+household mapping for the managed `Parent` tag. Existing unmapped managed labels,
 deleted or disabled mapped tags, and post-projection changes are reconciliation
 exceptions. Kid renames create a replacement mapping and retire the former managed
-ID; reassignment and parent-expense attribution remove all known managed IDs while
-preserving every unrelated tag. Explicit shared attribution projects multiple managed
-Kid tags. Retries reuse authoritative attribution state and remain idempotent.
-Monarch tags are only an interoperable projection: confidence, provenance, policy
-version, ambiguity, and audit history remain authoritative in Tyrion.
+ID; reassignment removes prior managed IDs while preserving every unrelated tag.
+Explicit parent/shared assignments project only the `Parent` tag; confirmed shared
+kid assignments may project multiple managed Kid tags. Explicit unassignment clears
+managed Kid and Parent tags. Retries reuse authoritative attribution state and remain
+idempotent. Monarch tags are only an interoperable projection: confidence,
+provenance, policy version, ambiguity, and audit history remain authoritative in
+Tyrion.
 
 ### Recurring obligations
 

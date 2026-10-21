@@ -28,6 +28,7 @@ import {
   type ReattributionRecordV1,
   type ReattributionRepository,
   type KidTagMappingV1,
+  type ParentTagMappingV1,
   type MonarchTagProjectionBridgeV1,
   type MonarchTagV1,
   type TagProjectionRecordV1,
@@ -362,6 +363,7 @@ class DemoAttributionActionRepository implements AttributionActionRepository {
 
     class DemoTagProjectionRepository implements TagProjectionRepositoryV1 {
       private readonly mappings = new Map<string, KidTagMappingV1>();
+      private parentMapping: ParentTagMappingV1 | null = null;
       private readonly projections = new Map<string, TagProjectionRecordV1>();
 
       async listMappings(): Promise<KidTagMappingV1[]> {
@@ -373,6 +375,17 @@ class DemoAttributionActionRepository implements AttributionActionRepository {
         mapping: KidTagMappingV1
       ): Promise<void> {
         this.mappings.set(mapping.kidId, structuredClone(mapping));
+      }
+
+      async loadParentMapping(): Promise<ParentTagMappingV1 | null> {
+        return this.parentMapping ? structuredClone(this.parentMapping) : null;
+      }
+
+      async saveParentMapping(
+        _householdId: string,
+        mapping: ParentTagMappingV1
+      ): Promise<void> {
+        this.parentMapping = structuredClone(mapping);
       }
 
       async loadProjection(
@@ -403,7 +416,7 @@ class DemoAttributionActionRepository implements AttributionActionRepository {
 
       async createTag(name: string): Promise<MonarchTagV1> {
         const tag = {
-          id: `demo-kid-tag-${this.tags.length}`,
+          id: `demo-managed-tag-${this.tags.length}`,
           name,
           isActive: true,
         };

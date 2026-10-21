@@ -300,6 +300,22 @@ describe('v1 attribution correction and exception actions', () => {
     ]);
   });
 
+  it('passes Parent only for the current explicit parent decision', async () => {
+    const actions = new MemoryActionRepository(record());
+    const projector = new RecordingProjector();
+    const service = createService(actions, projector);
+
+    await service.act(actor, mutationRequest('mark-parent-expense'));
+    expect(projector.inputs.at(-1)?.parentAssigned).toBe(true);
+
+    await service.act(actor, {
+      ...mutationRequest('unassign'),
+      expectedStateVersion: 2,
+      idempotencyKey: 'action-explicit-unassign',
+    });
+    expect(projector.inputs.at(-1)?.parentAssigned).toBe(false);
+  });
+
   it('rejects idempotency-key reuse with different action parameters', async () => {
     const actions = new MemoryActionRepository(record());
     const service = createService(actions);

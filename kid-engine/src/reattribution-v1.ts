@@ -13,7 +13,10 @@ import {
   type ReattributionPreviewRequestV1,
   type ReattributionPreviewV1,
 } from './contracts/v1.js';
-import { attributeTransactionV1 } from './attribution-v1.js';
+import {
+  attributeTransactionV1,
+  isParentAssignmentV1,
+} from './attribution-v1.js';
 import {
   authorizeReattribution,
   type PolicyRepository,
@@ -253,6 +256,7 @@ export class ReattributionService {
             item.proposed.status === 'attributed' && item.proposed.kidId !== null
               ? [item.proposed.kidId]
               : [],
+          parentAssigned: isParentAssignmentV1(null, item.proposed),
           kids: policy.kids,
         });
       }

@@ -173,6 +173,56 @@ describe('controlled re-attribution service', () => {
     ]);
   });
 
+  it('projects definite automated parent/shared re-attribution as Parent', async () => {
+    const records = new MemoryReattributionRepository([
+      {
+        input: inputFixture,
+        current: createUnavailableAttributionResultV1(
+          inputFixture,
+          'policy-unavailable',
+          '2026-08-08T12:02:00Z'
+        ),
+      },
+    ]);
+    const projector = new RecordingProjector();
+    const service = createService(records, policyFixture, projector);
+    const preview = await service.preview(previewActor, {
+      contractVersion: '2.0',
+      householdId: 'household-demo',
+      expectedPolicyVersion: 1,
+      sourceRefs: ['source-record-demo'],
+    });
+    preview.items[0].disposition = 'would-update';
+    preview.items[0].proposed = {
+      ...preview.items[0].proposed,
+      status: 'unassigned',
+      kidId: null,
+      confidence: 'definite',
+      method: 'merchant-rule',
+      review: { status: 'not-required', reasons: [] },
+      provenance: {
+        ...preview.items[0].proposed.provenance,
+        decisionSource: 'automated',
+      },
+    };
+    records.preview = preview;
+
+    await service.apply(applyActor, {
+      contractVersion: '2.0',
+      householdId: 'household-demo',
+      previewId: 'preview-demo',
+      expectedPolicyVersion: 1,
+      confirm: true,
+    });
+
+    expect(projector.inputs).toEqual([
+      expect.objectContaining({
+        kidIds: [],
+        parentAssigned: true,
+      }),
+    ]);
+  });
+
   it('rejects apply after the preview expires or policy changes', async () => {
     const records = new MemoryReattributionRepository([]);
     records.preview = {
