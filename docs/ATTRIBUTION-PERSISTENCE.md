@@ -87,12 +87,16 @@ decision source, policy/engine versions, rule references and evaluation time.
 `exception` contains status, reasons, deferral and update time. Every changed record
 is journaled together with its audit snapshot and projection-pending intent.
 Confirmed manual and definite automatic kid assignments project immediately;
-ambiguous/unassigned automated results do not invent a confirmed kid.
-Definite automated parent/shared outcomes project an empty managed set. If refreshed
-facts no longer confirm a formerly projected kid, the current projection becomes
-`pending` until an explicit decision; old tags are not silently presented as current
-projected success or removed by guessing. A retry cannot turn ambiguous evidence
-into a confirmed decision.
+explicit manual parent assignments and definite automated parent/shared outcomes
+project the managed Monarch tag named exactly `Parent`. The `Parent` tag is mutually
+exclusive with managed `Kid: <display name>` tags. Definite assignments only are
+projected: ambiguous, pending, or otherwise unassigned results do not receive a new
+special tag. Explicit `unassign` removes Tyrion-managed Kid and Parent tags while
+preserving unrelated tags. If refreshed facts no longer confirm a formerly
+projected assignment, the current projection becomes `pending` until an explicit
+decision; old tags are not silently presented as current projected success or
+removed by guessing. A retry cannot turn ambiguous evidence into a confirmed
+decision.
 
 ### Correct, confirm, parent/shared, unassign, or defer
 
@@ -113,7 +117,8 @@ into a confirmed decision.
 ```
 
 Actions: `assign-kid` (requires `kidId`), `mark-parent-expense` (parent/shared
-household expense; removes only Tyrion-managed Kid tags), `unassign`,
+household expense; projects the managed Parent tag and removes managed Kid tags),
+`unassign` (clears managed Kid and Parent tags),
 `resolve-exception` (confirms the current eligible candidate), and
 `defer-exception` (requires bounded future `deferUntil`, no tag mutation).
 `explain` accepts only the common version/provenance/source/policy/action fields
@@ -156,6 +161,8 @@ the exact current state version and return `{contractVersion:"2.1",record,projec
 
 `projection` is null when none is needed/has been attempted, otherwise:
 `{sourceRef, decisionVersion, kidIds, managedTagIds, status, errorCode, updatedAt}`.
+`kidIds` remains the set of assigned kids; a Parent assignment has an empty
+`kidIds` list and includes the stable Parent tag ID in `managedTagIds`.
 Status is `pending`, `projected`, `failed`, or `drift`. On these durable routes,
 `decisionVersion` is a **string**: `state:` followed by the positive record state
 version zero-padded to 16 decimal digits (for example `state:0000000000000002`).
@@ -165,7 +172,9 @@ verify that its manual decision still matches the latest local action before
 accepting the newer projection.
 Error codes are `kid_tag_collision`, `kid_tag_mapping_deleted`,
 `kid_not_projectable`, `transaction_tag_drift`, `tag_projection_unavailable`,
-or `tag_projection_unverified`.
+or `tag_projection_unverified`. The existing `kid_tag_collision` and
+`kid_tag_mapping_deleted` codes also cover the managed Parent tag for v2.1 wire
+compatibility.
 
 The decision/audit/replay/outbox commit **precedes** Monarch access. A subsequent
 Monarch failure returns HTTP 200 with the saved decision and explicit failed/drift
@@ -177,8 +186,9 @@ restart; Mission Control's sync outbox is the retry driver (there is no timer da
 or unbounded automatic retry loop in Tyrion).
 
 Cross-process projection leases serialize tag catalog creation and read/replace.
-Stable mappings use kid IDs, not display labels. Unrelated Monarch tags are always
-preserved; writes supply the complete previously read tag set and verify read-back.
+Stable Kid mappings use kid IDs, not display labels; the single household Parent
+mapping is persisted separately. Unrelated Monarch tags are always preserved;
+writes supply the complete previously read tag set and verify read-back.
 Last verified managed tags are retained separately across failed attempts. Real
 drift, deleted mappings and pre-existing label collisions require explicit operator
 reconciliation; retries/new decisions never silently clear drift. Managed tags are
@@ -196,7 +206,8 @@ Pinned `monarchmoneycommunity==1.6.0` exposes `get_transaction_tags()`,
 `set_transaction_tags(transaction_id, tag_ids)`. Bridge list/create/replace DTOs
 already normalize and verify these operations; fixture-based tests exercise exact
 calls and read-back. Normal operation needs **no manually pre-created tag**:
-Tyrion creates `Kid: <display name>` lazily and retains stable mappings.
+Tyrion creates `Kid: <display name>` and `Parent` lazily and retains stable
+mappings.
 The pinned client exposes no supported catalog rename/update/delete operation;
 profile renames create replacement managed tags and retain retired tag identities.
 Do not confuse transaction tag-set updates (supported) with catalog metadata edits.

@@ -59,6 +59,57 @@ describe('durable attribution decisions and tag outbox', () => {
     expect(bridge.current).toEqual(['unrelated', 'created-1']);
   });
 
+  it('loads existing journals written before the Parent mapping was added', async () => {
+    await service.register(actor, registration());
+    const journal = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+    delete journal.parentMappings;
+    for (const entry of journal.projections as Array<{
+      projection: Record<string, unknown>;
+    }>) {
+      delete entry.projection.parentAssigned;
+    }
+    await writeFile(path, JSON.stringify(journal));
+
+    store = new FileAttributionRepositoryV1(path);
+    service = createService(store);
+    const recovered = await service.projection(actor, projectionRequest('retry', 1));
+
+    expect(recovered.projection?.status).toBe('projected');
+    expect(recovered.projection && Object.keys(recovered.projection).sort()).toEqual([
+      'decisionVersion', 'errorCode', 'kidIds', 'managedTagIds', 'sourceRef',
+      'status', 'updatedAt',
+    ]);
+    const migrated = JSON.parse(await readFile(path, 'utf8'));
+    expect(migrated.parentMappings).toEqual([]);
+  });
+
+  it('migrates a saved parent decision and projects Parent after an older journal restart', async () => {
+    const request = registration();
+    request.item.existingManualDecision = {
+      action: 'parent-expense', kidId: null, decidedAt: now().toISOString(),
+    };
+    await service.register(actor, request);
+    const journal = JSON.parse(await readFile(path, 'utf8'));
+    delete journal.parentMappings;
+    for (const entry of journal.projections) {
+      delete entry.projection.parentAssigned;
+      entry.projection.managedTagIds = [];
+      entry.verifiedManagedTagIds = [];
+    }
+    bridge.current = ['unrelated'];
+    bridge.tags = bridge.tags.filter((tag) => tag.name !== 'Parent');
+    await writeFile(path, JSON.stringify(journal));
+
+    store = new FileAttributionRepositoryV1(path);
+    service = createService(store);
+    const recovered = await service.projection(actor, projectionRequest('retry', 1));
+
+    expect(recovered.projection?.status).toBe('projected');
+    expect(recovered.projection?.managedTagIds).toEqual(['created-2']);
+    expect(bridge.tags.find((tag) => tag.id === 'created-2')?.name).toBe('Parent');
+    expect(bridge.current).toEqual(['unrelated', 'created-2']);
+  });
+
   it('bootstraps a legacy manual parent/shared decision without requiring a tag pre-step', async () => {
     const request = registration();
     request.item.existingManualDecision = {
@@ -69,7 +120,8 @@ describe('durable attribution decisions and tag outbox', () => {
     expect(result.record.input.existingManualDecision?.actorId).toBe(actor.actorId);
     expect(result.projection?.status).toBe('projected');
     expect(result.projection?.kidIds).toEqual([]);
-    expect(bridge.creates).toBe(0);
+    expect(bridge.tags[1]).toMatchObject({ name: 'Parent', isActive: true });
+    expect(bridge.current).toEqual(['unrelated', 'created-1']);
   });
 
   it('never writes ambiguous attribution or treats managed tags as attribution input', async () => {
@@ -83,6 +135,29 @@ describe('durable attribution decisions and tag outbox', () => {
     await expect(service.register(actor, {
       ...request, item: { ...request.item, tags: ['Kid: Alpha'] },
     })).rejects.toMatchObject({ code: 'invalid_domain_contract' });
+  });
+
+  it('does not project a likely parent/shared rule that has not reached definite confidence', async () => {
+    policies.load = async () => ({
+      ...structuredClone(policyFixture),
+      merchantRules: [{
+        ...policyFixture.merchantRules[0], outcome: 'parent-shared',
+        pattern: 'INVENTED MERCHANT', kidId: null, confidence: 'likely',
+      }],
+      exceptionPolicy: {
+        ...policyFixture.exceptionPolicy,
+        requireReviewForLikelyAttribution: false,
+      },
+    });
+    const result = await service.register(actor, registration());
+
+    expect(result.record.attribution).toMatchObject({
+      status: 'unassigned', confidence: 'likely', method: 'merchant-rule',
+      review: { status: 'not-required' },
+    });
+    expect(result.projection).toBeNull();
+    expect(bridge.creates).toBe(0);
+    expect(bridge.replacements).toBe(0);
   });
 
   it('creates only once and refuses source identity remapping or aliasing', async () => {
@@ -224,7 +299,7 @@ describe('durable attribution decisions and tag outbox', () => {
     expect((await store.load(actor.householdId, 'opaque-source'))?.stateVersion).toBe(1);
   });
 
-  it('projects a definite automated parent/shared decision by removing only managed kid tags', async () => {
+  it('projects a definite automated parent/shared rule with the Parent tag only', async () => {
     await service.register(actor, registration());
     policyVersion = 2;
     policies.load = async () => ({
@@ -242,6 +317,39 @@ describe('durable attribution decisions and tag outbox', () => {
     });
     expect(parent.projection?.status).toBe('projected');
     expect(parent.projection?.kidIds).toEqual([]);
+    expect(parent.projection?.managedTagIds).toEqual(['created-2']);
+    expect(bridge.tags[2]).toMatchObject({ name: 'Parent', isActive: true });
+    expect(bridge.current).toEqual(['unrelated', 'created-2']);
+  });
+
+  it('projects manual Parent, returns to Kid, and clears managed tags on explicit unassign', async () => {
+    await service.register(actor, registration());
+    const parent = await service.act(actor, {
+      contractVersion: '2.1', provenance: 'mission-control-normalized-v2',
+      sourceRef: 'opaque-source', expectedPolicyVersion: 1, expectedStateVersion: 1,
+      idempotencyKey: 'manual-parent', confirm: true, action: 'mark-parent-expense',
+    });
+    expect(parent.projection?.status).toBe('projected');
+    expect(bridge.current).toEqual(['unrelated', 'created-2']);
+    expect(bridge.tags[1].name).toBe('Kid: Alpha');
+    expect(bridge.tags[2].name).toBe('Parent');
+
+    service = createService(new FileAttributionRepositoryV1(path));
+    const kid = await service.act(actor, {
+      contractVersion: '2.1', provenance: 'mission-control-normalized-v2',
+      sourceRef: 'opaque-source', expectedPolicyVersion: 1, expectedStateVersion: 2,
+      idempotencyKey: 'manual-kid-again', confirm: true,
+      action: 'assign-kid', kidId: 'kid-alpha',
+    });
+    expect(kid.projection?.managedTagIds).toEqual(['created-1']);
+    expect(bridge.current).toEqual(['unrelated', 'created-1']);
+
+    const unassigned = await service.act(actor, {
+      contractVersion: '2.1', provenance: 'mission-control-normalized-v2',
+      sourceRef: 'opaque-source', expectedPolicyVersion: 1, expectedStateVersion: 3,
+      idempotencyKey: 'explicit-unassign', confirm: true, action: 'unassign',
+    });
+    expect(unassigned.projection?.managedTagIds).toEqual([]);
     expect(bridge.current).toEqual(['unrelated']);
   });
 
@@ -279,7 +387,8 @@ describe('durable attribution decisions and tag outbox', () => {
     expect(replay.stateVersion).toBe(2);
     expect(replay.attribution.kidId).toBe('kid-beta');
     expect(replay.projection?.kidIds).toEqual([]);
-    expect(bridge.current).toEqual(['unrelated']);
+    expect(replay.projection?.managedTagIds).toEqual(['created-3']);
+    expect(bridge.current).toEqual(['unrelated', 'created-3']);
   });
 
   it('recovers an unknown successful tag replacement without sending a duplicate mutation', async () => {

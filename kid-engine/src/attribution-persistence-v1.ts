@@ -9,7 +9,10 @@ import {
   parseAttributionBatchRequestV1,
   toAttributionInput,
 } from './attribution-batch-v1.js';
-import { attributeTransactionV1 } from './attribution-v1.js';
+import {
+  attributeTransactionV1,
+  isParentAssignmentV1,
+} from './attribution-v1.js';
 import {
   ContractValidationError,
   parsePolicyActorV1,
@@ -23,14 +26,16 @@ import {
 } from './attribution-store-v1.js';
 import {
   TagProjectionError,
+  toTagProjectionDtoV1,
   type AttributionTagProjectorV1,
+  type TagProjectionDtoV1,
   type TagProjectionRecordV1,
 } from './tag-projection-v1.js';
 
 export interface DurableAttributionStateV1 {
   contractVersion: '2.1';
   record: AttributionActionRecordV1;
-  projection: TagProjectionRecordV1 | null;
+  projection: TagProjectionDtoV1 | null;
 }
 
 export class DurableAttributionServiceV1 {
@@ -124,7 +129,7 @@ export class DurableAttributionServiceV1 {
   }
 
   /** Caller holds the store's projection lease while reading and projecting current state. */
-  async projectCurrent(householdId: string, sourceRef: string): Promise<TagProjectionRecordV1 | null> {
+  async projectCurrent(householdId: string, sourceRef: string): Promise<TagProjectionDtoV1 | null> {
     const record = await this.store.load(householdId, sourceRef);
     if (!record) throw new AttributionActionError('attribution_not_found', 'Attribution state was not found');
     if (!projectable(record)) return this.projectionStatus(householdId, record);
@@ -135,6 +140,10 @@ export class DurableAttributionServiceV1 {
         householdId, sourceRef, decisionVersion: decisionVersion(record),
         kidIds: record.attribution.status === 'attributed' && record.attribution.kidId
           ? [record.attribution.kidId] : [],
+        parentAssigned: isParentAssignmentV1(
+          record.input.existingManualDecision,
+          record.attribution
+        ),
         kids: policy.kids,
       });
     } catch (error) {
@@ -144,13 +153,17 @@ export class DurableAttributionServiceV1 {
         prior?.decisionVersion === decisionVersion(record) &&
         (prior.status === 'failed' || prior.status === 'drift')
       ) {
-        return prior;
+        return toTagProjectionDtoV1(prior);
       }
       // The decision and outbox already committed. Expose a sanitized partial failure,
       // including catalog/read failures that occur before the projector writes a record.
       const failed: TagProjectionRecordV1 = {
         sourceRef, decisionVersion: decisionVersion(record),
         kidIds: record.attribution.kidId ? [record.attribution.kidId] : [],
+        parentAssigned: isParentAssignmentV1(
+          record.input.existingManualDecision,
+          record.attribution
+        ),
         managedTagIds: prior?.managedTagIds ?? [],
         status: prior?.status === 'drift' ||
           (error instanceof TagProjectionError && error.code === 'transaction_tag_drift')
@@ -160,22 +173,28 @@ export class DurableAttributionServiceV1 {
         updatedAt: this.now().toISOString(),
       };
       await this.store.saveProjection(householdId, failed);
-      return failed;
+      return toTagProjectionDtoV1(failed);
     }
   }
 
   private async projectionStatus(householdId: string, record: AttributionActionRecordV1) {
     const prior = await this.store.loadProjection(householdId, record.attribution.sourceRef);
     if (!await this.store.projectionPending(householdId, record.attribution.sourceRef)) {
-      return prior;
+      return prior ? toTagProjectionDtoV1(prior) : null;
     }
-    if (prior?.decisionVersion === decisionVersion(record)) return prior;
-    return {
+    if (prior?.decisionVersion === decisionVersion(record)) {
+      return toTagProjectionDtoV1(prior);
+    }
+    return toTagProjectionDtoV1({
       sourceRef: record.attribution.sourceRef, decisionVersion: decisionVersion(record),
       kidIds: record.attribution.kidId ? [record.attribution.kidId] : [],
+      parentAssigned: isParentAssignmentV1(
+        record.input.existingManualDecision,
+        record.attribution
+      ),
       managedTagIds: prior?.managedTagIds ?? [], status: 'pending' as const,
       errorCode: null, updatedAt: record.attribution.provenance.evaluatedAt,
-    };
+    });
   }
 }
 

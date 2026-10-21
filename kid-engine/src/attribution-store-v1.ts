@@ -14,6 +14,7 @@ import {
   parseReattributionPreviewV1,
   type ReattributionPreviewV1,
 } from './contracts/v1.js';
+import { isParentAssignmentV1 } from './attribution-v1.js';
 import {
   ReattributionError,
   type ReattributionAppliedStateV1,
@@ -22,6 +23,7 @@ import {
 } from './reattribution-v1.js';
 import type {
   KidTagMappingV1,
+  ParentTagMappingV1,
   TagProjectionRecordV1,
   TagProjectionRepositoryV1,
 } from './tag-projection-v1.js';
@@ -43,6 +45,7 @@ interface Store {
     actorId: string | null; reference: string | null;
   }>;
   mappings: Array<{ householdId: string; mapping: KidTagMappingV1 }>;
+  parentMappings: Array<{ householdId: string; mapping: ParentTagMappingV1 }>;
   projections: Array<{
     householdId: string; projection: TagProjectionRecordV1;
     verifiedManagedTagIds?: string[];
@@ -199,6 +202,20 @@ export class FileAttributionRepositoryV1
     });
   }
 
+  async loadParentMapping(householdId: string) {
+    return structuredClone((await this.read()).parentMappings.find((entry) =>
+      entry.householdId === householdId)?.mapping ?? null);
+  }
+
+  async saveParentMapping(householdId: string, mapping: ParentTagMappingV1) {
+    await this.update((store) => {
+      const current = store.parentMappings.find((entry) =>
+        entry.householdId === householdId);
+      if (current) current.mapping = mapping;
+      else store.parentMappings.push({ householdId, mapping });
+    });
+  }
+
   async loadProjection(householdId: string, sourceRef: string) {
     return structuredClone((await this.read()).projections.find((entry) =>
       entry.householdId === householdId && entry.projection.sourceRef === sourceRef
@@ -346,7 +363,11 @@ export class FileAttributionRepositoryV1
     if (!prior && !wasPending) return false;
     const projection: TagProjectionRecordV1 = {
       sourceRef: record.attribution.sourceRef, decisionVersion: decisionVersion(record),
-      kidIds: [], managedTagIds: prior?.projection.managedTagIds ?? [],
+      kidIds: [],
+      parentAssigned: isParentAssignmentV1(
+        record.input.existingManualDecision, record.attribution
+      ),
+      managedTagIds: prior?.projection.managedTagIds ?? [],
       status: prior?.projection.status === 'drift' ? 'drift' : 'pending',
       errorCode: prior?.projection.status === 'drift' ? 'transaction_tag_drift' : null,
       updatedAt: record.attribution.provenance.evaluatedAt,
@@ -359,11 +380,17 @@ export class FileAttributionRepositoryV1
   private async read(): Promise<Store> {
     try {
       if ((await stat(this.path)).size > MAX_BYTES) throw new AttributionStoreError();
-      const value: Store = JSON.parse(await readFile(this.path, 'utf8'));
+      const value = JSON.parse(await readFile(this.path, 'utf8')) as Store & {
+        parentMappings?: Store['parentMappings'];
+      };
       if (value.storageVersion !== 1 || ![
         value.records, value.replays, value.audit, value.mappings,
         value.projections, value.previews, value.previewVersions, value.applied,
-      ].every(Array.isArray)) throw new AttributionStoreError();
+      ].every(Array.isArray) ||
+        (value.parentMappings !== undefined && !Array.isArray(value.parentMappings))) {
+        throw new AttributionStoreError();
+      }
+      value.parentMappings ??= [];
       for (const entry of value.records) {
         const parsed = parseAttributionActionRecordV1(entry.record);
         if (
@@ -400,16 +427,39 @@ export class FileAttributionRepositoryV1
           !strings(mapping.retiredTagIds)
         ) throw new AttributionStoreError();
       }
+      const mappedParentHouseholds = new Set<string>();
+      for (const entry of value.parentMappings) {
+        const mapping = entry.mapping;
+        if (
+          typeof entry.householdId !== 'string' ||
+          mappedParentHouseholds.has(entry.householdId) ||
+          !exactKeys(mapping, ['tagId', 'label']) ||
+          !strings([mapping.tagId, mapping.label]) ||
+          mapping.label !== 'Parent'
+        ) throw new AttributionStoreError();
+        mappedParentHouseholds.add(entry.householdId);
+      }
       for (const entry of value.projections) {
         const projection = entry.projection;
+        if (!Object.hasOwn(projection, 'parentAssigned')) {
+          const current = this.find(value, entry.householdId, projection.sourceRef);
+          projection.parentAssigned = current &&
+            projection.decisionVersion === decisionVersion(current.record)
+            ? isParentAssignmentV1(
+                current.record.input.existingManualDecision,
+                current.record.attribution
+              )
+            : false;
+        }
         if (
           typeof entry.householdId !== 'string' ||
           !exactKeys(projection, [
-            'sourceRef', 'decisionVersion', 'kidIds', 'managedTagIds',
-            'status', 'errorCode', 'updatedAt',
+            'sourceRef', 'decisionVersion', 'kidIds', 'parentAssigned',
+            'managedTagIds', 'status', 'errorCode', 'updatedAt',
           ]) ||
           !strings([projection.sourceRef, projection.decisionVersion, projection.updatedAt]) ||
           !strings(projection.kidIds) || !strings(projection.managedTagIds) ||
+          typeof projection.parentAssigned !== 'boolean' ||
           !['pending', 'projected', 'failed', 'drift'].includes(projection.status) ||
           !Number.isFinite(Date.parse(projection.updatedAt)) ||
           (entry.verifiedManagedTagIds !== undefined && !strings(entry.verifiedManagedTagIds)) ||
@@ -442,6 +492,7 @@ export class FileAttributionRepositoryV1
     } catch (error) {
       if (errorCode(error) === 'ENOENT') return {
         storageVersion: 1, records: [], replays: [], audit: [], mappings: [],
+        parentMappings: [],
         projections: [], previews: [], previewVersions: [], applied: [],
       };
       throw new AttributionStoreError();

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   KID_TAG_COLOR,
+  PARENT_TAG_NAME,
   TagProjectionError,
   TagProjectionServiceV1,
   type KidTagMappingV1,
   type MonarchTagProjectionBridgeV1,
   type MonarchTagV1,
+  type ParentTagMappingV1,
   type TagProjectionRecordV1,
   type TagProjectionRepositoryV1,
 } from '../src/tag-projection-v1.js';
@@ -67,6 +69,89 @@ describe('confirmed attribution Monarch tag projection', () => {
 
     await service.projectConfirmed(input([], 'state:4'));
     expect(bridge.current).toEqual(['tag-unrelated']);
+  });
+
+  it('projects Parent only for explicit parent assignment and switches mutually exclusively', async () => {
+    const repository = new MemoryProjectionRepository();
+    const bridge = new MemoryBridge(
+      [{ id: 'tag-unrelated', name: 'Household', isActive: true }],
+      ['tag-unrelated']
+    );
+    const service = createService(repository, bridge);
+
+    await service.projectConfirmed(input(['kid-alpha'], 'state:1'));
+    const parent = await service.projectConfirmed({
+      ...input([], 'state:2'),
+      parentAssigned: true,
+    });
+
+    expect(parent.kidIds).toEqual([]);
+    expect(parent.managedTagIds).toEqual(['tag-created-2']);
+    expect(bridge.creates).toEqual([
+      { name: 'Kid: Alex', color: KID_TAG_COLOR },
+      { name: PARENT_TAG_NAME, color: KID_TAG_COLOR },
+    ]);
+    expect(bridge.current).toEqual(['tag-unrelated', 'tag-created-2']);
+    expect(repository.parentMapping).toEqual({
+      tagId: 'tag-created-2',
+      label: 'Parent',
+    });
+
+    await service.projectConfirmed(input(['kid-beta'], 'state:3'));
+    expect(bridge.current).toEqual(['tag-unrelated', 'tag-created-3']);
+
+    await service.projectConfirmed(input([], 'state:4'));
+    expect(bridge.current).toEqual(['tag-unrelated']);
+  });
+
+  it('rejects a Parent projection combined with kid assignments', async () => {
+    const repository = new MemoryProjectionRepository();
+    const bridge = new MemoryBridge([], []);
+
+    await expect(
+      createService(repository, bridge).projectConfirmed({
+        ...input(['kid-alpha']),
+        parentAssigned: true,
+      })
+    ).rejects.toMatchObject({ code: 'kid_not_projectable' });
+
+    expect(bridge.creates).toEqual([]);
+    expect(bridge.replacements).toHaveLength(0);
+  });
+
+  it('rejects a same-version retry that changes Parent to unassigned', async () => {
+    const repository = new MemoryProjectionRepository();
+    const bridge = new MemoryBridge([], []);
+    const service = createService(repository, bridge);
+    const parent = { ...input([], 'state:1'), parentAssigned: true };
+
+    await service.projectConfirmed(parent);
+    const writes = bridge.replacements.length;
+    await expect(
+      service.projectConfirmed(input([], 'state:1'))
+    ).rejects.toMatchObject({ code: 'transaction_tag_drift' });
+
+    expect(repository.projection?.status).toBe('drift');
+    expect(bridge.current).toEqual(['tag-created-1']);
+    expect(bridge.replacements).toHaveLength(writes);
+  });
+
+  it('clears Parent on explicit unassignment but leaves undecided inputs untouched', async () => {
+    const repository = new MemoryProjectionRepository();
+    const bridge = new MemoryBridge(
+      [{ id: 'tag-unrelated', name: 'Household', isActive: true }],
+      ['tag-unrelated']
+    );
+    const service = createService(repository, bridge);
+
+    await service.projectConfirmed({ ...input([], 'state:1'), parentAssigned: true });
+    await service.projectConfirmed(input([], 'state:2'));
+    expect(bridge.current).toEqual(['tag-unrelated']);
+    const replacements = bridge.replacements.length;
+
+    await service.projectConfirmed(input([], 'state:3'));
+    expect(bridge.current).toEqual(['tag-unrelated']);
+    expect(bridge.replacements).toHaveLength(replacements);
   });
 
   it('moves a renamed kid to a new mapped tag and removes the retired tag', async () => {
@@ -140,6 +225,57 @@ describe('confirmed attribution Monarch tag projection', () => {
         )
       ).projectConfirmed(input(['kid-alpha']))
     ).rejects.toMatchObject({ code: 'transaction_tag_drift' });
+
+    const parentCollisionRepository = new MemoryProjectionRepository();
+    const parentCollisionBridge = new MemoryBridge(
+      [{ id: 'external-parent-tag', name: 'Parent', isActive: true }],
+      []
+    );
+    await expect(
+      createService(parentCollisionRepository, parentCollisionBridge)
+        .projectConfirmed({ ...input([], 'parent:1'), parentAssigned: true })
+    ).rejects.toMatchObject({ code: 'kid_tag_collision' });
+    expect(parentCollisionBridge.creates).toEqual([]);
+
+    const pendingCollisionRepository = new MemoryProjectionRepository();
+    pendingCollisionRepository.parentMapping = {
+      tagId: 'pending:parent',
+      label: 'Parent',
+    };
+    const pendingCollisionBridge = new MemoryBridge(
+      [{ id: 'external-parent-tag', name: 'parent', isActive: true }],
+      []
+    );
+    await expect(
+      createService(pendingCollisionRepository, pendingCollisionBridge)
+        .projectConfirmed({ ...input([], 'parent:1'), parentAssigned: true })
+    ).rejects.toMatchObject({ code: 'kid_tag_collision' });
+    expect(pendingCollisionBridge.creates).toEqual([]);
+
+    const deletedParentRepository = new MemoryProjectionRepository();
+    deletedParentRepository.parentMapping = {
+      tagId: 'deleted-parent-tag',
+      label: 'Parent',
+    };
+    await expect(
+      createService(deletedParentRepository, new MemoryBridge([], []))
+        .projectConfirmed({ ...input([], 'parent:2'), parentAssigned: true })
+    ).rejects.toMatchObject({ code: 'kid_tag_mapping_deleted' });
+
+    const renamedParentRepository = new MemoryProjectionRepository();
+    renamedParentRepository.parentMapping = {
+      tagId: 'mapped-parent-tag',
+      label: 'Parent',
+    };
+    await expect(
+      createService(
+        renamedParentRepository,
+        new MemoryBridge(
+          [{ id: 'mapped-parent-tag', name: 'Changed externally', isActive: true }],
+          []
+        )
+      ).projectConfirmed({ ...input([], 'parent:3'), parentAssigned: true })
+    ).rejects.toMatchObject({ code: 'transaction_tag_drift' });
   });
 
   it('records recoverable failures, retries safely, and then refuses external drift', async () => {
@@ -183,6 +319,71 @@ describe('confirmed attribution Monarch tag projection', () => {
     expect(bridge.current).toEqual(['tag-created-1']);
   });
 
+  it('recovers a created Parent tag after restart without creating a duplicate', async () => {
+    const repository = new MemoryProjectionRepository();
+    repository.failNextParentMappingSave = true;
+    const bridge = new MemoryBridge([], []);
+    const service = createService(repository, bridge);
+    const parentInput = { ...input([], 'parent:1'), parentAssigned: true };
+
+    await expect(service.projectConfirmed(parentInput)).rejects.toThrow(
+      'synthetic parent mapping persistence failure'
+    );
+    expect(repository.parentMapping).toEqual({
+      tagId: 'pending:parent',
+      label: 'Parent',
+    });
+    expect(bridge.creates).toEqual([
+      { name: PARENT_TAG_NAME, color: KID_TAG_COLOR },
+    ]);
+
+    await createService(repository, bridge).projectConfirmed(parentInput);
+
+    expect(repository.parentMapping).toEqual({
+      tagId: 'tag-created-1',
+      label: 'Parent',
+    });
+    expect(bridge.creates).toHaveLength(1);
+    expect(bridge.current).toEqual(['tag-created-1']);
+  });
+
+  it('refuses to overwrite external drift to a projected Parent assignment', async () => {
+    const repository = new MemoryProjectionRepository();
+    const bridge = new MemoryBridge([], []);
+    const service = createService(repository, bridge);
+    const parentInput = { ...input([], 'parent:1'), parentAssigned: true };
+    await service.projectConfirmed(parentInput);
+    bridge.current = [];
+    const writes = bridge.replacements.length;
+
+    await expect(service.projectConfirmed(parentInput)).rejects.toMatchObject({
+      code: 'transaction_tag_drift',
+    });
+
+    expect(repository.projection?.status).toBe('drift');
+    expect(bridge.replacements).toHaveLength(writes);
+  });
+
+  it('surfaces a renamed Parent tag instead of silently removing it on reassignment', async () => {
+    const repository = new MemoryProjectionRepository();
+    const bridge = new MemoryBridge([], []);
+    const service = createService(repository, bridge);
+    await service.projectConfirmed({
+      ...input([], 'state:1'),
+      parentAssigned: true,
+    });
+    bridge.catalog[0].name = 'Renamed Parent';
+    const writes = bridge.replacements.length;
+
+    await expect(
+      service.projectConfirmed(input(['kid-alpha'], 'state:2'))
+    ).rejects.toMatchObject({ code: 'transaction_tag_drift' });
+
+    expect(repository.projection?.status).toBe('drift');
+    expect(bridge.current).toEqual(['tag-created-1']);
+    expect(bridge.replacements).toHaveLength(writes);
+  });
+
   it('ignores a delayed projection older than the last verified decision', async () => {
     const repository = new MemoryProjectionRepository();
     const bridge = new MemoryBridge([], []);
@@ -196,6 +397,7 @@ describe('confirmed attribution Monarch tag projection', () => {
     );
 
     expect(stale.kidIds).toEqual(['kid-beta']);
+    expect(stale).not.toHaveProperty('parentAssigned');
     expect(bridge.current).toEqual(['tag-created-1']);
     expect(bridge.replacements).toHaveLength(1);
   });
@@ -220,6 +422,7 @@ function input(kidIds: string[], decisionVersion = 'state:1') {
     sourceRef: 'transaction-demo',
     decisionVersion,
     kidIds,
+    parentAssigned: false,
     kids,
   };
 }
@@ -235,8 +438,10 @@ function createService(
 
 class MemoryProjectionRepository implements TagProjectionRepositoryV1 {
   mappings: KidTagMappingV1[] = [];
+  parentMapping: ParentTagMappingV1 | null = null;
   projection: TagProjectionRecordV1 | null = null;
   failNextFinalMappingSave = false;
+  failNextParentMappingSave = false;
 
   async listMappings(): Promise<KidTagMappingV1[]> {
     return structuredClone(this.mappings);
@@ -259,6 +464,24 @@ class MemoryProjectionRepository implements TagProjectionRepositoryV1 {
     ];
   }
 
+  async loadParentMapping(): Promise<ParentTagMappingV1 | null> {
+    return this.parentMapping ? structuredClone(this.parentMapping) : null;
+  }
+
+  async saveParentMapping(
+    _householdId: string,
+    mapping: ParentTagMappingV1
+  ): Promise<void> {
+    if (
+      this.failNextParentMappingSave &&
+      !mapping.tagId.startsWith('pending:')
+    ) {
+      this.failNextParentMappingSave = false;
+      throw new Error('synthetic parent mapping persistence failure');
+    }
+    this.parentMapping = structuredClone(mapping);
+  }
+
   async loadProjection(): Promise<TagProjectionRecordV1 | null> {
     return this.projection ? structuredClone(this.projection) : null;
   }
@@ -277,7 +500,7 @@ class MemoryBridge implements MonarchTagProjectionBridgeV1 {
   failNextReplacement = false;
 
   constructor(
-    private catalog: MonarchTagV1[],
+    public catalog: MonarchTagV1[],
     public current: string[]
   ) {}
 

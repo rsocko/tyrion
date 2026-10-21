@@ -2,10 +2,11 @@
 
 > **Authority:** Tyrion owns each attribution decision, confidence, provenance,
 > policy version, ambiguity, and audit history. Managed Monarch
-> `Kid: <display name>` transaction tags are an interoperable projection only.
-> Stable kid identity comes from Tyrion's persisted `kidId` to Monarch tag-ID mapping,
-> never from parsing tag labels or Monarch review assignees. Projection drift is
-> surfaced for explicit reconciliation rather than silently overwritten. — How It Works
+> `Kid: <display name>` and `Parent` transaction tags are interoperable projections
+> only. Stable kid identity comes from Tyrion's persisted `kidId` to Monarch tag-ID
+> mapping, never from parsing tag labels or Monarch review assignees. Projection
+> drift is surfaced for explicit reconciliation rather than silently overwritten. —
+> How It Works
 
 ## Overview
 
@@ -69,7 +70,9 @@ Merchant contains "SCHOOL LUNCH - WESTVIEW" → Sophie (confidence: definite)
 - Rule outcomes are **attribute to a profile**, **parent/shared**, or **leave
   unassigned for review**. This lets an account-scoped rule explicitly override a
   global profile rule without relying on an account default.
-- `definite` = auto-assigned, no triage needed
+- Definite parent/shared outcomes project `Parent`; definite kid assignments project
+  their managed kid tag. Ambiguous or unassigned outcomes receive no new special tag.
+- `definite` = resolved automatically, no triage needed
 - `likely` = auto-assigned but queued for quick confirmation in triage
 
 ### 4. Historical Pattern Matching (ML-Lite)
@@ -186,7 +189,8 @@ When transactions need human review:
 
 Actions:
 - **Assign to kid** → Updates attribution + adds to kid's spending total
-- **Mine** → Marks as parent expense, removes from kid tracking
+- **Mine** → Marks as parent expense, projects the managed `Parent` tag, and removes
+  any managed kid tag
 - **Unassign** → Records an explicit manual unassignment
 - **Resolve** → Confirms the current suggested kid
 - **Defer** → Keeps the exception open for review at a bounded future time

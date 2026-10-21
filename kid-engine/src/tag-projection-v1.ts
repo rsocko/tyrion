@@ -1,5 +1,6 @@
 export const KID_TAG_PREFIX = 'Kid: ' as const;
 export const KID_TAG_COLOR = '#19D2A5' as const;
+export const PARENT_TAG_NAME = 'Parent' as const;
 
 export interface MonarchTagV1 {
   id: string;
@@ -14,19 +15,29 @@ export interface KidTagMappingV1 {
   retiredTagIds: string[];
 }
 
+export interface ParentTagMappingV1 {
+  tagId: string;
+  label: typeof PARENT_TAG_NAME;
+}
+
 export interface TagProjectionRecordV1 {
   sourceRef: string;
   decisionVersion: string;
   kidIds: string[];
+  parentAssigned: boolean;
   managedTagIds: string[];
   status: 'pending' | 'projected' | 'failed' | 'drift';
   errorCode: TagProjectionErrorCode | null;
   updatedAt: string;
 }
 
+export type TagProjectionDtoV1 = Omit<TagProjectionRecordV1, 'parentAssigned'>;
+
 export interface TagProjectionRepositoryV1 {
   listMappings(householdId: string): Promise<KidTagMappingV1[]>;
   saveMapping(householdId: string, mapping: KidTagMappingV1): Promise<void>;
+  loadParentMapping(householdId: string): Promise<ParentTagMappingV1 | null>;
+  saveParentMapping(householdId: string, mapping: ParentTagMappingV1): Promise<void>;
   loadProjection(
     householdId: string,
     sourceRef: string
@@ -54,11 +65,12 @@ export interface ConfirmedTagProjectionV1 {
   sourceRef: string;
   decisionVersion: string;
   kidIds: string[];
+  parentAssigned: boolean;
   kids: Array<{ id: string; displayName: string; active: boolean }>;
 }
 
 export interface AttributionTagProjectorV1 {
-  projectConfirmed(input: ConfirmedTagProjectionV1): Promise<TagProjectionRecordV1>;
+  projectConfirmed(input: ConfirmedTagProjectionV1): Promise<TagProjectionDtoV1>;
 }
 
 export type TagProjectionErrorCode =
@@ -96,7 +108,7 @@ export class TagProjectionServiceV1 implements AttributionTagProjectorV1 {
 
   async projectConfirmed(
     input: ConfirmedTagProjectionV1
-  ): Promise<TagProjectionRecordV1> {
+  ): Promise<TagProjectionDtoV1> {
     validateInput(input);
     const now = this.now().toISOString();
     const prior = await this.repository.loadProjection(
@@ -104,12 +116,13 @@ export class TagProjectionServiceV1 implements AttributionTagProjectorV1 {
       input.sourceRef
     );
     if (prior && input.decisionVersion < prior.decisionVersion) {
-      return prior;
+      return toTagProjectionDtoV1(prior);
     }
     if (
       prior &&
       input.decisionVersion === prior.decisionVersion &&
-      !sameSet(input.kidIds, prior.kidIds)
+      (!sameSet(input.kidIds, prior.kidIds) ||
+        input.parentAssigned !== prior.parentAssigned)
     ) {
       throw await this.fail(
         input,
@@ -126,7 +139,23 @@ export class TagProjectionServiceV1 implements AttributionTagProjectorV1 {
       );
     }
     let mappings = await this.repository.listMappings(input.householdId);
+    let parentMapping = await this.repository.loadParentMapping(input.householdId);
     const catalog = await this.bridge.listTags();
+    if (parentMapping && parentMapping.tagId !== PENDING_PARENT_TAG_ID) {
+      const mappedParentTag = catalog.find((tag) => tag.id === parentMapping!.tagId);
+      if (!mappedParentTag?.isActive) {
+        throw await this.fail(
+          input, [], now, 'kid_tag_mapping_deleted',
+          'The managed Monarch Parent tag was deleted or disabled'
+        );
+      }
+      if (mappedParentTag.name !== PARENT_TAG_NAME) {
+        throw await this.fail(
+          input, [], now, 'transaction_tag_drift',
+          'The managed Monarch Parent tag changed; reconcile before retrying'
+        );
+      }
+    }
     const desiredMappings: KidTagMappingV1[] = [];
 
     for (const kidId of input.kidIds) {
@@ -319,14 +348,76 @@ export class TagProjectionServiceV1 implements AttributionTagProjectorV1 {
       desiredMappings.push(mapping);
     }
 
+    let desiredParentTagId: string | null = null;
+    if (input.parentAssigned) {
+      if (parentMapping?.tagId === PENDING_PARENT_TAG_ID) {
+        const candidates = matchingLabels(catalog, PARENT_TAG_NAME);
+        if (
+          candidates.length > 1 ||
+          candidates.some(
+            (tag) => tag.name !== PARENT_TAG_NAME || !tag.isActive
+          )
+        ) {
+          throw await this.fail(
+            input, [], now, 'kid_tag_collision',
+            'Conflicting Monarch Parent tags require explicit reconciliation'
+          );
+        }
+        let recovered = candidates[0];
+        if (!recovered) {
+          try {
+            recovered = await this.createManagedTag(PARENT_TAG_NAME);
+          } catch (error) {
+            const projectionError = asProjectionError(error);
+            throw await this.fail(
+              input, [], now, projectionError.code, projectionError.message
+            );
+          }
+          catalog.push(recovered);
+        }
+        parentMapping = { tagId: recovered.id, label: PARENT_TAG_NAME };
+        await this.repository.saveParentMapping(input.householdId, parentMapping);
+      } else if (parentMapping) {
+        desiredParentTagId = parentMapping.tagId;
+      } else {
+        if (matchingLabels(catalog, PARENT_TAG_NAME).length > 0) {
+          throw await this.fail(
+            input, [], now, 'kid_tag_collision',
+            'A pre-existing Monarch Parent tag requires explicit reconciliation'
+          );
+        }
+        parentMapping = {
+          tagId: PENDING_PARENT_TAG_ID,
+          label: PARENT_TAG_NAME,
+        };
+        await this.repository.saveParentMapping(input.householdId, parentMapping);
+        let created: MonarchTagV1;
+        try {
+          created = await this.createManagedTag(PARENT_TAG_NAME);
+        } catch (error) {
+          const projectionError = asProjectionError(error);
+          throw await this.fail(
+            input, [], now, projectionError.code, projectionError.message
+          );
+        }
+        catalog.push(created);
+        parentMapping = { tagId: created.id, label: PARENT_TAG_NAME };
+        await this.repository.saveParentMapping(input.householdId, parentMapping);
+      }
+      desiredParentTagId ??= parentMapping.tagId;
+    }
+
     const currentTagIds = unique(
       await this.bridge.readTransactionTagIds(input.sourceRef)
     );
     const allManagedIds = new Set(
-      mappings.flatMap((mapping) => [
-        mapping.tagId,
-        ...mapping.retiredTagIds,
-      ])
+      [
+        ...mappings.flatMap((mapping) => [
+          mapping.tagId,
+          ...mapping.retiredTagIds,
+        ]),
+        ...(parentMapping ? [parentMapping.tagId] : []),
+      ]
     );
     const currentManagedIds = currentTagIds.filter((tagId) =>
       allManagedIds.has(tagId)
@@ -352,7 +443,10 @@ export class TagProjectionServiceV1 implements AttributionTagProjectorV1 {
     }
 
     const desiredManagedIds = unique(
-      desiredMappings.map((mapping) => mapping.tagId)
+      [
+        ...desiredMappings.map((mapping) => mapping.tagId),
+        ...(desiredParentTagId ? [desiredParentTagId] : []),
+      ]
     );
     const desiredTagIds = unique([
       ...currentTagIds.filter((tagId) => !allManagedIds.has(tagId)),
@@ -440,19 +534,27 @@ export class TagProjectionServiceV1 implements AttributionTagProjectorV1 {
     status: TagProjectionRecordV1['status'],
     errorCode: TagProjectionErrorCode | null,
     updatedAt: string
-  ): Promise<TagProjectionRecordV1> {
+  ): Promise<TagProjectionDtoV1> {
     const record: TagProjectionRecordV1 = {
       sourceRef: input.sourceRef,
       decisionVersion: input.decisionVersion,
       kidIds: [...input.kidIds],
+      parentAssigned: input.parentAssigned,
       managedTagIds: unique(managedTagIds),
       status,
       errorCode,
       updatedAt,
     };
     await this.repository.saveProjection(input.householdId, record);
-    return record;
+    return toTagProjectionDtoV1(record);
   }
+}
+
+export function toTagProjectionDtoV1(
+  projection: TagProjectionRecordV1
+): TagProjectionDtoV1 {
+  const { parentAssigned: _parentAssigned, ...dto } = projection;
+  return dto;
 }
 
 function validateInput(input: ConfirmedTagProjectionV1): void {
@@ -460,6 +562,8 @@ function validateInput(input: ConfirmedTagProjectionV1): void {
     !input.householdId ||
     !input.sourceRef ||
     !input.decisionVersion ||
+    typeof input.parentAssigned !== 'boolean' ||
+    (input.parentAssigned && input.kidIds.length > 0) ||
     new Set(input.kidIds).size !== input.kidIds.length ||
     input.kidIds.length > 20 ||
     input.kids.length > 100
@@ -491,6 +595,24 @@ function unique(values: string[]): string[] {
 
 function pendingTagId(kidId: string): string {
   return `pending:${kidId}`;
+}
+
+const PENDING_PARENT_TAG_ID = 'pending:parent';
+
+function matchingLabels(tags: MonarchTagV1[], label: string): MonarchTagV1[] {
+  return tags.filter(
+    (tag) =>
+      tag.name.localeCompare(label, undefined, { sensitivity: 'accent' }) === 0
+  );
+}
+
+function asProjectionError(error: unknown): TagProjectionError {
+  return error instanceof TagProjectionError
+    ? error
+    : new TagProjectionError(
+        'tag_projection_unavailable',
+        'Monarch tag projection is unavailable'
+      );
 }
 
 function sameSet(left: string[], right: string[]): boolean {
