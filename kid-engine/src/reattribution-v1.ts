@@ -23,6 +23,7 @@ import type { AttributionTagProjectorV1 } from './tag-projection-v1.js';
 export interface ReattributionRecordV1 {
   input: AttributionInputV1;
   current: AttributionResultV1;
+  stateVersion?: number;
 }
 
 export interface ReattributionApplyCountsV1 {
@@ -42,7 +43,10 @@ export interface ReattributionRepository {
     householdId: string,
     sourceRefs: string[]
   ): Promise<ReattributionRecordV1[]>;
-  savePreview(preview: ReattributionPreviewV1): Promise<void>;
+  savePreview(
+    preview: ReattributionPreviewV1,
+    observedVersions?: Array<{ sourceRef: string; stateVersion: number }>
+  ): Promise<void>;
   loadPreview(
     householdId: string,
     previewId: string
@@ -54,7 +58,8 @@ export interface ReattributionRepository {
   applyPreviewIfPolicyVersion(
     preview: ReattributionPreviewV1,
     appliedAt: string,
-    expectedPolicyVersion: number
+    expectedPolicyVersion: number,
+    actorId?: string
   ): Promise<ReattributionApplyCountsV1 | null>;
 }
 
@@ -154,7 +159,11 @@ export class ReattributionService {
       expiresAt: new Date(created.getTime() + this.previewLifetimeMs).toISOString(),
       items,
     };
-    await this.reattributionRepository.savePreview(preview);
+    await this.reattributionRepository.savePreview(preview, records.flatMap((record) =>
+      record.stateVersion === undefined ? [] : [{
+        sourceRef: record.input.source.recordRef, stateVersion: record.stateVersion,
+      }]
+    ));
     return preview;
   }
 
@@ -219,7 +228,8 @@ export class ReattributionService {
           this.reattributionRepository.applyPreviewIfPolicyVersion(
             preview,
             requestedAt,
-            request.expectedPolicyVersion
+            request.expectedPolicyVersion,
+            actor.actorId
           )
       );
       if (!counts) {
@@ -263,6 +273,7 @@ export type ReattributionErrorCode =
   | 'policy_version_conflict'
   | 'reattribution_source_missing'
   | 'reattribution_source_mismatch'
+  | 'reattribution_state_conflict'
   | 'reattribution_preview_invalid'
   | 'reattribution_preview_expired';
 

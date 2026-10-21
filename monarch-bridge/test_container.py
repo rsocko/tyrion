@@ -345,8 +345,12 @@ def test_homelab_contract_routes_only_ui_through_traefik():
         "TYRION_POLICY_AUTH_SECRET",
         "TYRION_POLICY_AUTH_URL",
         "TYRION_INSTRUMENT_FINGERPRINT_KEY",
-        "TYRION_ATTRIBUTION_",
         "TYRION_REATTRIBUTION_TOKEN",
     ):
         assert removed_setting not in compose
         assert removed_setting not in environment
+    assert "tyrion-attribution:/var/lib/tyrion-attribution" in ui_section
+    assert (
+        "TYRION_ATTRIBUTION_STORE_PATH: /var/lib/tyrion-attribution/state.json"
+    ) in ui_section
+    assert "TYRION_REATTRIBUTION_URL" not in compose

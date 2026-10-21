@@ -145,26 +145,22 @@ record references and returns only policy/version/expiry metadata plus determini
 impact counts. Apply requires a separately authorized request with `confirm: true`,
 an unexpired persisted preview, and the same policy version.
 
-Production re-attribution and Mission Control attribution actions use the server-only
-`TYRION_REATTRIBUTION_URL` adapter and authenticate with `BRIDGE_API_TOKEN`. It calls fixed
-internal `POST` operations under `/v1/reattribution/` to resolve records, persist and
-resolve previews, and atomically apply a preview, plus
-`/v1/attribution-actions/records:resolve` and
-`/v1/attribution-actions/actions:resolve` to replay prior actions, and
-`/v1/attribution-actions/actions:apply` for versioned exception state. That
-implementation must preserve newer manual decisions, retain replay history, bind each
-idempotency key to the original mutation parameters, enforce state versions, and
-compare the active policy version in its transaction.
-HTTPS is required unless
-`TYRION_REATTRIBUTION_ALLOW_INSECURE_INTERNAL=true` explicitly authorizes private
-network HTTP. Re-attribution fails closed when this optional adapter is absent;
-policy CRUD and connector operations remain available.
+Production re-attribution and Mission Control attribution actions use Tyrion's
+external `TYRION_ATTRIBUTION_STORE_PATH` journal, not an undeployed HTTP state adapter.
+It atomically retains normalized decision facts, stable source-to-Monarch identity
+mapping, state versions, action history/replay receipts and projection-pending intent.
+Cross-process projection leases serialize managed tag creation and read/replace.
+Monarch failures after a decision commits are explicit saved-but-failed projection
+states, recoverable by the caller's durable outbox. See the exact
+[persistence, bootstrap and retry protocol](../docs/ATTRIBUTION-PERSISTENCE.md).
 
 ## Internal attribution services
 
 Mission Control calls `GET /api/internal/v2/attribution/policy`,
 `POST /api/internal/v2/attribution/batch`, and
-`POST /api/internal/v2/attribution/actions` by private backend DNS. These are Tyrion
+`POST /api/internal/v2/attribution/actions` by private backend DNS. The protected
+`POST /api/internal/v2/attribution/records` and `/projection` routes add durable
+registration/evaluation and current-state status/retry. These are Tyrion
 domain endpoints, not Bridge proxies or browser routes. The
 public `tyrion.socko.us` Traefik routers must exclude `/api/internal/`; the service
 also requires `Host: tyrion-operations-ui:3000` and, when present, the same value in
@@ -232,7 +228,7 @@ Runtime configuration:
 | `MISSION_CONTROL_RETURN_URL` | Optional exact HTTPS return page shown only after verified authentication and bounded sync |
 | `MISSION_CONTROL_RETURN_ALLOWED_ORIGINS` | Optional exact HTTPS origin allowlist for the return page |
 | `TYRION_POLICY_STORE_PATH` | External absolute policy/audit store path |
-| `TYRION_REATTRIBUTION_URL` | Optional protected internal re-attribution and attribution-action state service |
+| `TYRION_ATTRIBUTION_STORE_PATH` | Required external absolute decision/audit/replay/projection journal for durable attribution and re-attribution |
 
 Bill Matching v2 needs no account-scope environment variable. It searches every
 normalized Bridge account by default. Operators may exclude accounts in

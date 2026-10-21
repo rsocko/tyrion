@@ -1,5 +1,23 @@
 # Monarch Integration Validation
 
+## Durable attribution tag write-back
+
+The protected v2 attribution records/actions/projection routes now use Tyrion-owned
+external-volume persistence rather than HTTP repository facades. Deterministic
+tests cover restart reuse, normalized detail/provenance/history retention, immutable
+opaque-source-to-upstream mapping, concurrent CAS and catalog serialization,
+persist-first Monarch failure, exact action replay across policy changes, manual
+preservation, read-only status/explain, retry, unrelated-tag preservation and sticky
+drift. The protocol and deployment prerequisites are in
+[`ATTRIBUTION-PERSISTENCE.md`](./ATTRIBUTION-PERSISTENCE.md).
+
+Pinned client 1.6.0 signature inspection confirms catalog listing, tag creation and
+transaction tag-set replacement; it exposes no supported catalog rename/update/delete
+method. Normal projection creates missing managed tags itself; user pre-creation is
+not required. Existing colliding labels/mapping drift require explicit reconciliation.
+Fixture-based Bridge tests verify the exact pinned calls and read-back. This is not
+new live compatibility evidence and does not authorize live tag creation or mutation.
+
 ## Bill matching contract
 
 `POST /api/connector/v1/bill-matches` supports unchanged Bill Matching v1 and the
@@ -137,6 +155,11 @@ observation timestamp, fixed
 provenance marker, and optional structured manual-decision context. It cannot carry
 Bridge pages, raw transaction/account identifiers, masks, amounts, notes, tags,
 categories, session material, or credentials.
+
+The separate durable records contract additionally accepts one normalized Bridge
+transaction identity outside the batch item, solely to persist its immutable
+source mapping for protected write-back. It does not widen stateless batch inputs or
+permit raw upstream objects, ledger snapshots, or tag-based inference.
 
 Mission Control authenticates with the existing server-only
 `BRIDGE_API_TOKEN`/finance-manager bearer credential on the private Docker network.

@@ -35,7 +35,7 @@ reporting product, broad transaction browser, or separate assistant shell.
 | **OWL / Document Intelligence** | Document provenance, extraction, expectations, obligations, duplicate decisions, document relationships, and durable document-to-payment reconciliation history | Raw Monarch session material, authoritative transaction records, or Mission Control task priority |
 | **Mission Control** | Finance attention surfaces, exception review and actions, notifications, tasks, My Day, Houston, navigation, authentication, and shared interaction patterns | Tyrion policy CRUD, connector setup, a replacement ledger, budget manager, report suite, bills app, or second finance assistant |
 | **Tyrion domain** | Kid/profile configuration, account and merchant rules, limits, policy versions, per-kid attribution, exception detection, decision summaries, finance tools, and reconciliation orchestration | Authoritative copies of Monarch data or a general-purpose finance application |
-| **Tyrion attribution service** | Protected, household-scoped batch evaluation of privacy-safe normalized attribution facts against the current Tyrion policy | Bridge transport, browser access, raw transaction/account records, or executable engine distribution to consumers |
+| **Tyrion attribution service** | Protected, household-scoped evaluation and durable attribution decisions, normalized decision facts, audit/replay history, stable source identity mapping and recoverable managed-tag projection against Tyrion policy | Bridge transport, browser access, authoritative ledger copies, raw upstream response records, or executable engine distribution to consumers |
 | **Monarch Bridge** | Authenticated Monarch access, deterministic synchronization, normalized contracts, write-back, health, and observability | Product navigation, task ownership, broad reporting UI, or an assistant shell |
 | **Tyrion operations/configuration UI** | Tyrion-owned kid, rule, limit, policy, and connector configuration; connector reachability; authentication setup/status; logout; bounded sync/recheck; contract validation | Daily finance attention, ordinary transactions, accounts, budgets, bills, generic triage, dashboards, reporting, or chat |
 
@@ -76,6 +76,15 @@ endpoint and is explicitly excluded from the public `tyrion.socko.us` router. It
 accepts the fixed private Docker authority only, rejects any different forwarded
 authority, and uses the existing server-only bridge/finance-manager token as its
 bearer credential.
+
+The same private attribution boundary also hosts durable record registration,
+confirmed actions and projection status/retry. Tyrion retains only normalized
+attribution facts and decisions, not a replacement transaction ledger. Registration
+separately binds a consumer's opaque source reference to the normalized Bridge
+transaction identity so write-back never mistakes a consumer reference for a Monarch
+ID. Decision/audit/replay and retry intent commit before Monarch mutation, with
+explicit partial-failure status. See
+[`ATTRIBUTION-PERSISTENCE.md`](./ATTRIBUTION-PERSISTENCE.md).
 
 The production browser route tree and `/api/bridge/...` proxy allowlist must prevent
 access to transactions, accounts, categories, recurring items, cash flow, budgets,

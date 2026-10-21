@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, request as httpRequest } from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
@@ -69,6 +69,9 @@ let standaloneRoot;
 let standaloneServer;
 let temporaryStateDirectory;
 let policyStorePath;
+let attributionStorePath;
+let attributionStore;
+let kidContract;
 let financeInsightStorePath;
 let staleFinanceInsightGeneration;
 let financeContract;
@@ -693,6 +696,11 @@ before(async () => {
     resolve(tmpdir(), "tyrion-ui-policy-test-")
   );
   policyStorePath = resolve(temporaryStateDirectory, "policies.json");
+  attributionStorePath = resolve(temporaryStateDirectory, "attributions.json");
+  kidContract = await import(pathToFileURL(
+    resolve(appRoot, "..", "kid-engine", "dist", "index.js")
+  ).href);
+  attributionStore = new kidContract.FileAttributionRepositoryV1(attributionStorePath);
   financeInsightStorePath = resolve(
     temporaryStateDirectory,
     "finance-insights.sqlite"
@@ -764,6 +772,7 @@ before(async () => {
       MISSION_CONTROL_RETURN_ALLOWED_ORIGINS:
         "https://mission-control.example.invalid",
       TYRION_POLICY_STORE_PATH: policyStorePath,
+      TYRION_ATTRIBUTION_STORE_PATH: attributionStorePath,
       TYRION_FINANCE_INSIGHT_STORE_PATH: financeInsightStorePath,
       TYRION_FINANCE_INSIGHT_EVALUATION_WRITE_ENABLED: "true",
       TYRION_FINANCE_INSIGHT_READ_ENABLED: "true",
@@ -2670,7 +2679,10 @@ test("finance insight startup preserves a future-effective v2-only history", asy
   }
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  await rm(attributionStorePath, { force: true });
+  bridgeTagCatalog = [{ id: "tag-household", name: "Household", isActive: true }];
+  bridgeTransactionTags = new Map();
   receivedRequests = [];
   bridgeResponseMode = "normal";
   bridgePathResponseModes = new Map();
@@ -4995,6 +5007,107 @@ test("attribution actions apply confirmed corrections with replayable audit stat
   assert.equal((await conflict.json()).error.code, "idempotency_conflict");
 });
 
+  test("durable attribution registers opaque source identity and recovers a saved tag failure", async () => {
+    const body = {
+      contractVersion: "2.1",
+      provenance: "mission-control-normalized-v3",
+      expectedPolicyVersion: activePolicy.policyVersion,
+      expectedStateVersion: null,
+      transactionId: "upstream-invented-record",
+      item: {
+        ...attributionItem("opaque-invented-record"),
+        existingManualDecision: {
+          action: "assign-kid", kidId: "kid-synthetic",
+          decidedAt: "2026-10-20T12:00:00Z",
+        },
+      },
+    };
+    bridgePathResponseModes.set("/tags", "non-2xx");
+    const response = await durableAttributionFetch("records", body);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const saved = await response.json();
+    assert.equal(saved.record.stateVersion, 1);
+    assert.equal(saved.record.attribution.method, "manual");
+    assert.equal(saved.projection.status, "failed");
+    assert.equal(saved.projection.errorCode, "tag_projection_unavailable");
+    assert.doesNotMatch(JSON.stringify(saved), /synthetic upstream detail/);
+    const journal = JSON.parse(await readFile(attributionStorePath, "utf8"));
+    assert.equal(journal.records[0].transactionId, body.transactionId);
+    assert.equal(journal.records[0].projectionPending, true);
+    assert.equal(journal.audit.length, 1);
+
+    const statusRequest = {
+      contractVersion: "2.1", sourceRef: body.item.sourceRef,
+      action: "status", expectedStateVersion: 1,
+    };
+    const before = receivedRequests.length;
+    const status = await durableAttributionFetch("projection", statusRequest);
+    assert.equal(status.status, 200);
+    assert.equal((await status.json()).projection.status, "failed");
+    assert.equal(receivedRequests.length, before);
+    bridgePathResponseModes.delete("/tags");
+    const retry = await durableAttributionFetch("projection", {
+      ...statusRequest, action: "retry",
+    });
+    assert.equal(retry.status, 200);
+    assert.equal((await retry.json()).projection.status, "projected");
+    assert.ok(receivedRequests.some((request) =>
+      request.path === "/transactions/upstream-invented-record/tags" &&
+      request.method === "PATCH"));
+    assert.ok(!receivedRequests.some((request) =>
+      request.path.includes("/transactions/opaque-invented-record")));
+    assert.deepEqual(bridgeTransactionTags.get(body.transactionId), [
+      "tag-household", "tag-created-1",
+    ]);
+    const duplicate = await durableAttributionFetch("records", body);
+    assert.equal(duplicate.status, 200);
+    assert.equal((await duplicate.json()).record.stateVersion, 1);
+    const stale = await durableAttributionFetch("projection", {
+      ...statusRequest, expectedStateVersion: 2,
+    });
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).error.code, "attribution_state_conflict");
+  });
+
+  test("durable attribution rejects public hosts, browsers, bad credentials and private facts", async () => {
+    const body = {
+      contractVersion: "2.1", provenance: "mission-control-normalized-v3",
+      expectedPolicyVersion: activePolicy.policyVersion, expectedStateVersion: null,
+      transactionId: "upstream-protected-record",
+      item: attributionItem("opaque-protected-record"),
+    };
+    for (const operation of ["records", "projection"]) {
+      const value = operation === "records" ? body : {
+        contractVersion: "2.1", sourceRef: body.item.sourceRef,
+        action: "status", expectedStateVersion: 1,
+      };
+      for (const headers of [
+        { Host: "tyrion.example.invalid" },
+        { "X-Forwarded-Host": "tyrion.example.invalid" },
+        { Origin: "https://tyrion.example.invalid" },
+        { "Sec-Fetch-Site": "same-origin" },
+      ]) {
+        const response = await durableAttributionFetch(operation, value, headers);
+        assert.equal(response.status, 404);
+        assert.equal((await response.json()).error.code, "attribution_route_not_available");
+      }
+      const unauthorized = await durableAttributionFetch(operation, value, { Authorization: "" });
+      assert.equal(unauthorized.status, 401);
+    }
+    const privateFacts = await durableAttributionFetch("records", {
+      ...body, item: { ...body.item, tags: ["Invented tag"] },
+    });
+    assert.equal(privateFacts.status, 400);
+    assert.equal((await privateFacts.json()).error.code, "invalid_request");
+    const missing = await durableAttributionFetch("projection", {
+      contractVersion: "2.1", sourceRef: "absent-source",
+      action: "retry", expectedStateVersion: 1,
+    });
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).error.code, "attribution_not_found");
+  });
+
 test("attribution actions support parent, unassign, resolve, and defer outcomes", async () => {
   for (const [action, extra, expectedStatus] of [
     ["mark-parent-expense", {}, "resolved"],
@@ -5059,7 +5172,7 @@ test("attribution actions fail closed for confirmation, conflicts, and integrati
   assert.equal(missing.status, 404);
   assert.equal((await missing.json()).error.code, "attribution_not_found");
 
-  reattributionResponseMode = "unavailable";
+  await writeFile(attributionStorePath, '{"invalid":"synthetic private detail"}');
   const unavailable = await attributionActionFetch(
     attributionActionRequest("consumer-action-unavailable", "explain")
   );
@@ -5343,8 +5456,11 @@ test("container and homelab contracts separate public connector and private attr
   );
   assert.doesNotMatch(
     compose,
-    /TYRION_(INSTRUMENT_FINGERPRINT_KEY|ATTRIBUTION_)/
+    /TYRION_INSTRUMENT_FINGERPRINT_KEY/
   );
+  assert.match(compose, /tyrion-attribution:\/var\/lib\/tyrion-attribution/);
+  assert.match(compose, /TYRION_ATTRIBUTION_STORE_PATH: \/var\/lib\/tyrion-attribution\/state.json/);
+  assert.doesNotMatch(compose, /TYRION_REATTRIBUTION_URL/);
 });
 
 test("re-attribution preview is bounded and aggregate-only", async () => {
@@ -5395,7 +5511,7 @@ test("re-attribution preview is bounded and aggregate-only", async () => {
 });
 
 test("re-attribution integration failures are stable and sanitized", async () => {
-  reattributionResponseMode = "unavailable";
+  await writeFile(attributionStorePath, '{"invalid":"synthetic private detail"}');
   const response = await policyFetch(
     "/api/policy/reattribution/preview",
     "POST",
@@ -5406,7 +5522,7 @@ test("re-attribution integration failures are stable and sanitized", async () =>
   );
   assert.equal(response.status, 503);
   const text = await response.text();
-  assert.match(text, /reattribution_integration_unavailable/);
+  assert.match(text, /attribution_state_unavailable/);
   assert.doesNotMatch(text, /synthetic private detail/);
 });
 
@@ -5484,23 +5600,51 @@ test("re-attribution apply rejects missing confirmation, expired previews, and p
   assert.equal((await conflict.json()).error.code, "policy_version_conflict");
 });
 
-function policyFetch(
+async function policyFetch(
   path,
   method = "GET",
   body,
   origin = uiUrl,
   requestHeaders = {}
 ) {
+  if (
+    path === "/api/policy/reattribution/preview" &&
+    body?.sourceRefs?.length <= 100 &&
+    !body.sourceRefs.includes("record-unavailable")
+  ) {
+    for (const sourceRef of body.sourceRefs) {
+      const source = reattributionRecord(policyActor.householdId, sourceRef);
+      await attributionStore.register(policyActor.householdId, `upstream-${sourceRef}`,
+        kidContract.parseAttributionActionRecordV1({
+          input: source.input, attribution: source.current, stateVersion: 1,
+          lastAction: null,
+          exception: {
+            status: source.current.review.reasons.length ? "open" : "resolved",
+            reasons: source.current.review.reasons, deferredUntil: null,
+            updatedAt: source.current.provenance.evaluatedAt,
+          },
+        }), null);
+    }
+  }
   const headers = new Headers(requestHeaders);
   if (body !== undefined) {
     headers.set("Content-Type", "application/json");
     headers.set("Origin", origin);
   }
-  return fetch(`${uiUrl}${path}`, {
+  const result = await fetch(`${uiUrl}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (path === "/api/policy/reattribution/preview" && expireNextPreview && result.ok) {
+    const journal = JSON.parse(await readFile(attributionStorePath, "utf8"));
+    const preview = journal.previews.at(-1);
+    preview.createdAt = "2020-01-01T00:00:00Z";
+    preview.expiresAt = "2020-01-01T00:01:00Z";
+    await writeFile(attributionStorePath, JSON.stringify(journal));
+    expireNextPreview = false;
+  }
+  return result;
 }
 
 function attributionFetch(body, options = {}) {
@@ -5511,7 +5655,20 @@ function attributionFetch(body, options = {}) {
   });
 }
 
-function attributionActionFetch(body, options = {}) {
+function durableAttributionFetch(operation, body, headers = {}) {
+  return rawInternalAttributionFetch(
+    uiUrl, `/api/internal/v2/attribution/${operation}`, JSON.stringify(body),
+    { Authorization: ["Bearer", serviceToken].join(" "), ...headers }
+  );
+}
+
+async function attributionActionFetch(body, options = {}) {
+  if (!["consumer-action-missing", "consumer-action-unavailable"].includes(body.sourceRef)) {
+    await attributionStore.register(policyActor.householdId, `upstream-${body.sourceRef}`,
+      kidContract.parseAttributionActionRecordV1(
+        attributionActionRecord(policyActor.householdId, body.sourceRef)
+      ), null);
+  }
   const serialized = JSON.stringify(body);
   return rawInternalAttributionFetch(
     uiUrl,
@@ -5572,6 +5729,7 @@ function rawInternalAttributionFetch(
           const text = Buffer.concat(chunks).toString("utf8");
           resolvePromise({
             status: response.statusCode,
+            headers: { get: (name) => response.headers[name.toLowerCase()] ?? null },
             text: async () => text,
             json: async () => JSON.parse(text),
           });
